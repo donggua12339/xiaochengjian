@@ -1,0 +1,5 @@
+packages:
+  - 'backend'
+  - 'admin-web'
+  - 'injector'
+  - 'injector-android'

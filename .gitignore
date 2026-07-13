@@ -1,0 +1,61 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+build/
+target/
+*.tsbuildinfo
+
+# Android / Kotlin
+*.apk
+*.aab
+*.dex
+*.class
+local.properties
+.gradle/
+*.iml
+
+# Rust
+**/*.rs.bk
+Cargo.lock
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env / secrets
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+*.keystore
+keystore.properties
+
+# Logs
+*.log
+logs/
+
+# Coverage
+coverage/
+.nyc_output/
+
+# Test artifacts
+test-results/
+playwright-report/
+
+# Claude / AI
+.claude/
+
+# Cache
+.cache/
+.turbo/
+.eslintcache
