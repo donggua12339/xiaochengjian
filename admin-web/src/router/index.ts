@@ -36,6 +36,11 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/Apps.vue'),
       },
       {
+        path: 'inject',
+        name: 'inject',
+        component: () => import('@/views/Inject.vue'),
+      },
+      {
         path: 'apps/:id',
         name: 'app-detail',
         component: () => import('@/views/AppDetail.vue'),

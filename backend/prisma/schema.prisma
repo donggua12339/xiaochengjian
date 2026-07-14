@@ -68,6 +68,7 @@ enum AuditAction {
   EXPORT_CARDS
   GENERATE_MEMBERSHIP_CODE
   REDEEM_MEMBERSHIP_CODE
+  INJECT_APK
 }
 
 // ============= 开发者与会话 =============

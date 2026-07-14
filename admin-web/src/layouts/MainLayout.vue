@@ -12,6 +12,7 @@ const auth = useAuthStore();
 const menuOptions = computed<MenuOption[]>(() => [
   { label: '概览', key: 'dashboard' },
   { label: '应用管理', key: 'apps' },
+  { label: 'APK 注入', key: 'inject' },
   { label: '设置', key: 'settings' },
 ]);
 
