@@ -1,6 +1,6 @@
 title: 小城笺文档
 description: 开源 + SaaS 双模式 Android 卡密验证系统
-theme: jekyll-readme-theme
+theme: minima
 markdown: kramdown
 kramdown:
   input: GFM
