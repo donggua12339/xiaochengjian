@@ -25,18 +25,18 @@ RUN corepack enable && corepack prepare pnpm@9 --activate
 RUN apk add --no-cache openssl wget
 
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
-COPY backend/package.json ./backend/
-COPY --from=builder /app/backend/node_modules ./backend/node_modules
+COPY backend/ ./backend/
+# 重新安装生产依赖(避免 pnpm 符号链接 COPY 丢失)
+RUN cd backend && pnpm install --prod --no-frozen-lockfile
+# 复制构建产物 + Prisma client
 COPY --from=builder /app/backend/dist ./backend/dist
-COPY --from=builder /app/backend/prisma ./backend/prisma
+COPY --from=builder /app/backend/node_modules/.prisma ./backend/node_modules/.prisma
 
 WORKDIR /app/backend
 
 EXPOSE 3000
 
-# 健康检查
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
   CMD wget -qO- http://localhost:3000/health || exit 1
 
-# 启动命令(prisma migrate deploy + start)
 CMD ["sh", "-c", "pnpm prisma migrate deploy && node dist/main.js"]
