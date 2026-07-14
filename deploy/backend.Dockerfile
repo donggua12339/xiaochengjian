@@ -26,11 +26,10 @@ RUN apk add --no-cache openssl wget
 
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
 COPY backend/ ./backend/
-# 重新安装生产依赖(避免 pnpm 符号链接 COPY 丢失)
-RUN cd backend && pnpm install --prod --no-frozen-lockfile
-# 复制构建产物 + Prisma client
+# 重新安装(含 devDependencies,prisma CLI 需要)+ 生成 Prisma client
+RUN cd backend && pnpm install --no-frozen-lockfile && pnpm prisma generate
+# 复制构建产物
 COPY --from=builder /app/backend/dist ./backend/dist
-COPY --from=builder /app/backend/node_modules/.prisma ./backend/node_modules/.prisma
 
 WORKDIR /app/backend
 
