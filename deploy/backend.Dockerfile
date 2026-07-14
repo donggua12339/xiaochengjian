@@ -12,8 +12,8 @@ RUN corepack enable && corepack prepare pnpm@9 --activate
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
 COPY backend/ ./backend/
 
-# 安装依赖 + 构建
-RUN cd backend && pnpm install --frozen-lockfile
+# 安装依赖 + 构建(不用 frozen-lockfile,允许 lockfile 更新)
+RUN cd backend && pnpm install --no-frozen-lockfile
 RUN cd backend && pnpm prisma generate
 RUN cd backend && pnpm nest build
 
