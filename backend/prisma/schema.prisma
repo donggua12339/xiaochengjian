@@ -1,0 +1,333 @@
+// 小城笺 - Prisma schema
+// 详见 ADR 0006 (PostgreSQL) 与 docs/architecture.md
+// RLS 策略在 M1.3 通过 SQL migration 实现,Prisma 不直接管理 RLS
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============= 枚举 =============
+
+/// 开发者角色
+enum DeveloperRole {
+  DEVELOPER
+  ADMIN
+}
+
+/// VIP 等级
+enum VipLevel {
+  FREE
+  MONTHLY
+  LIFETIME
+  VIP
+}
+
+/// 卡密类型(ADR 0013)
+enum CardKeyType {
+  DAY
+  WEEK
+  MONTH
+  PERMANENT
+  TRIAL
+}
+
+/// 设备绑定策略(ADR 0015)
+enum BindingStrategy {
+  NONE
+  FIRST_BIND
+  N_DEVICES
+}
+
+/// 卡密状态
+enum CardKeyStatus {
+  ACTIVE
+  DISABLED
+  EXPIRED
+  USED_UP
+}
+
+/// 审计操作类型
+enum AuditAction {
+  REGISTER
+  LOGIN
+  LOGOUT
+  CREATE_APP
+  UPDATE_APP
+  DELETE_APP
+  ROTATE_SECRET
+  GENERATE_CARDS
+  DISABLE_CARD
+  ENABLE_CARD
+  UNBIND_DEVICE
+  EXPORT_CARDS
+  GENERATE_MEMBERSHIP_CODE
+  REDEEM_MEMBERSHIP_CODE
+}
+
+// ============= 开发者与会话 =============
+
+/// 开发者账号(租户主体)
+model Developer {
+  id            String      @id @default(uuid())
+  email         String      @unique
+  passwordHash  String
+  totpSecret    String?
+  totpEnabled   Boolean     @default(false)
+  backupCodes   String[]    @default([])
+  role          DeveloperRole @default(DEVELOPER)
+  vipLevel      VipLevel    @default(FREE)
+  vipExpiresAt  DateTime?
+  maxApps       Int         @default(5)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  lastLoginAt   DateTime?
+  lastLoginIp   String?
+
+  sessions      Session[]
+  applications  Application[]
+  auditLogs     AuditLog[]
+  cardTemplates CardTemplate[]
+  cardKeys      CardKey[]
+  devices       Device[]
+  deviceBindings DeviceBinding[]
+  validationLogs ValidationLog[]
+  membershipCodes MembershipCode[]
+
+  @@map("developer")
+}
+
+/// 刷新令牌会话
+model Session {
+  id               String   @id @default(uuid())
+  developerId      String
+  refreshTokenHash String   @unique
+  expiresAt        DateTime
+  revokedAt        DateTime?
+  createdAt        DateTime @default(now())
+  userAgent        String?
+  ip               String?
+
+  developer        Developer @relation(fields: [developerId], references: [id], onDelete: Cascade)
+
+  @@index([developerId])
+  @@map("session")
+}
+
+// ============= 应用与卡密 =============
+
+/// 开发者应用
+model Application {
+  id                String   @id @default(uuid())
+  developerId       String
+  name              String
+  packageName       String
+  appSecretHash     String
+  signHashAllowList String[] @default([])
+  // 限流配置(覆盖全局默认,ADR 0022)
+  rateLimitIpPerMinute       Int?
+  rateLimitDevicePerMinute   Int?
+  rateLimitFailLockThreshold Int?
+  rateLimitFailLockTtl       Int?
+  // 离线缓存配置(ADR 0017)
+  offlineCacheDays  Int      @default(7)
+  // SDK 通信加密用 RSA 公钥指纹(对应客户端 Rust so 内的公钥)
+  sdkRsaPublicKeyHash String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  developer         Developer  @relation(fields: [developerId], references: [id], onDelete: Cascade)
+  cardKeys          CardKey[]
+  devices           Device[]
+  cardTemplates     CardTemplate[]
+  validationLogs    ValidationLog[]
+
+  @@unique([developerId, packageName])
+  @@index([developerId])
+  @@map("application")
+}
+
+/// 卡密模板
+model CardTemplate {
+  id              String          @id @default(uuid())
+  developerId     String
+  appId           String
+  name            String
+  type            CardKeyType
+  bindingStrategy BindingStrategy
+  maxDevices      Int             @default(1)
+  count           Int             @default(100)
+  createdAt       DateTime        @default(now())
+
+  developer       Developer  @relation(fields: [developerId], references: [id], onDelete: Cascade)
+  application     Application @relation(fields: [appId], references: [id], onDelete: Cascade)
+
+  @@index([developerId])
+  @@index([appId])
+  @@map("card_template")
+}
+
+/// 卡密(只存 hash,不存明文,ADR 0014)
+model CardKey {
+  id                String          @id @default(uuid())
+  developerId       String
+  appId             String
+  // 卡密 hash: SHA-256(明文 + cardSalt)
+  cardKeyHash       String          @unique
+  cardSalt          String
+  type              CardKeyType
+  bindingStrategy   BindingStrategy
+  maxDevices        Int             @default(1)
+  status            CardKeyStatus   @default(ACTIVE)
+  // 激活信息
+  activatedAt       DateTime?
+  expiresAt         DateTime?
+  // 试用卡设备级判重(ADR 0013),非试用卡为 null
+  trialClaimedDeviceId String?
+  // 卡密明文前 4 位,用于开发者后台识别(不泄露完整卡密)
+  cardKeyPrefix     String
+  // 备注(开发者生成时可填)
+  remark            String?
+  // 批次 ID(同次批量生成共享)
+  batchId           String
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  developer         Developer        @relation(fields: [developerId], references: [id], onDelete: Cascade)
+  application       Application      @relation(fields: [appId], references: [id], onDelete: Cascade)
+  deviceBindings    DeviceBinding[]
+
+  @@index([developerId])
+  @@index([appId, status])
+  @@index([appId, batchId])
+  @@index([appId, type])
+  @@index([trialClaimedDeviceId])
+  @@map("card_key")
+}
+
+// ============= 设备 =============
+
+/// 设备指纹(按应用隔离,同一物理设备在不同应用算不同记录)
+model Device {
+  id              String   @id @default(uuid())
+  developerId     String
+  appId           String
+  machineId       String
+  fingerprintHash String
+  lastSeenAt      DateTime @default(now())
+  createdAt       DateTime @default(now())
+
+  developer       Developer        @relation(fields: [developerId], references: [id], onDelete: Cascade)
+  application     Application      @relation(fields: [appId], references: [id], onDelete: Cascade)
+  deviceBindings  DeviceBinding[]
+
+  @@unique([appId, machineId])
+  @@index([developerId])
+  @@index([appId])
+  @@map("device")
+}
+
+/// 卡密-设备绑定关系
+model DeviceBinding {
+  id          String   @id @default(uuid())
+  developerId String
+  cardKeyId   String
+  deviceId    String
+  appId       String
+  boundAt     DateTime @default(now())
+
+  developer   Developer @relation(fields: [developerId], references: [id], onDelete: Cascade)
+  cardKey     CardKey   @relation(fields: [cardKeyId], references: [id], onDelete: Cascade)
+  device      Device    @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@unique([cardKeyId, deviceId])
+  @@index([developerId])
+  @@index([cardKeyId])
+  @@index([deviceId])
+  @@index([appId])
+  @@map("device_binding")
+}
+
+// ============= 日志 =============
+
+/// 验证日志(分区表,按月分区,见 ADR 0006 / 0032)
+/// 注:Prisma 不直接支持分区表,通过 SQL migration 创建
+/// 这里只定义 schema 供类型生成,实际表通过 raw SQL 创建
+model ValidationLog {
+  id           String   @id @default(uuid())
+  developerId  String
+  appId        String
+  cardKeyHash  String
+  machineId    String
+  ip           String
+  userAgent    String?
+  success      Boolean
+  failReason   String?
+  createdAt    DateTime @default(now())
+
+  developer    Developer   @relation(fields: [developerId], references: [id], onDelete: Cascade)
+  application  Application @relation(fields: [appId], references: [id], onDelete: Cascade)
+
+  @@index([developerId, createdAt])
+  @@index([appId, createdAt])
+  @@index([appId, success])
+  @@index([machineId])
+  @@map("validation_log")
+}
+
+/// 审计日志(开发者后台操作)
+model AuditLog {
+  id           String      @id @default(uuid())
+  developerId  String
+  action       AuditAction
+  target       String?
+  ip           String?
+  userAgent    String?
+  meta         Json?
+  createdAt    DateTime    @default(now())
+
+  developer    Developer   @relation(fields: [developerId], references: [id], onDelete: Cascade)
+
+  @@index([developerId, createdAt])
+  @@index([action])
+  @@map("audit_log")
+}
+
+// ============= 会员激活码 =============
+
+/// 会员激活码(发卡网卖,开发者后台兑换)
+/// 详见 ADR 0044(发卡网 + 会员激活码模式)
+model MembershipCode {
+  id              String      @id @default(uuid())
+  // 激活码 hash: SHA-256(明文 + salt),不存明文
+  codeHash        String      @unique
+  codeSalt        String
+  // 前 4 位,便于后台识别
+  codePrefix      String
+  // 会员等级
+  level           VipLevel
+  // 时长(天),PERMANENT 用 -1
+  durationDays    Int
+  // 状态
+  status          String      @default("UNUSED") // UNUSED / USED / DISABLED
+  // 兑换者(UNUSED 时为 null)
+  redeemedBy      String?
+  redeemedAt      DateTime?
+  // 批次 ID(同次批量生成共享)
+  batchId         String
+  // 备注(生成时可填,如"WM 发卡网批次1")
+  remark          String?
+  createdAt       DateTime    @default(now())
+
+  developer       Developer?  @relation(fields: [redeemedBy], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([batchId])
+  @@index([level])
+  @@map("membership_code")
+}

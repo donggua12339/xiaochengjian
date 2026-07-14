@@ -1,0 +1,18 @@
+[workspace]
+resolver = "2"
+members = ["xcj-core"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["小城笺 Contributors"]
+license = "Apache-2.0"
+repository = "https://github.com/xiaochengjian/xiaochengjian"
+
+[profile.release]
+# 体积优化(嵌入式/移动端)
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"

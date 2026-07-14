@@ -64,6 +64,51 @@
 - [ADR 0038 · 测试策略](0038-testing-strategy.md)
 - [ADR 0039 · 文档规范](0039-documentation-standards.md)
 
+### SaaS 上线 + 开源 + 安全 + dex 深化(grill-me 第二轮,2026-07-14)
+
+#### 根决策(跨主题)
+
+- [ADR 0040 · 开源发布时机:SaaS 上线后开源](0040-open-source-timing-after-saas.md)
+- [ADR 0041 · SaaS 与开源版边界:SaaS 增值](0041-saas-open-source-boundary.md)
+- [ADR 0042 · 安全设计公开边界:架构公开,实现保留](0042-security-disclosure-boundary.md)
+- [ADR 0043 · 商业化定价:订阅制](0043-pricing-subscription.md)
+
+#### A 层 SaaS 上线
+
+- [ADR 0044 · 支付对接:发卡网 + 会员激活码](0044-payment-faka-wm.md)
+- [ADR 0045 · 域名 + 备案:国内域名 + 海外服务器](0045-domain-overseas-server.md)
+- [ADR 0046 · 服务器选型:雨云 1C2G](0046-server-rainyun-1c2g.md)
+- [ADR 0047 · 定价档位:免费 + 基础 + VIP](0047-pricing-tiers.md)
+- [ADR 0048 · 注册方式:邮箱 + GitHub + QQ OAuth](0048-auth-email-github-qq.md)
+- [ADR 0049 · SLA + 退款政策](0049-sla-refund-policy.md)
+- [ADR 0050 · 服务器内存调优](0050-server-memory-tuning.md)
+- [ADR 0051 · WM 发卡不稳定兜底](0051-wm-fallback-manual.md)
+- [ADR 0052 · 退款法律条款:数字商品不适用 7 天无理由](0052-refund-legal-clause.md)
+
+#### E 层 开源发布
+
+- [ADR 0053 · 仓库结构:单仓库 + GitHub Pages](0053-repo-monorepo-pages.md)
+- [ADR 0054 · README 深度:标准 + docs/ 链接](0054-readme-standard-depth.md)
+- [ADR 0055 · CLA 流程:cla-assistant.io](0055-cla-cla-assistant.md)
+- [ADR 0056 · 版本管理:GitHub Actions + 手动 tag](0056-release-manual-tag.md)
+- [ADR 0057 · 安全披露:邮箱 + GitHub Security Advisory](0057-security-disclosure.md)
+
+#### F 层 安全加固深化
+
+- [ADR 0058 · Rust so 自校验:编译时嵌入 + 服务端下发](0058-rust-self-verify.md)
+- [ADR 0059 · 反调试深化:Frida 高级 + Xposed 检测](0059-anti-debug-frida-xposed.md)
+- [ADR 0060 · 通信密钥轮换:每 20 分钟](0060-key-rotation-20min.md)
+- [ADR 0061 · 混淆策略:字符串 + 控制流](0061-obfuscation-string-control-flow.md)
+- [ADR 0062 · 防重打包:直接读 APK + 服务端下发](0062-anti-repackage-apk-hash.md)
+
+#### B 层 dex 指令插入深化
+
+- [ADR 0063 · dex 指令插入:ImmutableDexFile 重建](0063-dex-immutable-rebuild.md)
+- [ADR 0064 · 注入点:onCreate + attachBaseContext](0064-injection-point-oncreate-attachbase.md)
+- [ADR 0065 · 无自定义 Application:创建 XcjApplication + Activity 兜底](0065-create-application-activity-fallback.md)
+- [ADR 0066 · AXML 解析:AXMLPrinter2](0066-axml-axmlprinter2.md)
+- [ADR 0067 · 加固 APK 兼容:MVP 不支持](0067-hardened-apk-mvp-skip.md)
+
 ## 模板
 
 新 ADR 使用 [0000-template.md](0000-template.md) 模板。

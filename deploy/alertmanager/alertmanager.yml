@@ -1,0 +1,31 @@
+# 小城笺 AlertManager 配置
+# 详见 ADR 0032 (监控告警:飞书机器人)
+#
+# AlertManager 不原生支持飞书,通过 webhook_configs 转发到飞书中转服务
+# 中转服务(alertmanager-feishu)把 AlertManager 告警格式转成飞书消息格式
+
+global:
+  resolve_timeout: 5m
+
+# 告警分组(同 alertname 5 分钟内聚合)
+route:
+  group_by: ['alertname', 'service']
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  receiver: 'feishu-webhook'
+
+receivers:
+  - name: 'feishu-webhook'
+    webhook_configs:
+      # 飞书中转服务(把 AlertManager 格式转飞书格式)
+      - url: 'http://alertmanager-feishu:5000/alert'
+        send_resolved: true
+
+# 静默规则(可选,如维护期间静默)
+# inhibit_rules:
+#   - source_match:
+#       severity: 'critical'
+#     target_match:
+#       severity: 'warning'
+#     equal: ['alertname', 'service']

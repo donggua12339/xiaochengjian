@@ -1,0 +1,28 @@
+# 小城笺告警规则
+# 详见 ADR 0032
+
+groups:
+  - name: xcj-backend
+    rules:
+      # 验证失败率 > 5%
+      - alert: HighValidationFailRate
+        expr: rate(http_request_duration_seconds_count{status=~"5.."}[5m]) / rate(http_request_duration_seconds_count[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "验证失败率 > 5%"
+          description: "5xx 错误率超过 5%,持续 5 分钟"
+
+      # 后端不可用
+      - alert: BackendDown
+        expr: up{job="xcj-backend"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "后端服务不可用"
+          description: "后端已宕机超过 1 分钟"
+
+      # PG 连接数高
+      # 注:需要 prometheus-postgres-exporter,M3.3 后续补充

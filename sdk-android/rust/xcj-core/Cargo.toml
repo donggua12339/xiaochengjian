@@ -1,0 +1,36 @@
+[package]
+name = "xcj-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "小城笺 Android SDK Rust 核心(JNI)"
+
+# 输出动态库给 Android JNI 调用
+# libxcj_core.so
+[lib]
+name = "xcj_core"
+crate-type = ["cdylib", "staticlib"]
+
+[dependencies]
+# JNI 绑定
+jni = { version = "0.21", default-features = false }
+
+# 加密
+sha2 = "0.10"
+hmac = "0.12"
+aes-gcm = "0.10"
+rsa = "0.9"
+rand = "0.8"
+base64 = "0.22"
+hex = "0.4"
+
+# 工具
+once_cell = "1"
+# 常量字符串混淆(防逆向)
+obfstr = "0.4"
+
+[dev-dependencies]
+# 测试用
+hex-literal = "0.4"

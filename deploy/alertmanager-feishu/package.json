@@ -1,0 +1,13 @@
+{
+  "name": "xcj-alertmanager-feishu",
+  "version": "0.1.0",
+  "description": "AlertManager 飞书告警中转(把 AlertManager 格式转飞书消息格式)",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "axios": "^1.7.0"
+  }
+}

@@ -1,0 +1,37 @@
+title: 小城笺文档
+description: 开源 + SaaS 双模式 Android 卡密验证系统
+theme: jekyll-readme-theme
+markdown: kramdown
+kramdown:
+  input: GFM
+  syntax_highlighter: rouge
+
+# 文档目录
+collections:
+  adr:
+    output: true
+    permalink: /adr/:name/
+
+# 默认值
+defaults:
+  - scope:
+      path: ""
+      type: "pages"
+    values:
+      layout: "default"
+  - scope:
+      path: "_adr"
+      type: "adr"
+    values:
+      layout: "adr"
+
+# 排除
+exclude:
+  - node_modules
+  - backend
+  - admin-web
+  - sdk-android
+  - injector
+  - injector-android
+  - deploy
+  - .github
