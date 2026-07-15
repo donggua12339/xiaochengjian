@@ -1,4 +1,4 @@
-import { request } from './client';
+import { longTimeoutClient } from './client';
 
 export interface InjectResult {
   downloadToken: string;
@@ -28,12 +28,9 @@ export const injectApi = {
     }
     formData.append('watermarkId', params.watermarkId);
 
-    return request<InjectResult>({
-      method: 'POST',
-      url: '/admin/inject',
-      data: formData,
+    return longTimeoutClient.post<InjectResult>('/admin/inject', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
-    });
+    }).then((res) => res.data);
   },
 
   /**

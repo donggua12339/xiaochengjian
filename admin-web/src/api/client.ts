@@ -47,13 +47,30 @@ const client: AxiosInstance = axios.create({
   headers: { 'Content-Type': 'application/json' },
 });
 
+/**
+ * 长超时客户端(注入等耗时操作,3 分钟)
+ */
+export const longTimeoutClient: AxiosInstance = axios.create({
+  baseURL: '/v1',
+  timeout: 180000,
+  headers: { 'Content-Type': 'application/json' },
+});
+
+longTimeoutClient.interceptors.request.use((config) => {
+  const token = getAccessToken();
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
 // 请求拦截:注入 JWT
 client.interceptors.request.use((config) => {
   const token = getAccessToken();
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
-  return config;
+  return config);
 });
 
 // 响应拦截:解包 + 401 处理
