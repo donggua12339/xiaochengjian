@@ -8,6 +8,7 @@ import {
 } from 'naive-ui';
 import { appsApi, type AppDetail } from '@/api/apps';
 import { cardsApi, type CardKeyItem, type GenerateCardsDto } from '@/api/cards';
+import { getAppOverviewStats, type AppOverviewStats } from '@/api/stats';
 import {
   CARD_KEY_TYPE_LABELS, BINDING_STRATEGY_LABELS, CARD_STATUS_LABELS,
   type CardKeyType, type BindingStrategy,
@@ -51,6 +52,21 @@ const settingsForm = ref({
   rateLimitDevicePerMinute: 30,
   offlineCacheDays: 7,
 });
+
+// 统计
+const stats = ref<AppOverviewStats | null>(null);
+const statsLoading = ref(false);
+
+async function loadStats() {
+  statsLoading.value = true;
+  try {
+    stats.value = await getAppOverviewStats(appId.value);
+  } catch (error) {
+    message.error((error as Error)?.message ?? '加载统计失败');
+  } finally {
+    statsLoading.value = false;
+  }
+}
 
 async function loadApp() {
   loading.value = true;
@@ -211,6 +227,7 @@ const bindingOptions = Object.entries(BINDING_STRATEGY_LABELS).map(([value, labe
 onMounted(async () => {
   await loadApp();
   await loadCards();
+  await loadStats();
 });
 </script>
 
@@ -259,13 +276,13 @@ onMounted(async () => {
         <!-- 统计 -->
         <NTabPane name="stats" tab="统计">
           <NGrid :cols="4" :x-gap="16" :y-gap="16">
-            <NGridItem><NStatistic label="卡密总数" :value="cardsTotal" /></NGridItem>
-            <NGridItem><NStatistic label="活跃设备" :value="0" /></NGridItem>
-            <NGridItem><NStatistic label="今日验证" :value="0" /></NGridItem>
-            <NGridItem><NStatistic label="今日激活" :value="0" /></NGridItem>
+            <NGridItem><NStatistic label="卡密总数" :value="stats?.cards.total ?? 0" /></NGridItem>
+            <NGridItem><NStatistic label="活跃设备(30天)" :value="stats?.devices.active30d ?? 0" /></NGridItem>
+            <NGridItem><NStatistic label="今日验证" :value="stats?.validations.today ?? 0" /></NGridItem>
+            <NGridItem><NStatistic label="累计激活" :value="stats?.cards.activated ?? 0" /></NGridItem>
           </NGrid>
           <NText depth="3" style="display: block; margin-top: 16px">
-            详细统计图表在 M1.7 后端接口完成后接入
+            验证失败率:{{ stats?.validations.todayFailRate ?? 0 }}% · 设备总数:{{ stats?.devices.total ?? 0 }}
           </NText>
         </NTabPane>
 

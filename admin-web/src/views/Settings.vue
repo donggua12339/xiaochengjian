@@ -36,10 +36,17 @@ async function handleChangePassword() {
     message.warning('新密码至少 8 位');
     return;
   }
+  if (!/[a-zA-Z]/.test(passwordForm.value.newPassword) || !/\d/.test(passwordForm.value.newPassword)) {
+    message.warning('新密码必须包含字母和数字');
+    return;
+  }
   changingPassword.value = true;
   try {
-    // 注:M1.2 未实现 change-password 接口,这里预留
-    message.info('修改密码接口待实现(M1.2 范围外)');
+    await auth.changePassword(passwordForm.value.currentPassword, passwordForm.value.newPassword);
+    message.success('密码修改成功');
+    passwordForm.value = { currentPassword: '', newPassword: '', confirmPassword: '' };
+  } catch (error) {
+    message.error(auth.handleError(error));
   } finally {
     changingPassword.value = false;
   }
@@ -79,8 +86,12 @@ function copyBackupCodes() {
   }
 }
 
-onMounted(() => {
-  // 加载开发者信息(M1.2 未实现 /developer/profile 接口,这里用 auth store 的状态)
+onMounted(async () => {
+  try {
+    await auth.loadProfile();
+  } catch (error) {
+    message.error(auth.handleError(error));
+  }
 });
 </script>
 
@@ -95,7 +106,7 @@ onMounted(() => {
         <NDescriptionsItem label="会员等级">
           <NTag size="small" type="info">免费版</NTag>
         </NDescriptionsItem>
-        <NDescriptionsItem label="注册时间">-</NDescriptionsItem>
+        <NDescriptionsItem label="注册时间">{{ auth.developer?.createdAt ? new Date(auth.developer.createdAt).toLocaleString() : '-' }}</NDescriptionsItem>
       </NDescriptions>
     </NCard>
 
@@ -159,7 +170,7 @@ onMounted(() => {
     <NCard title="订阅">
       <NDescriptions :column="2" label-placement="left" bordered>
         <NDescriptionsItem label="当前方案">免费版</NDescriptionsItem>
-        <NDescriptionsItem label="应用配额">5 个</NDescriptionsItem>
+        <NDescriptionsItem label="应用配额">{{ auth.developer?.maxApps ?? '-' }} 个</NDescriptionsItem>
         <NDescriptionsItem label="卡密数量">无限制</NDescriptionsItem>
         <NDescriptionsItem label="API 调用">无限制</NDescriptionsItem>
       </NDescriptions>

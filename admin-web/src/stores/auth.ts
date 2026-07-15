@@ -101,6 +101,39 @@ export const useAuthStore = defineStore('auth', {
       });
     },
 
+    async changePassword(currentPassword: string, newPassword: string) {
+      return request<{ success: true }>({
+        method: 'POST',
+        url: '/auth/change-password',
+        data: { currentPassword, newPassword },
+      });
+    },
+
+    async loadProfile() {
+      const profile = await request<{
+        id: string;
+        email: string;
+        role: string;
+        createdAt: string;
+        maxApps: number;
+        totpEnabled: boolean;
+      }>({
+        method: 'GET',
+        url: '/auth/profile',
+      });
+      // 补齐 store 中 Developer 接口未覆盖的字段(会员层未实现,占位)
+      this.developer = {
+        id: profile.id,
+        email: profile.email,
+        role: profile.role,
+        vipLevel: 'free',
+        totpEnabled: profile.totpEnabled,
+        maxApps: profile.maxApps,
+        createdAt: profile.createdAt,
+      };
+      return profile;
+    },
+
     handleError(error: unknown): string {
       const apiError = extractApiError(error);
       return apiError.message;
