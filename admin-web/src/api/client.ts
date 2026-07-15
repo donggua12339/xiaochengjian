@@ -64,6 +64,34 @@ longTimeoutClient.interceptors.request.use((config) => {
   return config;
 });
 
+// 长超时客户端的 401 处理(注入等耗时操作 token 可能过期)
+longTimeoutClient.interceptors.response.use(
+  (response) => response.data,
+  async (error) => {
+    if (error.response?.status === 401) {
+      const refreshToken = getRefreshToken();
+      if (refreshToken && !error.config._retried) {
+        error.config._retried = true;
+        try {
+          const res = await axios.post('/v1/auth/refresh', { refreshToken });
+          const { accessToken, refreshToken: newRefresh } = res.data;
+          setTokens(accessToken, newRefresh);
+          error.config.headers.Authorization = `Bearer ${accessToken}`;
+          return longTimeoutClient(error.config);
+        } catch {
+          clearTokens();
+          window.location.href = '/login';
+          return Promise.reject(error);
+        }
+      } else {
+        clearTokens();
+        window.location.href = '/login';
+      }
+    }
+    return Promise.reject(error);
+  },
+);
+
 // 请求拦截:注入 JWT
 client.interceptors.request.use((config) => {
   const token = getAccessToken();
