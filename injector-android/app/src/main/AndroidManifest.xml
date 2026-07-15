@@ -6,6 +6,7 @@
         android:maxSdkVersion="32" />
 
     <application
+        android:name=".XcjApp"
         android:allowBackup="true"
         android:label="小城笺管理"
         android:usesCleartextTraffic="true"
