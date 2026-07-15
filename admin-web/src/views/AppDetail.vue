@@ -154,7 +154,19 @@ async function handleDeleteApp() {
 
 function copyGeneratedKeys() {
   if (generatedKeys.value) {
-    navigator.clipboard.writeText(generatedKeys.value.join('\n'));
+    const text = generatedKeys.value.join('\n');
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(text);
+    } else {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+    }
     message.success('已复制全部卡密');
   }
 }

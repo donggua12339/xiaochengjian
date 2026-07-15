@@ -54,7 +54,11 @@ const activeKey = computed(() => {
         </NSpace>
       </NLayoutHeader>
       <NLayoutContent class="content" content-style="padding: 24px;">
-        <RouterView />
+        <RouterView v-slot="{ Component }">
+          <KeepAlive :include="['InjectView']">
+            <component :is="Component" />
+          </KeepAlive>
+        </RouterView>
       </NLayoutContent>
     </NLayout>
   </NLayout>

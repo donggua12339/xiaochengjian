@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, reactive } from 'vue';
+defineOptions({ name: 'InjectView' });
 import {
   NCard, NForm, NFormItem, NInput, NButton, NSpace, NUpload, NAlert,
   NText, NStatistic, NRadioGroup, NRadioButton, useMessage, type UploadFileInfo,

@@ -62,7 +62,19 @@ async function handleDelete(app: AppItem) {
 
 function copySecret() {
   if (newAppSecret.value) {
-    navigator.clipboard.writeText(newAppSecret.value);
+    // clipboard API 在非 HTTPS 下不可用,加 fallback
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(newAppSecret.value);
+    } else {
+      const ta = document.createElement('textarea');
+      ta.value = newAppSecret.value;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+    }
     message.success('已复制到剪贴板,请妥善保存');
   }
 }
