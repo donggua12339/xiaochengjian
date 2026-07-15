@@ -6,11 +6,12 @@ FROM node:22-alpine AS builder
 WORKDIR /app
 
 RUN corepack enable && corepack prepare pnpm@9 --activate
+RUN pnpm config set registry https://registry.npmmirror.com
 
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
 COPY admin-web/ ./admin-web/
 
-RUN cd admin-web && pnpm install --frozen-lockfile
+RUN cd admin-web && pnpm install --no-frozen-lockfile
 RUN cd admin-web && pnpm build
 
 # ---- 运行阶段(Nginx 托管静态文件) ----

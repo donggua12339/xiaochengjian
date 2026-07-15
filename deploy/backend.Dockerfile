@@ -24,6 +24,9 @@ WORKDIR /app
 RUN corepack enable && corepack prepare pnpm@9 --activate
 RUN apk add --no-cache openssl wget
 
+# 用淘宝 npm 镜像(海外服务器访问官方源慢)
+RUN pnpm config set registry https://registry.npmmirror.com
+
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
 COPY backend/ ./backend/
 # 重新安装(含 devDependencies,prisma CLI 需要)+ 生成 Prisma client
