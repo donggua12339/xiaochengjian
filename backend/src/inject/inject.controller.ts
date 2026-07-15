@@ -55,11 +55,10 @@ export class InjectController {
   async inject(
     @Body() dto: InjectApkDto,
     @Body('apk') apkFile: Express.Multer.File,
-    @Body('keystore') keystoreFile: Express.Multer.File,
+    @Body('keystore') keystoreFile: Express.Multer.File | undefined,
   ) {
-    // FileFieldsInterceptor 把文件挂到 Body 上
     const apk = (apkFile || (dto as unknown as { apk?: Express.Multer.File }).apk) as Express.Multer.File;
-    const keystore = (keystoreFile || (dto as unknown as { keystore?: Express.Multer.File }).keystore) as Express.Multer.File;
+    const keystore = (keystoreFile || (dto as unknown as { keystore?: Express.Multer.File }).keystore) as Express.Multer.File | undefined;
     return this.injectService.inject(apk, keystore, {
       ksPass: dto.ksPass,
       ksKeyAlias: dto.ksKeyAlias,

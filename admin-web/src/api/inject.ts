@@ -10,19 +10,22 @@ export interface InjectResult {
 export const injectApi = {
   /**
    * 上传 APK + keystore 执行注入
+   * keystore 可选(不传则用系统默认 keystore)
    */
-  inject: (files: { apk: File; keystore: File }, params: {
-    ksPass: string;
-    ksKeyAlias: string;
-    keyPass: string;
+  inject: (files: { apk: File; keystore: File | null }, params: {
+    ksPass?: string;
+    ksKeyAlias?: string;
+    keyPass?: string;
     watermarkId: string;
   }) => {
     const formData = new FormData();
     formData.append('apk', files.apk);
-    formData.append('keystore', files.keystore);
-    formData.append('ksPass', params.ksPass);
-    formData.append('ksKeyAlias', params.ksKeyAlias);
-    formData.append('keyPass', params.keyPass);
+    if (files.keystore) {
+      formData.append('keystore', files.keystore);
+      formData.append('ksPass', params.ksPass ?? '');
+      formData.append('ksKeyAlias', params.ksKeyAlias ?? '');
+      formData.append('keyPass', params.keyPass ?? '');
+    }
     formData.append('watermarkId', params.watermarkId);
 
     return request<InjectResult>({

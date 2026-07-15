@@ -2,7 +2,7 @@
 import { ref, reactive } from 'vue';
 import {
   NCard, NForm, NFormItem, NInput, NButton, NSpace, NUpload, NAlert,
-  NText, NStatistic, useMessage, type UploadFileInfo,
+  NText, NStatistic, NRadioGroup, NRadioButton, useMessage, type UploadFileInfo,
 } from 'naive-ui';
 import { injectApi, type InjectResult } from '@/api/inject';
 import { useAuthStore } from '@/stores/auth';
@@ -13,6 +13,7 @@ const auth = useAuthStore();
 const apkFile = ref<File | null>(null);
 const keystoreFile = ref<File | null>(null);
 const form = reactive({
+  useDefaultKeystore: true,
   ksPass: '',
   ksKeyAlias: '',
   keyPass: '',
@@ -46,21 +47,31 @@ async function handleInject() {
     message.warning('请上传 APK 文件');
     return;
   }
-  if (!keystoreFile.value) {
-    message.warning('请上传 keystore 文件');
-    return;
-  }
-  if (!form.ksPass || !form.ksKeyAlias || !form.keyPass) {
-    message.warning('请填写 keystore 密码 + 别名 + key 密码');
-    return;
+  if (!form.useDefaultKeystore) {
+    if (!keystoreFile.value) {
+      message.warning('请上传 keystore 文件');
+      return;
+    }
+    if (!form.ksPass || !form.ksKeyAlias || !form.keyPass) {
+      message.warning('请填写 keystore 密码 + 别名 + key 密码');
+      return;
+    }
   }
 
   injecting.value = true;
   result.value = null;
   try {
     result.value = await injectApi.inject(
-      { apk: apkFile.value, keystore: keystoreFile.value },
-      { ...form },
+      {
+        apk: apkFile.value,
+        keystore: form.useDefaultKeystore ? null as unknown as File : keystoreFile.value!,
+      },
+      {
+        ksPass: form.ksPass,
+        ksKeyAlias: form.ksKeyAlias,
+        keyPass: form.keyPass,
+        watermarkId: form.watermarkId,
+      },
     );
     message.success('注入完成!5 分钟内下载有效');
   } catch (error) {
@@ -128,7 +139,21 @@ function formatSize(bytes: number) {
             </NText>
           </NFormItem>
 
-          <NFormItem label="Keystore 文件">
+          <NFormItem label="签名方式">
+            <NSpace vertical style="width: 100%">
+              <NSpace>
+                <NRadioGroup v-model:value="form.useDefaultKeystore">
+                  <NRadioButton :value="true">系统默认 keystore(推荐)</NRadioButton>
+                  <NRadioButton :value="false">上传自己的 keystore</NRadioButton>
+                </NRadioGroup>
+              </NSpace>
+              <NText v-if="form.useDefaultKeystore" depth="3" style="font-size: 13px">
+                用小城笺系统签名(自签名证书,100 年有效)。适合快速测试,生产环境建议上传自己的 keystore。
+              </NText>
+            </NSpace>
+          </NFormItem>
+
+          <NFormItem v-if="!form.useDefaultKeystore" label="Keystore 文件">
             <NUpload
               :default-upload="false"
               :max="1"
@@ -142,15 +167,15 @@ function formatSize(bytes: number) {
             </NText>
           </NFormItem>
 
-          <NFormItem label="Keystore 密码">
+          <NFormItem v-if="!form.useDefaultKeystore" label="Keystore 密码">
             <NInput v-model:value="form.ksPass" type="password" show-password-on="click" placeholder="keystore 密码" />
           </NFormItem>
 
-          <NFormItem label="Key 别名">
+          <NFormItem v-if="!form.useDefaultKeystore" label="Key 别名">
             <NInput v-model:value="form.ksKeyAlias" placeholder="如:xcj-key" />
           </NFormItem>
 
-          <NFormItem label="Key 密码">
+          <NFormItem v-if="!form.useDefaultKeystore" label="Key 密码">
             <NInput v-model:value="form.keyPass" type="password" show-password-on="click" placeholder="key 密码" />
           </NFormItem>
 
@@ -162,7 +187,7 @@ function formatSize(bytes: number) {
             <NButton
               type="primary"
               :loading="injecting"
-              :disabled="!apkFile || !keystoreFile"
+              :disabled="!apkFile || (!form.useDefaultKeystore && (!keystoreFile || !form.ksPass || !form.ksKeyAlias || !form.keyPass))"
               @click="handleInject"
             >
               {{ injecting ? '注入中...(约 1-2 分钟)' : '开始注入' }}
