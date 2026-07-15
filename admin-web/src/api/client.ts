@@ -70,7 +70,7 @@ client.interceptors.request.use((config) => {
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
-  return config);
+  return config;
 });
 
 // 响应拦截:解包 + 401 处理
