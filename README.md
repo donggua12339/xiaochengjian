@@ -2,6 +2,13 @@
 
 > 开源 + SaaS 双模式的 Android 卡密验证系统,保障创作者权益,杜绝付费应用盗版。
 
+> ⚠️ **v2 重构公告(2026-07-15)**
+> 小城笺正在进行 v2 精准补齐重构,预计 3-4 周完成。
+> 期间 SaaS 服务暂停,试用开发者请等待恢复。
+> 开源版自部署不受影响,可继续使用 v1-final tag 的代码。
+> 重构内容:后端补齐 change-password/profile + admin-web 接通 + injector-android 改为合规路径(移除 APK 重打包能力,改为引导开发者主动集成 SDK)。
+> 重构完成后会发布 v2.0.0 tag,届时恢复 SaaS 服务。
+
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Backend](https://img.shields.io/badge/backend-NestJS-red.svg)](backend/)
 [![SDK](https://img.shields.io/badge/SDK-Rust%20%2B%20Kotlin-orange.svg)](sdk-android/)
