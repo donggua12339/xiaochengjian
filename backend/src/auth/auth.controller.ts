@@ -1,9 +1,10 @@
-import { Body, Controller, Ip, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Ip, Post, Get, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
 import { TotpSetupVerifyDto, TotpBackupDto, TotpVerifyDto } from './dto/totp.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { CurrentDeveloper } from '../common/decorators/current-developer.decorator';
@@ -76,5 +77,24 @@ export class AuthController {
     @Body('userAgent') userAgent?: string,
   ) {
     return this.authService.verifyBackup(dto.pendingTotpToken, dto.backupCode, { ip, userAgent });
+  }
+
+  @Post('change-password')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: '修改密码(需登录,校验当前密码)' })
+  async changePassword(
+    @CurrentDeveloper() developerId: string,
+    @Body() dto: ChangePasswordDto,
+  ) {
+    return this.authService.changePassword(developerId, dto.currentPassword, dto.newPassword);
+  }
+
+  @Get('profile')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: '获取当前开发者资料(个人信息页用)' })
+  async getProfile(@CurrentDeveloper() developerId: string) {
+    return this.authService.getProfile(developerId);
   }
 }

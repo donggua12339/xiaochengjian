@@ -320,6 +320,77 @@ export class AuthService {
   }
 
   /**
+   * 修改密码
+   * 校验当前密码 -> argon2 哈希新密码 -> 更新 developer.passwordHash
+   * 不撤销已签发的 refresh token(用户可继续使用现有会话,但下次登录用新密码)
+   */
+  async changePassword(
+    developerId: string,
+    currentPassword: string,
+    newPassword: string,
+  ): Promise<{ success: true }> {
+    const developer = await this.prisma.developer.findUnique({
+      where: { id: developerId },
+      select: { id: true, passwordHash: true },
+    });
+    if (!developer) {
+      throw new NotFoundException('DEVELOPER_NOT_FOUND');
+    }
+
+    const passwordValid = await argon2.verify(developer.passwordHash, currentPassword);
+    if (!passwordValid) {
+      throw new UnauthorizedException('CURRENT_PASSWORD_INCORRECT');
+    }
+
+    if (currentPassword === newPassword) {
+      throw new BadRequestException('NEW_PASSWORD_MUST_DIFFER');
+    }
+
+    const newHash = await argon2.hash(newPassword, {
+      type: argon2.argon2id,
+      memoryCost: 19456,
+      timeCost: 2,
+      parallelism: 1,
+    });
+
+    await this.prisma.developer.update({
+      where: { id: developerId },
+      data: { passwordHash: newHash },
+    });
+
+    return { success: true };
+  }
+
+  /**
+   * 获取开发者资料(个人信息页用)
+   * 返回 email / role / createdAt / maxApps / 2FA 状态
+   */
+  async getProfile(developerId: string): Promise<{
+    id: string;
+    email: string;
+    role: string;
+    createdAt: Date;
+    maxApps: number;
+    totpEnabled: boolean;
+  }> {
+    const developer = await this.prisma.developer.findUnique({
+      where: { id: developerId },
+      select: {
+        id: true,
+        email: true,
+        role: true,
+        createdAt: true,
+        maxApps: true,
+        totpEnabled: true,
+      },
+    });
+    if (!developer) {
+      throw new NotFoundException('DEVELOPER_NOT_FOUND');
+    }
+    return developer;
+  }
+
+  /**
    * 签发 access + refresh token 对
    * meta 信息(IP/userAgent)随 refresh token 一起存 Redis,便于审计
    */

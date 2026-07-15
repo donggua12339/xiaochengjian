@@ -13,6 +13,7 @@ import { ConfigService } from '@nestjs/config';
 describe('ApplicationService', () => {
   let service: ApplicationService;
   let mockTx: any;
+  let mockPrisma: any;
 
   beforeEach(async () => {
     mockTx = {
@@ -23,6 +24,11 @@ describe('ApplicationService', () => {
       developer: { findUnique: jest.fn(), update: jest.fn() },
     };
 
+    // 原始 PrismaService(developer 表无 RLS,业务代码用 this.prisma.developer.findUnique)
+    mockPrisma = {
+      developer: { findUnique: jest.fn() },
+    };
+
     const tenantPrisma = {
       tx: jest.fn().mockImplementation(async (_t: string, fn: (tx: any) => Promise<any>) => fn(mockTx)),
     };
@@ -31,7 +37,7 @@ describe('ApplicationService', () => {
       providers: [
         ApplicationService,
         { provide: TenantPrismaService, useValue: tenantPrisma },
-        { provide: PrismaService, useValue: {} },
+        { provide: PrismaService, useValue: mockPrisma },
         { provide: ConfigService, useValue: { get: () => 5 } },
       ],
     }).compile();
@@ -49,7 +55,7 @@ describe('ApplicationService', () => {
   };
 
   it('应成功创建应用', async () => {
-    mockTx.developer.findUnique.mockResolvedValue({ id: 'dev1', maxApps: 5 });
+    mockPrisma.developer.findUnique.mockResolvedValue({ id: 'dev1', maxApps: 5 });
     mockTx.application.count.mockResolvedValue(0);
     mockTx.application.create.mockResolvedValue({ ...fullApp, appSecret: 'a'.repeat(32) });
     const result = await service.create('dev1', { name: 'Test', packageName: 'com.test' });
