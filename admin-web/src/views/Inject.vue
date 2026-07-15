@@ -104,14 +104,13 @@ function formatSize(bytes: number) {
     <NCard title="APK 注入">
       <NSpace vertical>
         <NAlert type="info" title="注入说明">
-          上传 APK + keystore,服务器自动注入 SDK 初始化代码 + 水印 + 重签名。
-          注入后的 APK 5 分钟后自动删除,请及时下载。
-          <template #default>
-            <NText depth="3" style="font-size: 13px; display: block; margin-top: 4px">
-              ⚠️ 仅限注入开发者自有著作权的 APK。禁止注入他人 APK(详见
-              <a href="/docs/compliance/user-agreement.md" target="_blank">用户协议</a>)
-            </NText>
-          </template>
+          <NText style="display: block; margin-bottom: 4px">
+            上传 APK + keystore,服务器自动注入 SDK 初始化代码 + 水印 + 重签名。注入后的 APK 5 分钟后自动删除,请及时下载。
+          </NText>
+          <NText depth="3" style="font-size: 13px; display: block; margin-top: 4px">
+            ⚠️ 仅限注入开发者自有著作权的 APK。禁止注入他人 APK(详见
+            <a href="/docs/compliance/user-agreement.md" target="_blank">用户协议</a>)
+          </NText>
         </NAlert>
 
         <NForm label-placement="left" :label-width="140">
@@ -181,12 +180,12 @@ function formatSize(bytes: number) {
         </NSpace>
 
         <NAlert type="success" title="注入成功">
-          水印 ID:{{ result.watermarkId }}
-          <template #default>
-            <NText depth="3" style="font-size: 13px; display: block; margin-top: 4px">
-              下载令牌 5 分钟内有效,过期需重新注入
-            </NText>
-          </template>
+          <NText style="display: block; margin-bottom: 4px">
+            水印 ID:{{ result.watermarkId }}
+          </NText>
+          <NText depth="3" style="font-size: 13px; display: block; margin-top: 4px">
+            下载令牌 5 分钟内有效,过期需重新注入
+          </NText>
         </NAlert>
 
         <NButton type="primary" size="large" @click="handleDownload">
