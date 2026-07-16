@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { RedisService } from '../redis/redis.service';
 import { CryptoService } from '../crypto/crypto.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -38,11 +39,15 @@ export class HandshakeService {
    * @returns sessionId
    */
   async handshake(encryptedKeyBase64: string, appId: string): Promise<{ sessionId: string }> {
-    // SDK 入口:无 JWT,无 tenant_id,临时 SET ROLE xcj_admin(BYPASSRLS)查 application
+    // SDK 入口:无 JWT,无 tenant_id,临时 SET ROLE <db_user>(BYPASSRLS)查 application
     // 安全性靠 appId + RSA 加密(只有合法 SDK 客户端能构造正确请求)
     // SET LOCAL ROLE 只在当前事务内有效,事务结束后自动 RESET
+    // role 名从 DATABASE_URL 解析,不硬编码(避免 POSTGRES_USER 变更时失效)
+    const dbUser = this.extractDbUser();
     const app = await this.prisma.$transaction(async (tx) => {
-      await tx.$executeRaw`SET LOCAL ROLE xcj_admin`;
+      // SET ROLE 不支持参数化绑定,用 Prisma.raw 做标识符注入
+      // dbUser 从 DATABASE_URL 解析,非用户输入,安全
+      await tx.$executeRaw`SET LOCAL ROLE ${Prisma.raw(dbUser)}`;
       return tx.application.findUnique({
         where: { id: appId },
         select: { id: true, developerId: true },
@@ -165,5 +170,30 @@ export class HandshakeService {
     }
 
     return { expiresAt: new Date(now + this.SESSION_TTL * 1000) };
+  }
+
+  /**
+   * 从 DATABASE_URL 解析用户名(用于 SET LOCAL ROLE)
+   * DATABASE_URL 格式:postgresql://user:password@host:port/db?schema=public
+   * 返回值只含 URL 解析出的 user 部分,非用户输入,安全用于 Prisma.raw
+   */
+  private extractDbUser(): string {
+    const dbUrl = process.env.DATABASE_URL ?? '';
+    // 用 URL 构造器解析,提取 username
+    //postgresql://user:pass@host:port/db -> new URL().username = 'user'
+    try {
+      const url = new URL(dbUrl);
+      const user = url.username;
+      if (!user) {
+        throw new Error('DATABASE_URL 中未找到用户名');
+      }
+      // 额外校验:只允许字母数字下划线(防注入)
+      if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(user)) {
+        throw new Error(`DATABASE_URL 用户名含非法字符: ${user}`);
+      }
+      return user;
+    } catch (e) {
+      throw new Error(`解析 DATABASE_URL 失败: ${(e as Error).message}`);
+    }
   }
 }
