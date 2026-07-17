@@ -2,12 +2,11 @@
 
 > 开源 + SaaS 双模式的 Android 卡密验证系统,保障创作者权益,杜绝付费应用盗版。
 
-> ⚠️ **v2 重构公告(2026-07-15)**
-> 小城笺正在进行 v2 精准补齐重构,预计 3-4 周完成。
-> 期间 SaaS 服务暂停,试用开发者请等待恢复。
-> 开源版自部署不受影响,可继续使用 v1-final tag 的代码。
-> 重构内容:后端补齐 change-password/profile + admin-web 接通 + injector-android 改为合规路径(移除 APK 重打包能力,改为引导开发者主动集成 SDK)。
-> 重构完成后会发布 v2.0.0 tag,届时恢复 SaaS 服务。
+> ✅ **v2 已上线(2026-07-17)**
+> 小城笺 v2 重构完成,SaaS 服务已恢复。
+> 访问地址:https://xcj.winmelon.cn
+> v2 改动:HTTPS + 域名 / 后端补齐 change-password/profile + /metrics 端点 / SDK 模块测试覆盖率 98% / injector CLI 改为打包辅助工具(移除 dex 注入路径)/ injector-android 改为合规路径(引导开发者主动集成 SDK)。
+> 旧版本代码保留在 `v1-final` tag。
 
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Backend](https://img.shields.io/badge/backend-NestJS-red.svg)](backend/)
