@@ -50,7 +50,10 @@ async function bootstrap() {
 
   // API 前缀
   app.setGlobalPrefix('v1', {
-    exclude: [{ path: 'health', method: 0 }],
+    exclude: [
+      { path: 'health', method: 0 },
+      { path: 'metrics', method: 0 },
+    ],
   });
 
   // Swagger(仅非生产)
