@@ -12,7 +12,7 @@ const auth = useAuthStore();
 const menuOptions = computed<MenuOption[]>(() => [
   { label: '概览', key: 'dashboard' },
   { label: '应用管理', key: 'apps' },
-  { label: 'APK 注入', key: 'inject' },
+  { label: 'SDK 集成指南', key: 'sdk-guide' },
   { label: '设置', key: 'settings' },
 ]);
 
@@ -55,7 +55,7 @@ const activeKey = computed(() => {
       </NLayoutHeader>
       <NLayoutContent class="content" content-style="padding: 24px;">
         <RouterView v-slot="{ Component }">
-          <KeepAlive :include="['InjectView']">
+          <KeepAlive>
             <component :is="Component" />
           </KeepAlive>
         </RouterView>

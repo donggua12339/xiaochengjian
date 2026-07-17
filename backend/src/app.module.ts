@@ -18,7 +18,6 @@ import { RateLimitModule } from './rate-limit/rate-limit.module';
 import { AuditModule } from './audit/audit.module';
 import { AuditInterceptor } from './audit/audit.interceptor';
 import { MembershipModule } from './membership/membership.module';
-import { InjectModule } from './inject/inject.module';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { appConfig, validate } from './config/configuration';
 
@@ -44,7 +43,6 @@ import { appConfig, validate } from './config/configuration';
     RateLimitModule,
     AuditModule,
     MembershipModule,
-    InjectModule,
   ],
   providers: [
     {
