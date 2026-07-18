@@ -1,4 +1,4 @@
-//! 通信加密模块(M2.4 实现)
+//! 通信加密模块
 //!
 //! 详见 ADR 0020 (HTTPS + RSA + AES-256-GCM) / 0021 (HMAC 签名 + nonce + 时间戳)
 //!
@@ -11,9 +11,42 @@
 use aes_gcm::aead::{Aead, KeyInit};
 use aes_gcm::{Aes256Gcm, Nonce};
 use hmac::{Hmac, Mac};
+use rand::RngCore;
+use rsa::{Oaep, RsaPublicKey};
+use rsa::pkcs8::DecodePublicKey;
 use sha2::{Digest, Sha256};
 
 type HmacSha256 = Hmac<Sha256>;
+
+/// RSA 公钥加密(用于 handshake 加密临时 AES 密钥)
+///
+/// 使用 RSA-OAEP + SHA-256(与后端 CryptoService.rsaDecrypt 对应)
+///
+/// # 参数
+/// - `public_key_pem`: PEM 格式的 RSA 公钥
+/// - `plaintext`: 待加密数据(通常是 32 字节 AES 密钥)
+pub fn rsa_encrypt(public_key_pem: &str, plaintext: &[u8]) -> Result<Vec<u8>, &'static str> {
+    let public_key = RsaPublicKey::from_public_key_pem(public_key_pem)
+        .map_err(|_| "INVALID_PUBLIC_KEY")?;
+    let padding = Oaep::new::<Sha256>();
+    public_key
+        .encrypt(&mut rand::thread_rng(), padding, plaintext)
+        .map_err(|_| "RSA_ENCRYPT_FAILED")
+}
+
+/// 生成 32 字节随机 AES 密钥(用于 handshake 临时密钥)
+pub fn generate_aes_key() -> [u8; 32] {
+    let mut key = [0u8; 32];
+    rand::thread_rng().fill_bytes(&mut key);
+    key
+}
+
+/// 生成随机 nonce(16 字节十六进制,用于请求签名防重放)
+pub fn generate_nonce() -> String {
+    let mut bytes = [0u8; 16];
+    rand::thread_rng().fill_bytes(&mut bytes);
+    hex::encode(bytes)
+}
 
 /// AES-256-GCM 加密
 ///
@@ -121,5 +154,111 @@ mod tests {
             hash,
             "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
         );
+    }
+
+    #[test]
+    fn test_rsa_encrypt_with_generated_key() {
+        use rsa::pkcs8::EncodePublicKey;
+        // 生成 RSA 密钥对(测试用,2048 位)
+        let mut rng = rand::thread_rng();
+        let private_key = rsa::RsaPrivateKey::new(&mut rng, 2048).unwrap();
+        let public_key_pem = private_key
+            .to_public_key()
+            .to_public_key_pem(rsa::pkcs8::LineEnding::LF)
+            .unwrap();
+
+        let plaintext = b"test-aes-key-32-bytes-1234567890ab";
+        let encrypted = rsa_encrypt(&public_key_pem, plaintext).unwrap();
+        // 密文长度应等于 256 字节(2048 位 RSA)
+        assert_eq!(encrypted.len(), 256);
+
+        // 用私钥解密,应还原原文
+        let padding = Oaep::new::<Sha256>();
+        let decrypted = private_key.decrypt(padding, &encrypted).unwrap();
+        assert_eq!(decrypted, plaintext);
+    }
+
+    #[test]
+    fn test_rsa_encrypt_invalid_pem() {
+        let result = rsa_encrypt("not-a-valid-pem", b"data");
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "INVALID_PUBLIC_KEY");
+    }
+
+    #[test]
+    fn test_generate_aes_key_is_32_bytes() {
+        let key = generate_aes_key();
+        assert_eq!(key.len(), 32);
+    }
+
+    #[test]
+    fn test_generate_aes_key_is_random() {
+        let key1 = generate_aes_key();
+        let key2 = generate_aes_key();
+        assert_ne!(key1, key2);
+    }
+
+    #[test]
+    fn test_generate_nonce_format() {
+        let nonce = generate_nonce();
+        // 16 字节十六进制 = 32 字符
+        assert_eq!(nonce.len(), 32);
+        assert!(nonce.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn test_generate_nonce_is_random() {
+        let n1 = generate_nonce();
+        let n2 = generate_nonce();
+        assert_ne!(n1, n2);
+    }
+
+    #[test]
+    fn test_aes_decrypt_invalid_length() {
+        let key = [0xab; 32];
+        // 少于 12 + 16 = 28 字节
+        let result = aes_decrypt(&key, b"too-short");
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "INVALID_COMBINED_LENGTH");
+    }
+
+    #[test]
+    fn test_aes_encrypt_produces_correct_layout() {
+        let key = [0xab; 32];
+        let plaintext = b"hello";
+        let encrypted = aes_encrypt(&key, plaintext).unwrap();
+        // iv(12) + ciphertext(plaintext.len()) + tag(16)
+        assert_eq!(encrypted.len(), 12 + plaintext.len() + 16);
+    }
+
+    #[test]
+    fn test_hmac_verify_invalid_signature_format() {
+        let key = b"secret";
+        // 非十六进制签名应返回 false
+        assert!(!hmac_verify(key, "msg", "not-hex!"));
+    }
+
+    #[test]
+    fn test_hmac_verify_wrong_key() {
+        let key = b"secret";
+        let sig = hmac_sign(key, "message");
+        assert!(!hmac_verify(b"wrong-key", "message", &sig));
+    }
+
+    #[test]
+    fn test_sha256_empty_string() {
+        let hash = sha256_hex("");
+        // SHA-256("") = e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+        assert_eq!(
+            hash,
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        );
+    }
+
+    #[test]
+    fn test_sha256_long_input() {
+        let input = "a".repeat(1000);
+        let hash = sha256_hex(&input);
+        assert_eq!(hash.len(), 64);
     }
 }
