@@ -3,6 +3,7 @@ package com.xcj.sdk
 import android.content.Context
 import android.os.Build
 import android.provider.Settings
+import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -47,7 +48,8 @@ class XiaochengjianSDK(
 
     init {
         val code = native.init(config.appId, config.appSecret, config.serverUrl)
-        require(code == 0) { "SDK init failed: code=$code (0=ok, -1=already inited, -2=internal)" }
+        // 0=成功 / -1=已初始化(幂等,视为成功)/ -2=内部错误
+        require(code == 0 || code == -1) { "SDK init failed: code=$code (-2=internal error)" }
     }
 
     // ============= 公开 API =============
@@ -108,9 +110,11 @@ class XiaochengjianSDK(
                 offlineCacheDays = response.optInt("offlineCacheDays", config.offlineCacheDays),
             )
         } catch (e: SdkException) {
+            Log.e(TAG, "activate SdkException: ${e.code} - ${e.message}")
             ActivationResult(success = false, reason = e.code)
         } catch (e: Exception) {
-            ActivationResult(success = false, reason = "NETWORK_ERROR")
+            Log.e(TAG, "activate Exception", e)
+            ActivationResult(success = false, reason = "NETWORK_ERROR: ${e.message}")
         }
     }
 
@@ -388,6 +392,7 @@ class XiaochengjianSDK(
     }
 
     companion object {
+        private const val TAG = "XcjSDK"
         private const val PREFS_NAME = "xcj_sdk_cache"
         private val JSON_MEDIA_TYPE = "application/json".toMediaType()
     }

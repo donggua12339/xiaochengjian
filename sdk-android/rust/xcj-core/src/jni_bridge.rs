@@ -279,7 +279,7 @@ pub extern "system" fn Java_com_xcj_sdk_XcjNative_signRequest(
 ///
 /// # 参数
 /// - `public_key_pem`: PEM 格式 RSA 公钥
-/// - `plaintext`: 待加密数据(通常是 32 字节 AES 密钥)
+/// - `plaintext_hex`: 待加密数据的十六进制字符串(通常是 64 字符 AES 密钥 hex)
 ///
 /// # 返回
 /// Base64 编码的密文,失败返回 null
@@ -288,12 +288,17 @@ pub extern "system" fn Java_com_xcj_sdk_XcjNative_rsaEncrypt(
     mut env: JNIEnv,
     _class: JClass,
     public_key_pem: JString,
-    plaintext: JString,
+    plaintext_hex: JString,
 ) -> jstring {
     let public_key_pem: String = env.get_string(&public_key_pem).map(|s| s.into()).unwrap_or_default();
-    let plaintext: String = env.get_string(&plaintext).map(|s| s.into()).unwrap_or_default();
+    let plaintext_hex: String = env.get_string(&plaintext_hex).map(|s| s.into()).unwrap_or_default();
 
-    match crypto::rsa_encrypt(&public_key_pem, plaintext.as_bytes()) {
+    // hex 字符串解码成字节(64 字符 hex -> 32 字节)
+    let Ok(plaintext_bytes) = hex::decode(&plaintext_hex) else {
+        return std::ptr::null_mut();
+    };
+
+    match crypto::rsa_encrypt(&public_key_pem, &plaintext_bytes) {
         Ok(encrypted) => {
             use base64::Engine;
             let encoded = base64::engine::general_purpose::STANDARD.encode(&encrypted);

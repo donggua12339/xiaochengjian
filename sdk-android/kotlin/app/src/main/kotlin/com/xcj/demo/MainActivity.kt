@@ -1,6 +1,7 @@
 package com.xcj.demo
 
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
@@ -44,17 +45,23 @@ fun DemoScreen() {
     val context = androidx.compose.ui.platform.LocalContext.current
     val scope = rememberCoroutineScope()
 
-    // SDK 配置(联调时填入真实值)
+    // SDK 配置(已填入真实值,用于端到端联调)
     val sdk = remember {
         XiaochengjianSDK(
             context,
             SdkConfig(
-                appId = "your-app-id",
-                appSecret = "your-app-secret",
+                appId = "f960c304-f61d-4f1f-b297-3f48fcc90b35",
+                appSecret = "w7Vnw74on2rPEKATG80Cc6fW1mx35i8r",
                 serverUrl = "https://xcj.winmelon.cn",
                 serverPublicKeyPem = """
                     -----BEGIN PUBLIC KEY-----
-                    YOUR_SERVER_RSA_PUBLIC_KEY_HERE
+                    MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA1Y2vNIf/mVb1JkYlStFa
+                    hYIn/LA81mMGCW2anFRA8oJhmw0G3B1K1IMNrHXPmfUx2CHJyEGxWYNTZVBsU1f2
+                    M1NZBLjsJ35jfihDs9OpPOvi6a6C+i6rv8v5djOvStCBK2ezO6TY4hE3mq1VAsWJ
+                    THtsdCYKYP1JahXrIcQCdgb4fmZ8qak1b6jMcqwY0Bmy1juU5YS9ZOoHbd+uIKQE
+                    Q/3fBXwRu2tRzgzk4c8DVPgRSo2knQ9qN0PTx3FIUWIvG9qOMPPmWgjVY9jRdLBg
+                    GhTZVZI0lsmlWaVvLFMpmDpCexQUMWp0Us5cbdHDYCsvGqcklVlhz6QT4dqcnMMV
+                    JQIDAQAB
                     -----END PUBLIC KEY-----
                 """.trimIndent(),
             ),
@@ -106,7 +113,9 @@ fun DemoScreen() {
         Button(
             onClick = {
                 scope.launch {
+                    Log.i("XcjDemo", "激活按钮点击,cardKey=$cardKey")
                     val r = sdk.activate(cardKey)
+                    Log.i("XcjDemo", "激活结果:success=${r.success},reason=${r.reason},cardType=${r.cardType},expiresAt=${r.expiresAt}")
                     result = if (r.success) {
                         "✓ 激活成功\n类型: ${r.cardType}\n过期: ${r.expiresAt}\n缓存天数: ${r.offlineCacheDays}"
                     } else {
