@@ -59,3 +59,4 @@ playwright-report/
 .cache/
 .turbo/
 .eslintcache
+*.png

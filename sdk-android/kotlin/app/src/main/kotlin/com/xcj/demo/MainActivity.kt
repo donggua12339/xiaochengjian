@@ -9,6 +9,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.xcj.sdk.SdkConfig
@@ -68,9 +69,32 @@ fun DemoScreen() {
         )
     }
 
-    var cardKey by remember { mutableStateOf("") }
+    var cardKey by remember { mutableStateOf("9EXH-7MP3-BXD9-4CX3") }
     var machineId by remember { mutableStateOf("") }
     var result by remember { mutableStateOf("") }
+
+    // 启动时自动测试完整流程
+    LaunchedEffect(Unit) {
+        Log.i("XcjDemo", "=== 自动测试开始 ===")
+        // 1. 生成机器码
+        machineId = sdk.generateMachineId()
+        Log.i("XcjDemo", "机器码: $machineId")
+        // 2. 格式校验
+        val formatOk = sdk.validateCardKeyFormat(cardKey)
+        Log.i("XcjDemo", "卡密格式校验: $formatOk")
+        // 3. 激活
+        val activateResult = sdk.activate(cardKey)
+        Log.i("XcjDemo", "激活结果: success=${activateResult.success}, cardType=${activateResult.cardType}, expiresAt=${activateResult.expiresAt}, reason=${activateResult.reason}")
+        // 4. 验证
+        val validateResult = sdk.validate(cardKey)
+        Log.i("XcjDemo", "验证结果: success=${validateResult.success}, valid=${validateResult.valid}, expiresAt=${validateResult.expiresAt}, reason=${validateResult.reason}, cached=${validateResult.cached}")
+        result = if (activateResult.success) {
+            "✓ 激活成功\n类型: ${activateResult.cardType}\n过期: ${activateResult.expiresAt}"
+        } else {
+            "✗ 激活失败: ${activateResult.reason}"
+        }
+        Log.i("XcjDemo", "=== 自动测试结束 ===")
+    }
 
     Column(
         modifier = Modifier
