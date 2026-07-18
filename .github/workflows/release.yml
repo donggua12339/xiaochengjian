@@ -46,7 +46,7 @@ jobs:
         id: setup_ndk
         with:
           ndk-version: r27
-          add-to-path: false
+          add-to-path: true
       - uses: android-actions/setup-android@v3
       - uses: gradle/actions/setup-gradle@v4
       - name: Build Rust .so(3 ABI)
