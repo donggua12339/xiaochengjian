@@ -53,7 +53,11 @@ jobs:
         working-directory: sdk-android/rust
         env:
           ANDROID_NDK_HOME: ${{ steps.setup_ndk.outputs.ndk-path }}
+          ANDROID_NDK_BIN: ${{ steps.setup_ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin
         run: |
+          echo "NDK bin: $ANDROID_NDK_BIN"
+          ls "$ANDROID_NDK_BIN" | grep aarch64 | head -5
+          export PATH="$ANDROID_NDK_BIN:$PATH"
           cargo build --target aarch64-linux-android --release
           cargo build --target armv7-linux-androideabi --release
           cargo build --target x86_64-linux-android --release
