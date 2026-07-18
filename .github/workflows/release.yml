@@ -69,7 +69,9 @@ jobs:
           cp sdk-android/rust/target/x86_64-linux-android/release/libxcj_core.so sdk-android/kotlin/xcj-sdk/src/main/jniLibs/x86_64/
       - name: Build AAR
         working-directory: sdk-android/kotlin
-        run: ./gradlew :xcj-sdk:assembleRelease
+        run: |
+          chmod +x ./gradlew
+          ./gradlew :xcj-sdk:assembleRelease
       - uses: actions/upload-artifact@v4
         with:
           name: xcj-sdk-aar
