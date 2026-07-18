@@ -330,6 +330,110 @@ pub extern "system" fn Java_com_xcj_sdk_XcjNative_generateNonce(
     env.new_string(nonce).map(|s| s.into_raw()).unwrap_or(std::ptr::null_mut())
 }
 
+// ============= 可选 opaque-jni feature =============
+//
+// 启用方式:cargo build --features opaque-jni
+// 效果:额外导出 native01-08 非语义化命名,符号表里看不到 init/activate 等语义
+//
+// 注:语义化命名仍保留(default),opaque-jni 只是"额外"导出非语义化别名
+// 开发者集成时 Kotlin 侧调 System.loadLibrary 后用 native01-08 声明
+
+#[cfg(feature = "opaque-jni")]
+mod opaque {
+    use super::*;
+
+    /// native01 = init
+    #[no_mangle]
+    pub extern "system" fn Java_com_xcj_sdk_XcjNative_native01(
+        env: JNIEnv,
+        class: JClass,
+        app_id: JString,
+        app_secret: JString,
+        server_url: JString,
+    ) -> jint {
+        Java_com_xcj_sdk_XcjNative_init(env, class, app_id, app_secret, server_url)
+    }
+
+    /// native02 = generateMachineId
+    #[no_mangle]
+    pub extern "system" fn Java_com_xcj_sdk_XcjNative_native02(
+        env: JNIEnv,
+        class: JClass,
+        android_id: JString,
+        media_drm_id: JString,
+        hardware_fingerprint: JString,
+    ) -> jstring {
+        Java_com_xcj_sdk_XcjNative_generateMachineId(env, class, android_id, media_drm_id, hardware_fingerprint)
+    }
+
+    /// native03 = validateCardKey
+    #[no_mangle]
+    pub extern "system" fn Java_com_xcj_sdk_XcjNative_native03(
+        env: JNIEnv,
+        class: JClass,
+        card_key: JString,
+    ) -> jint {
+        Java_com_xcj_sdk_XcjNative_validateCardKey(env, class, card_key)
+    }
+
+    /// native04 = encryptCache
+    #[no_mangle]
+    pub extern "system" fn Java_com_xcj_sdk_XcjNative_native04(
+        env: JNIEnv,
+        class: JClass,
+        cache_key: JString,
+        device_fingerprint: JString,
+        plaintext: JString,
+    ) -> jstring {
+        Java_com_xcj_sdk_XcjNative_encryptCache(env, class, cache_key, device_fingerprint, plaintext)
+    }
+
+    /// native05 = decryptCache
+    #[no_mangle]
+    pub extern "system" fn Java_com_xcj_sdk_XcjNative_native05(
+        env: JNIEnv,
+        class: JClass,
+        cache_key: JString,
+        device_fingerprint: JString,
+        encoded: JString,
+    ) -> jstring {
+        Java_com_xcj_sdk_XcjNative_decryptCache(env, class, cache_key, device_fingerprint, encoded)
+    }
+
+    /// native06 = encryptRequest
+    #[no_mangle]
+    pub extern "system" fn Java_com_xcj_sdk_XcjNative_native06(
+        env: JNIEnv,
+        class: JClass,
+        aes_key_hex: JString,
+        plaintext: JString,
+    ) -> jstring {
+        Java_com_xcj_sdk_XcjNative_encryptRequest(env, class, aes_key_hex, plaintext)
+    }
+
+    /// native07 = decryptResponse
+    #[no_mangle]
+    pub extern "system" fn Java_com_xcj_sdk_XcjNative_native07(
+        env: JNIEnv,
+        class: JClass,
+        aes_key_hex: JString,
+        encoded: JString,
+    ) -> jstring {
+        Java_com_xcj_sdk_XcjNative_decryptResponse(env, class, aes_key_hex, encoded)
+    }
+
+    /// native08 = signRequest
+    #[no_mangle]
+    pub extern "system" fn Java_com_xcj_sdk_XcjNative_native08(
+        env: JNIEnv,
+        class: JClass,
+        aes_key_hex: JString,
+        message: JString,
+    ) -> jstring {
+        Java_com_xcj_sdk_XcjNative_signRequest(env, class, aes_key_hex, message)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
