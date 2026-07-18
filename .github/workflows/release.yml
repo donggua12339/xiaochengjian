@@ -6,9 +6,10 @@ on:
       - 'v*'
 
 jobs:
-  # ============= 后端 Docker 镜像 =============
+  # ============= 后端 Docker 镜像(可选,需配 Docker Hub 密钥)=============
   backend-image:
     runs-on: ubuntu-latest
+    if: ${{ vars.ENABLE_DOCKER_PUSH == 'true' }}
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
@@ -39,11 +40,19 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
+          target: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
+      - name: Setup Android NDK
+        uses: nttld/setup-ndk@v1
+        id: setup_ndk
+        with:
+          ndk-version: r27
+          add-to-path: false
       - uses: android-actions/setup-android@v3
       - uses: gradle/actions/setup-gradle@v4
       - name: Build Rust .so(3 ABI)
         working-directory: sdk-android/rust
+        env:
+          ANDROID_NDK_HOME: ${{ steps.setup_ndk.outputs.ndk-path }}
         run: |
           cargo build --target aarch64-linux-android --release
           cargo build --target armv7-linux-androideabi --release
@@ -74,7 +83,9 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: Build fat jar
         working-directory: injector
-        run: ./gradlew jar
+        run: |
+          chmod +x ./gradlew
+          ./gradlew jar
       - uses: actions/upload-artifact@v4
         with:
           name: xcj-injector
@@ -82,8 +93,10 @@ jobs:
 
   # ============= GitHub Release =============
   github-release:
-    needs: [backend-image, sdk-release, injector-release]
+    # backend-image 是可选 job(无 Docker Hub 密钥时跳过),不阻塞 release
+    needs: [sdk-release, injector-release]
     runs-on: ubuntu-latest
+    if: always() && !cancelled()
     permissions:
       contents: write
     steps:
