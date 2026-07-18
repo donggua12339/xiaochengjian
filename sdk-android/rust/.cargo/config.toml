@@ -1,16 +1,24 @@
 # Android NDK linker 配置
-# NDK 路径: $ANDROID_SDK/ndk/27.0.12077973/toolchains/llvm/prebuilt/windows-x86_64/bin/
-# minSdkVersion = 24,所以用 *24-clang.cmd
+#
+# 不硬编码 NDK 路径,依赖 PATH 里的 clang linker。
+# 本地开发:NDK 的 bin 目录加入 PATH,或设置 ANDROID_NDK_HOME 环境变量。
+# CI:setup-ndk action 会把 NDK 加入 PATH。
+#
+# linker 名(NDK 工具链命名):
+#   aarch64-linux-android24-clang       (arm64, minSdk 24)
+#   armv7a-linux-androideabi24-clang    (arm32, minSdk 24)
+#   x86_64-linux-android24-clang        (x64, minSdk 24)
+#
+# 注:Windows 上实际是 .cmd 后缀,cargo 会自动尝试 .cmd / .exe / 无后缀。
 
 [target.aarch64-linux-android]
-linker = "C:/Users/Admini/AppData/Local/Android/Sdk/ndk/27.0.12077973/toolchains/llvm/prebuilt/windows-x86_64/bin/aarch64-linux-android24-clang.cmd"
+linker = "aarch64-linux-android24-clang"
 
 [target.armv7-linux-androideabi]
-linker = "C:/Users/Admini/AppData/Local/Android/Sdk/ndk/27.0.12077973/toolchains/llvm/prebuilt/windows-x86_64/bin/armv7a-linux-androideabi24-clang.cmd"
+linker = "armv7a-linux-androideabi24-clang"
 
 [target.x86_64-linux-android]
-linker = "C:/Users/Admini/AppData/Local/Android/Sdk/ndk/27.0.12077973/toolchains/llvm/prebuilt/windows-x86_64/bin/x86_64-linux-android24-clang.cmd"
+linker = "x86_64-linux-android24-clang"
 
-# 构建时优化:不检查 Android SDK 版本
 [env]
 CARGO_TERM_COLOR = "always"
