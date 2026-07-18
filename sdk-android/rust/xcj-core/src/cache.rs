@@ -123,4 +123,77 @@ mod tests {
         let k2 = derive_cache_key("key", "fp");
         assert_eq!(k1, k2);
     }
+
+    #[test]
+    fn test_derive_key_different_inputs() {
+        let k1 = derive_cache_key("key1", "fp");
+        let k2 = derive_cache_key("key2", "fp");
+        let k3 = derive_cache_key("key", "fp1");
+        assert_ne!(k1, k2);
+        assert_ne!(k1, k3);
+    }
+
+    #[test]
+    fn test_decrypt_invalid_base64() {
+        let result = decrypt_cache("key", "fp", "!!!not-valid-base64!!!");
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "BASE64_DECODE_FAILED");
+    }
+
+    #[test]
+    fn test_decrypt_too_short() {
+        // < 64 字节 -> INVALID_CACHE_FORMAT
+        let short = base64::engine::general_purpose::STANDARD.encode(b"short");
+        let result = decrypt_cache("key", "fp", &short);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "INVALID_CACHE_FORMAT");
+    }
+
+    #[test]
+    fn test_decrypt_hmac_mismatch() {
+        // 用 key1 加密,用 key2 解密 -> HMAC 不匹配
+        let encrypted = encrypt_cache("key1", "fp", "test").unwrap();
+        let result = decrypt_cache("key2", "fp", &encrypted);
+        assert!(result.is_err());
+        // HMAC 验证失败(因为派生密钥不同)
+        assert!(matches!(result.unwrap_err(), "HMAC_VERIFICATION_FAILED" | "AES_DECRYPT_FAILED"));
+    }
+
+    #[test]
+    fn test_decrypt_corrupted_ciphertext() {
+        let encrypted = encrypt_cache("key", "fp", "test").unwrap();
+        // 翻转中间字节(保留 HMAC 但破坏密文)
+        let mut bytes = base64::engine::general_purpose::STANDARD
+            .decode(&encrypted)
+            .unwrap();
+        let mid = bytes.len() / 2;
+        bytes[mid] ^= 0xff;
+        let corrupted = base64::engine::general_purpose::STANDARD.encode(&bytes);
+        let result = decrypt_cache("key", "fp", &corrupted);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_empty_plaintext() {
+        let encrypted = encrypt_cache("key", "fp", "").unwrap();
+        let decrypted = decrypt_cache("key", "fp", &encrypted).unwrap();
+        assert_eq!(decrypted, "");
+    }
+
+    #[test]
+    fn test_large_plaintext() {
+        // 模拟真实缓存(卡密 + 设备 + 有效期 + 时间戳)
+        let plaintext = r#"{"cardKeyHash":"abc123","deviceId":"dev-1","expiresAt":"2026-12-31T23:59:59Z","lastValidated":"2026-07-17T12:00:00Z","cacheVersion":2}"#;
+        let encrypted = encrypt_cache("cache-key-xyz", "fingerprint-abc", plaintext).unwrap();
+        let decrypted = decrypt_cache("cache-key-xyz", "fingerprint-abc", &encrypted).unwrap();
+        assert_eq!(decrypted, plaintext);
+    }
+
+    #[test]
+    fn test_unicode_plaintext() {
+        let plaintext = "{\"remark\":\"测试卡密-中文-ÖÜğışç\"";
+        let encrypted = encrypt_cache("key", "fp", plaintext).unwrap();
+        let decrypted = decrypt_cache("key", "fp", &encrypted).unwrap();
+        assert_eq!(decrypted, plaintext);
+    }
 }

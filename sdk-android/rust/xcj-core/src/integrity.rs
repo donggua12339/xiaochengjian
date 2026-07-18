@@ -61,4 +61,82 @@ mod tests {
         // 空白名单总是拒绝
         assert!(!verify_apk_signature("nonexistent.apk", &[]));
     }
+
+    #[test]
+    fn test_compute_apk_signature_nonexistent_file() {
+        // 不存在的文件返回 None
+        assert!(compute_apk_signature_hash("nonexistent.apk").is_none());
+    }
+
+    #[test]
+    fn test_verify_apk_signature_nonexistent_file() {
+        // 文件不存在 + 非空白名单 -> false
+        assert!(!verify_apk_signature("nonexistent.apk", &["hash1".to_string()]));
+    }
+
+    #[test]
+    fn test_sha256_known_value_test() {
+        // sha256("hello") = 2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824
+        let hash = sha256(b"hello");
+        assert_eq!(
+            hash,
+            "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+        );
+    }
+
+    #[test]
+    fn test_sha256_empty() {
+        // sha256("") = e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+        let hash = sha256(b"");
+        assert_eq!(
+            hash,
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        );
+    }
+
+    #[test]
+    fn test_sha256_case_insensitive_compare() {
+        // verify_apk_signature 用 eq_ignore_ascii_case,大小写不敏感
+        // 先计算一个真实文件的 hash,然后大小写变换对比
+        use std::io::Write;
+        let tmp = std::env::temp_dir().join("xcj_integrity_test.apk");
+        let mut f = std::fs::File::create(&tmp).unwrap();
+        f.write_all(b"fake apk content").unwrap();
+        drop(f);
+
+        let actual = compute_apk_signature_hash(tmp.to_str().unwrap()).unwrap();
+        // 白名单用大写
+        let allow_upper: Vec<String> = vec![actual.to_uppercase()];
+        assert!(verify_apk_signature(tmp.to_str().unwrap(), &allow_upper));
+
+        // 白名单用小写
+        let allow_lower: Vec<String> = vec![actual.to_lowercase()];
+        assert!(verify_apk_signature(tmp.to_str().unwrap(), &allow_lower));
+
+        // 白名单不包含实际 hash
+        let allow_wrong: Vec<String> = vec!["wronghash".to_string()];
+        assert!(!verify_apk_signature(tmp.to_str().unwrap(), &allow_wrong));
+
+        std::fs::remove_file(&tmp).ok();
+    }
+
+    #[test]
+    fn test_verify_apk_signature_multiple_hashes_in_list() {
+        // 白名单有多个 hash,任一匹配即通过
+        use std::io::Write;
+        let tmp = std::env::temp_dir().join("xcj_integrity_multi.apk");
+        let mut f = std::fs::File::create(&tmp).unwrap();
+        f.write_all(b"content").unwrap();
+        drop(f);
+
+        let actual = compute_apk_signature_hash(tmp.to_str().unwrap()).unwrap();
+        let allow: Vec<String> = vec![
+            "wrong1".to_string(),
+            actual.clone(),
+            "wrong2".to_string(),
+        ];
+        assert!(verify_apk_signature(tmp.to_str().unwrap(), &allow));
+
+        std::fs::remove_file(&tmp).ok();
+    }
 }

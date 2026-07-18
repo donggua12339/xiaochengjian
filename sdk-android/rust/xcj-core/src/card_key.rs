@@ -160,4 +160,101 @@ mod tests {
         );
         assert!(!validate_card_key(&tampered));
     }
+
+    #[test]
+    fn test_lowercase_normalized() {
+        // 小写应被转大写后通过
+        let prefix = b"23456789ABCDEFG";
+        let mut sum = 0usize;
+        let mut double = true;
+        for &c in prefix.iter().rev() {
+            let d = CARD_CHARSET.iter().position(|&x| x == c).unwrap();
+            let mut v = d;
+            if double {
+                v *= 2;
+                if v >= 32 { v -= 32; }
+            }
+            sum += v;
+            double = !double;
+        }
+        let check = (32 - (sum % 32)) % 32;
+        let check_char = CARD_CHARSET[check] as char;
+        let key = format!(
+            "{}{}{}{}-{}{}{}{}-{}{}{}{}-{}{}{}{}",
+            prefix[0] as char, prefix[1] as char, prefix[2] as char, prefix[3] as char,
+            prefix[4] as char, prefix[5] as char, prefix[6] as char, prefix[7] as char,
+            prefix[8] as char, prefix[9] as char, prefix[10] as char, prefix[11] as char,
+            prefix[12] as char, prefix[13] as char, prefix[14] as char, check_char,
+        );
+        assert!(validate_card_key(&key.to_lowercase()));
+    }
+
+    #[test]
+    fn test_whitespace_trimmed() {
+        let prefix = b"23456789ABCDEFG";
+        let mut sum = 0usize;
+        let mut double = true;
+        for &c in prefix.iter().rev() {
+            let d = CARD_CHARSET.iter().position(|&x| x == c).unwrap();
+            let mut v = d;
+            if double {
+                v *= 2;
+                if v >= 32 { v -= 32; }
+            }
+            sum += v;
+            double = !double;
+        }
+        let check = (32 - (sum % 32)) % 32;
+        let check_char = CARD_CHARSET[check] as char;
+        let key = format!(
+            "  {}{}{}{}-{}{}{}{}-{}{}{}{}-{}{}{}{}  ",
+            prefix[0] as char, prefix[1] as char, prefix[2] as char, prefix[3] as char,
+            prefix[4] as char, prefix[5] as char, prefix[6] as char, prefix[7] as char,
+            prefix[8] as char, prefix[9] as char, prefix[10] as char, prefix[11] as char,
+            prefix[12] as char, prefix[13] as char, prefix[14] as char, check_char,
+        );
+        assert!(validate_card_key(&key));
+    }
+
+    #[test]
+    fn test_empty_string() {
+        assert!(!validate_card_key(""));
+    }
+
+    #[test]
+    fn test_no_separator() {
+        // 无连字符的 16 字符也应通过
+        let prefix = b"23456789ABCDEFG";
+        let mut sum = 0usize;
+        let mut double = true;
+        for &c in prefix.iter().rev() {
+            let d = CARD_CHARSET.iter().position(|&x| x == c).unwrap();
+            let mut v = d;
+            if double {
+                v *= 2;
+                if v >= 32 { v -= 32; }
+            }
+            sum += v;
+            double = !double;
+        }
+        let check = (32 - (sum % 32)) % 32;
+        let check_char = CARD_CHARSET[check] as char;
+        let key: String = prefix.iter().map(|&b| b as char).collect::<String>() + &check_char.to_string();
+        assert!(validate_card_key(&key));
+    }
+
+    #[test]
+    fn test_too_long() {
+        // 17 字符应拒绝
+        assert!(!validate_card_key("23456789ABCDEFGHJ-X"));
+    }
+
+    #[test]
+    fn test_charset_completeness() {
+        // 32 字符,不含 0/O/1/I
+        assert_eq!(CARD_CHARSET.len(), 32);
+        for &c in CARD_CHARSET {
+            assert!(![b'0', b'O', b'1', b'I'].contains(&c));
+        }
+    }
 }
