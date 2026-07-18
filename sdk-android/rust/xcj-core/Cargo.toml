@@ -28,8 +28,17 @@ hex = "0.4"
 
 # 工具
 once_cell = "1"
-# 常量字符串混淆(防逆向)
-obfstr = "0.4"
+
+# 可选:字符串混淆(防逆向,默认关)
+# 启用方式:cargo build --features obfstr
+obfstr = { version = "0.4", optional = true }
+
+[features]
+default = []  # 默认透明模式,无反逆向设施
+# 字符串混淆(编译时加密 URL/密钥/错误码)
+obfstr = ["dep:obfstr"]
+# JNI 函数名非语义化(native01-08 替代语义化命名)
+opaque-jni = []
 
 [dev-dependencies]
 # 测试用

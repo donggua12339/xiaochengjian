@@ -1,32 +1,46 @@
 //! JNI 桥接模块
 //!
-//! 详见 ADR 0023 (Rust 核心设计:JNI 函数名非语义化)
+//! 详见 ADR 0023 (Rust 核心设计)
 //!
-//! 命名规则:`Java_com_xcj_sdk_XcjNative_nativeNN`(native01-native08)
-//! - 非语义化,提升逆向难度
-//! - 不用下划线(JNI 会把 _ 编码为 _1,导致名称不匹配)
+//! 命名规则(默认语义化,便于审计):
+//!  - `Java_com_xcj_sdk_XcjNative_init`
+//!  - `Java_com_xcj_sdk_XcjNative_activate`
+//!  - `Java_com_xcj_sdk_XcjNative_validate`
+//!  - `Java_com_xcj_sdk_XcjNative_heartbeat`
+//!  - `Java_com_xcj_sdk_XcjNative_generateMachineId`
+//!  - `Java_com_xcj_sdk_XcjNative_validateCardKey`
+//!  - `Java_com_xcj_sdk_XcjNative_encryptCache`
+//!  - `Java_com_xcj_sdk_XcjNative_decryptCache`
+//!
+//! 可选 feature `opaque-jni`:启用后改用 native01-08 非语义化命名
+//! 启用方式:cargo build --features opaque-jni
+//!
+//! 注:不用下划线(JNI 会把 _ 编码为 _1,导致名称不匹配)
 
 use jni::objects::{JClass, JString};
 use jni::sys::{jint, jstring};
 use jni::JNIEnv;
 
-use crate::{anti_debug, cache, card_key, machine_id};
+use crate::{cache, card_key, machine_id};
 
-/// native01: 初始化 SDK
+// ============= 语义化命名(默认) =============
+
+/// SDK 初始化(Day 5 实现)
 #[no_mangle]
-pub extern "system" fn Java_com_xcj_sdk_XcjNative_native01(
+pub extern "system" fn Java_com_xcj_sdk_XcjNative_init(
     _env: JNIEnv,
     _class: JClass,
     _app_id: JString,
     _app_secret: JString,
     _server_url: JString,
 ) -> jint {
+    // TODO Day 5:实现真实初始化(存全局状态)
     0
 }
 
-/// native02: 生成机器码
+/// 生成机器码
 #[no_mangle]
-pub extern "system" fn Java_com_xcj_sdk_XcjNative_native02(
+pub extern "system" fn Java_com_xcj_sdk_XcjNative_generateMachineId(
     mut env: JNIEnv,
     _class: JClass,
     android_id: JString,
@@ -51,9 +65,9 @@ pub extern "system" fn Java_com_xcj_sdk_XcjNative_native02(
         .unwrap_or(std::ptr::null_mut())
 }
 
-/// native03: 校验卡密格式(1=合法,0=非法)
+/// 校验卡密格式(1=合法,0=非法)
 #[no_mangle]
-pub extern "system" fn Java_com_xcj_sdk_XcjNative_native03(
+pub extern "system" fn Java_com_xcj_sdk_XcjNative_validateCardKey(
     mut env: JNIEnv,
     _class: JClass,
     card_key: JString,
@@ -62,23 +76,9 @@ pub extern "system" fn Java_com_xcj_sdk_XcjNative_native03(
     if card_key::validate_card_key(&card_key) { 1 } else { 0 }
 }
 
-/// native06: 反调试检测(0=Clean,1=Debug,2=Emulator)
+/// 加密离线缓存
 #[no_mangle]
-pub extern "system" fn Java_com_xcj_sdk_XcjNative_native06(
-    _env: JNIEnv,
-    _class: JClass,
-) -> jint {
-    let result = anti_debug::detect();
-    match result.level {
-        anti_debug::ThreatLevel::Clean => 0,
-        anti_debug::ThreatLevel::DebugDetected => 1,
-        anti_debug::ThreatLevel::EmulatorDetected => 2,
-    }
-}
-
-/// native08: 加密离线缓存
-#[no_mangle]
-pub extern "system" fn Java_com_xcj_sdk_XcjNative_native08(
+pub extern "system" fn Java_com_xcj_sdk_XcjNative_encryptCache(
     mut env: JNIEnv,
     _class: JClass,
     cache_key: JString,
@@ -94,3 +94,5 @@ pub extern "system" fn Java_com_xcj_sdk_XcjNative_native08(
         Err(_) => std::ptr::null_mut(),
     }
 }
+
+// TODO Day 5:实现 activate / validate / heartbeat / decryptCache

@@ -1,0 +1,109 @@
+name: SDK Build
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'sdk-android/**'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'sdk-android/**'
+  workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: sdk-android/rust
+
+jobs:
+  test:
+    name: Rust 单元测试(x86_64 Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            sdk-android/rust/target
+          key: ${{ runner.os }}-cargo-test-${{ hashFiles('sdk-android/rust/**/Cargo.lock') }}
+
+      - name: Run tests (default features)
+        run: cargo test --workspace
+
+      - name: Run tests (obfstr feature)
+        run: cargo test --workspace --features obfstr
+
+      - name: Run tests (opaque-jni feature)
+        run: cargo test --workspace --features opaque-jni
+
+      - name: Run tests (all features)
+        run: cargo test --workspace --all-features
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Format check
+        run: cargo fmt --check
+
+  build-android:
+    name: 交叉编译 Android so
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target:
+          - aarch64-linux-android
+          - armv7-linux-androideabi
+          - x86_64-linux-android
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Setup Android NDK
+        uses: nttld/setup-ndk@v1
+        id: setup_ndk
+        with:
+          ndk-version: r27
+          add-to-path: false
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            sdk-android/rust/target
+          key: ${{ runner.os }}-cargo-${{ matrix.target }}-${{ hashFiles('sdk-android/rust/**/Cargo.lock') }}
+
+      - name: Build so (default features)
+        env:
+          ANDROID_NDK_HOME: ${{ steps.setup_ndk.outputs.ndk-path }}
+        run: |
+          cargo build --release --target ${{ matrix.target }}
+          mkdir -p ../kotlin/xcj-sdk/src/main/jniLibs/${{ matrix.target == 'armv7-linux-androideabi' && 'armeabi-v7a' || matrix.target }}
+          cp target/${{ matrix.target }}/release/libxcj_core.so ../kotlin/xcj-sdk/src/main/jniLibs/${{ matrix.target == 'armv7-linux-androideabi' && 'armeabi-v7a' || matrix.target }}/
+
+      - name: Build so (obfstr + opaque-jni features)
+        env:
+          ANDROID_NDK_HOME: ${{ steps.setup_ndk.outputs.ndk-path }}
+        run: |
+          cargo build --release --target ${{ matrix.target }} --features obfstr,opaque-jni
+          mkdir -p ../kotlin/xcj-sdk/src/main/jniLibs-obfuscated/${{ matrix.target == 'armv7-linux-androideabi' && 'armeabi-v7a' || matrix.target }}
+          cp target/${{ matrix.target }}/release/libxcj_core.so ../kotlin/xcj-sdk/src/main/jniLibs-obfuscated/${{ matrix.target == 'armv7-linux-androideabi' && 'armeabi-v7a' || matrix.target }}/
+
+      - name: Upload so artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: libxcj_core-${{ matrix.target }}
+          path: sdk-android/kotlin/xcj-sdk/src/main/jniLibs*/
+          retention-days: 14
