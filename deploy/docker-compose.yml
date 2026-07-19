@@ -91,6 +91,20 @@ services:
       LOG_LEVEL: info
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost}
       ADMIN_WEB_URL: ${ADMIN_WEB_URL:-http://localhost}
+      # 自有 APK 诊断(ADR 0077)
+      AUDIT_TMP_ROOT: /tmp/audit
+      APKSIGNER_PATH: /opt/android-sdk/build-tools/34.0.0/apksigner
+      AUDIT_REPORT_RETENTION_HOURS: 24
+      AUDIT_MAX_CONCURRENT_PER_DEV: 1
+      AUDIT_MAX_APK_SIZE_MB: 200
+      AUDIT_TIMEOUT_SECONDS: 1800
+      # 水印 AES-256 密钥(ADR 0030 §c,生产强制)
+      WATERMARK_AES_KEY: ${WATERMARK_AES_KEY}
+      # OAuth(ADR 0074,可选)
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+      QQ_APP_ID: ${QQ_APP_ID:-}
+      QQ_APP_KEY: ${QQ_APP_KEY:-}
     volumes:
       - ../backend/keys:/app/keys:ro
     healthcheck:
