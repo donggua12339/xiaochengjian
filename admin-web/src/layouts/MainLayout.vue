@@ -13,6 +13,7 @@ const menuOptions = computed<MenuOption[]>(() => [
   { label: '概览', key: 'dashboard' },
   { label: '应用管理', key: 'apps' },
   { label: 'SDK 集成指南', key: 'sdk-guide' },
+  { label: 'SDK 配置', key: 'sdk-config' },
   { label: '设置', key: 'settings' },
 ]);
 

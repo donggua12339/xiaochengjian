@@ -95,6 +95,12 @@ export class AppConfig {
 
   @IsString()
   adminWebUrl!: string;
+
+  // ============= OAuth(ADR 0074,可选)=============
+  githubClientId?: string;
+  githubClientSecret?: string;
+  qqAppId?: string;
+  qqAppKey?: string;
 }
 
 export const appConfig = (): AppConfig => ({
@@ -126,6 +132,11 @@ export const appConfig = (): AppConfig => ({
   logLevel: process.env.LOG_LEVEL ?? 'info',
   corsOrigins: (process.env.CORS_ORIGINS ?? 'http://localhost:5173').split(','),
   adminWebUrl: process.env.ADMIN_WEB_URL ?? 'http://localhost:5173',
+  // OAuth(ADR 0074,可选,未配则 OAuth 接口拒绝)
+  githubClientId: process.env.GITHUB_CLIENT_ID || undefined,
+  githubClientSecret: process.env.GITHUB_CLIENT_SECRET || undefined,
+  qqAppId: process.env.QQ_APP_ID || undefined,
+  qqAppKey: process.env.QQ_APP_KEY || undefined,
 });
 
 export const validate = (_raw: unknown): AppConfig => {

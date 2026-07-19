@@ -16,10 +16,12 @@ import type { AppConfig } from '../config/configuration';
 export class CryptoService {
   private readonly logger = new Logger(CryptoService.name);
   private readonly privateKey: crypto.KeyObject;
+  private readonly publicKeyPem: string;
   private readonly sdkSessionTtl: number;
 
   constructor(private readonly configService: ConfigService<AppConfig, true>) {
     const privatePath = this.configService.get('rsaPrivateKeyPath', { infer: true });
+    const publicPath = this.configService.get('rsaPublicKeyPath', { infer: true });
 
     let privateKeyPem: string;
     try {
@@ -40,9 +42,30 @@ export class CryptoService {
           `请确认文件为 PEM 格式且为有效私钥。`,
       );
     }
+
+    // 加载公钥(公钥可从私钥派生,但优先读文件,便于公钥单独分发)
+    try {
+      this.publicKeyPem = fs.readFileSync(publicPath, 'utf-8');
+    } catch {
+      // 公钥文件缺失时从私钥派生(公钥本就公开,不阻塞启动)
+      this.publicKeyPem = crypto
+        .createPublicKey(this.privateKey)
+        .export({ type: 'spki', format: 'pem' })
+        .toString();
+      this.logger.warn(`RSA 公钥文件缺失(path=${publicPath}),已从私钥派生`);
+    }
+
     this.sdkSessionTtl = this.configService.get('sdkSessionTtl', { infer: true });
 
     this.logger.log('RSA 私钥已加载');
+  }
+
+  /**
+   * 获取 RSA 公钥 PEM(供 SDK 客户端拉取,公钥本就公开)
+   * 详见 ADR 0020 (通信加密) + ADR 0042 (公开边界)
+   */
+  getPublicKeyPem(): string {
+    return this.publicKeyPem;
   }
 
   /**

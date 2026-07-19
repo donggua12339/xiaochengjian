@@ -12,6 +12,11 @@ import com.xcj.injector.watermark.InjectorConstants
 import com.xcj.injector.watermark.Watermark
 import org.slf4j.LoggerFactory
 import java.io.File
+import java.net.URI
+import java.net.http.HttpClient
+import java.net.http.HttpRequest
+import java.net.http.HttpResponse
+import java.time.Duration
 
 private val logger = LoggerFactory.getLogger("InjectorMain")
 
@@ -20,10 +25,10 @@ private val logger = LoggerFactory.getLogger("InjectorMain")
  *
  * v2 重构:移除了 dex 字节码注入路径(红线,详见 CLAUDE.md 第 2 节)
  * 改为开发者主动集成 SDK 的辅助工具:
- *  - init:生成 gradle 依赖片段 + Application 初始化代码模板
- *  - sign:对开发者自有 APK 做签名 + 水印(可选)
+ *  - init:生成 gradle 依赖片段 + Application 初始化代码模板(可选拉取服务端公钥)
+ *  - sign:对开发者自有 APK 做签名 + 水印(支持批量)
  *
- * 详见 ADR 0028 (注入工具架构) / 0030 (防滥用) / 0033 (签名方案)
+ * 详见 ADR 0068 (v2 注入工具架构) / 0030 (防滥用)
  */
 class InjectorCommand : CliktCommand(
     name = "xcj-injector",
@@ -42,10 +47,11 @@ class InjectorCommand : CliktCommand(
  *  - build.gradle.kts 依赖片段(implementation("com.xcj:sdk-android:..."))
  *  - Application 初始化代码模板(XiaochengjianSDK.init(...))
  *  - AndroidManifest.xml 修改指引
+ *  - serverPublicKey.pem(可选,--fetch-public-key 时从服务端拉取)
  */
 class InitCommand : CliktCommand(
     name = "init",
-    help = "生成 SDK 集成代码模板(gradle 依赖 + Application 初始化)"
+    help = "生成 SDK 集成代码模板(gradle 依赖 + Application 初始化 + 可选拉取服务端公钥)"
 ) {
     private val output by option("-o", "--output", help = "输出目录(默认 ./xcj-integration)")
         .path(canBeDir = true)
@@ -56,6 +62,11 @@ class InitCommand : CliktCommand(
 
     private val serverUrl by option("--server-url", help = "SaaS 服务器 URL")
         .required()
+
+    private val fetchPublicKey by option(
+        "--fetch-public-key",
+        help = "从服务端拉取 RSA 公钥(GET /v1/sdk/public-key),写入 serverPublicKey.pem"
+    ).flag()
 
     override fun run() {
         logger.info("生成 SDK 集成模板到 $output")
@@ -111,7 +122,24 @@ class InitCommand : CliktCommand(
         )
         logger.info("已生成: ${appTemplate.name}")
 
-        // 3. 集成说明
+        // 3. 可选:从服务端拉取 RSA 公钥
+        if (fetchPublicKey) {
+            logger.info("[3/4] 从服务端拉取 RSA 公钥...")
+            try {
+                val publicKeyPem = fetchServerPublicKey(serverUrl)
+                val publicKeyFile = File(outDir, "serverPublicKey.pem")
+                publicKeyFile.writeText(publicKeyPem)
+                logger.info("  公钥已写入: ${publicKeyFile.name}")
+            } catch (e: Exception) {
+                logger.error("  拉取公钥失败: ${e.message}", e)
+                logger.error("  请检查 server-url 是否正确,或手动从 admin-web 下载公钥")
+                throw e
+            }
+        } else {
+            logger.info("[3/4] 跳过公钥拉取(未启用 --fetch-public-key)")
+        }
+
+        // 4. 集成说明
         val readme = File(outDir, "README.md")
         readme.writeText(
             """
@@ -120,6 +148,7 @@ class InitCommand : CliktCommand(
             ## 文件清单
             - `xcj-dependency.gradle.kts` - gradle 依赖片段
             - `XcjApplication.kt` - Application 初始化模板
+            - `serverPublicKey.pem` - 服务端 RSA 公钥(如有 --fetch-public-key)
             - `README.md` - 本文件
 
             ## 集成步骤
@@ -141,6 +170,11 @@ class InitCommand : CliktCommand(
             - 当前配置的服务器:`$serverUrl`
             - 应用 ID:`$appId`
 
+            ## RSA 公钥
+            - 公钥用于 SDK handshake 时加密临时 AES 密钥(ADR 0020)
+            - 公钥本就公开(开源项目),可从 `GET /v1/sdk/public-key` 拉取
+            - 如未用 `--fetch-public-key` 拉取,可手动从 admin-web 下载
+
             ## 合规说明
             - SDK 只能集成到**你自有著作权**的 APP
             - 不得用于重打包他人 APK(详见 CLAUDE.md 红线)
@@ -152,24 +186,66 @@ class InitCommand : CliktCommand(
         logger.info("输出目录: ${outDir.absolutePath}")
         logger.info("下一步:按 $readme 的步骤集成 SDK")
     }
+
+    /**
+     * 从服务端拉取 RSA 公钥(PEM 格式)
+     * 端点:GET /v1/sdk/public-key
+     * 返回:{ "publicKeyPem": "-----BEGIN PUBLIC KEY-----\n..." }
+     */
+    private fun fetchServerPublicKey(serverUrl: String): String {
+        val url = serverUrl.trimEnd('/') + "/v1/sdk/public-key"
+        logger.info("  GET $url")
+
+        val client = HttpClient.newBuilder()
+            .connectTimeout(Duration.ofSeconds(10))
+            .build()
+        val request = HttpRequest.newBuilder()
+            .uri(URI.create(url))
+            .timeout(Duration.ofSeconds(15))
+            .GET()
+            .header("Accept", "application/json")
+            .build()
+
+        val response = client.send(request, HttpResponse.BodyHandlers.ofString())
+
+        if (response.statusCode() != 200) {
+            throw RuntimeException("HTTP ${response.statusCode()}: ${response.body().take(200)}")
+        }
+
+        // 简单 JSON 解析(避免引入 jackson 依赖)
+        val body = response.body()
+        val pemMatch = Regex(""""publicKeyPem"\s*:\s*"((?:[^"\\]|\\.)*)"""").find(body)
+            ?: throw RuntimeException("响应中未找到 publicKeyPem 字段: ${body.take(200)}")
+
+        // 反转义 JSON 字符串
+        return pemMatch.groupValues[1]
+            .replace("\\n", "\n")
+            .replace("\\"", "\"")
+            .replace("\\\\", "\\")
+    }
 }
 
 /**
- * sign 子命令:对开发者自有 APK 做签名 + 水印
+ * sign 子命令:对开发者自有 APK 做签名 + 水印(支持批量)
  *
  * 用途:开发者编译出自己的 APK 后,用此工具签名 + 加水印(可选)
  * 注意:此工具只签名 + 加水印,不修改 APK 内容(不注入 dex)
+ *
+ * 批量模式:
+ *  - 单文件:-i app.apk -o app-signed.apk
+ *  - 批量(目录):-i input-dir/ -o output-dir/(签名目录下所有 .apk)
+ *  - 批量(glob):-i "release/*.apk" -o output-dir/(需 shell 展开 glob)
  */
 class SignCommand : CliktCommand(
     name = "sign",
-    help = "对开发者自有 APK 做签名 + 水印(不修改 APK 内容)"
+    help = "对开发者自有 APK 做签名 + 水印(支持单文件 + 批量目录)"
 ) {
-    private val input by option("-i", "--input", help = "输入 APK 路径(开发者自有)")
-        .path(mustExist = true, canBeDir = false)
+    private val input by option("-i", "--input", help = "输入 APK 路径(单文件)或目录(批量)")
+        .path(mustExist = true)
         .required()
 
-    private val output by option("-o", "--output", help = "输出 APK 路径")
-        .path(canBeDir = false)
+    private val output by option("-o", "--output", help = "输出 APK 路径(单文件)或目录(批量)")
+        .path(canBeDir = true)
         .required()
 
     private val keystore by option("--keystore", help = "签名 keystore 文件")
@@ -188,22 +264,41 @@ class SignCommand : CliktCommand(
     private val debug by option("--debug", help = "调试模式(保留中间产物)").flag()
 
     override fun run() {
-        logger.info("=== APK 签名 + 水印 ===")
-        logger.info("输入: $input")
-        logger.info("输出: $output")
+        val inputFile = input.toFile()
+        val outputFile = output.toFile()
+
+        if (inputFile.isDirectory) {
+            // 批量模式:输入是目录,输出必须是目录
+            require(outputFile.isDirectory || !outputFile.exists()) {
+                "批量模式:--output 必须是目录(当前是文件: $outputFile)"
+            }
+            outputFile.mkdirs()
+            signBatch(inputFile, outputFile)
+        } else {
+            // 单文件模式
+            require(!outputFile.isDirectory) {
+                "单文件模式:--output 必须是文件路径(当前是目录: $outputFile)"
+            }
+            outputFile.parentFile?.mkdirs()
+            signSingle(inputFile, outputFile)
+        }
+    }
+
+    /**
+     * 单文件签名
+     */
+    private fun signSingle(inputApk: File, outputApk: File) {
+        logger.info("=== APK 签名 + 水印(单文件)===")
+        logger.info("输入: ${inputApk.absolutePath}")
+        logger.info("输出: ${outputApk.absolutePath}")
         logger.info("keystore: $keystore")
         logger.info("水印 ID: ${watermarkId.ifEmpty { "(无)" }}")
 
         val tempDir = createTempDir(prefix = "xcj-sign-")
-
         try {
-            require(keystore.toFile().exists()) { "keystore 文件不存在" }
-
-            // 1. 复制 APK 到临时目录
             val workApk = tempDir.resolve("work.apk")
-            input.toFile().copyTo(workApk, overwrite = true)
+            inputApk.copyTo(workApk, overwrite = true)
 
-            // 2. 注入水印(可选)
             if (watermarkId.isNotEmpty()) {
                 logger.info("[1/2] 注入水印...")
                 Watermark().embed(workApk, watermarkId)
@@ -211,27 +306,91 @@ class SignCommand : CliktCommand(
                 logger.info("[1/2] 跳过水印(未提供 --watermark-id)")
             }
 
-            // 3. 签名(V1+V2+V3,ADR 0033)
             logger.info("[2/2] APK 签名(V1+V2+V3)...")
             ApkSigner().sign(workApk, keystore.toFile(), ksPass, ksKeyAlias, keyPass)
 
-            // 4. 输出
-            logger.info("输出 APK...")
-            workApk.copyTo(output.toFile(), overwrite = true)
-
+            workApk.copyTo(outputApk, overwrite = true)
             logger.info("=== 签名完成 ===")
-            logger.info("输出文件: $output")
-            logger.info("文件大小: ${output.toFile().length() / 1024} KB")
-
+            logger.info("输出文件: ${outputApk.absolutePath}")
+            logger.info("文件大小: ${outputApk.length() / 1024} KB")
         } catch (e: Exception) {
             logger.error("签名失败: ${e.message}", e)
             throw e
         } finally {
             if (!debug) {
                 tempDir.deleteRecursively()
-                logger.info("已清理临时目录(用 --debug 保留)")
             } else {
                 logger.info("调试模式:中间产物保留在 $tempDir")
+            }
+        }
+    }
+
+    /**
+     * 批量签名(目录下所有 .apk)
+     */
+    private fun signBatch(inputDir: File, outputDir: File) {
+        val apks = inputDir.listFiles { f -> f.extension.equals("apk", ignoreCase = true) }
+            ?: emptyList()
+
+        if (apks.isEmpty()) {
+            logger.warn("输入目录无 .apk 文件: ${inputDir.absolutePath}")
+            return
+        }
+
+        logger.info("=== APK 批量签名 + 水印 ===")
+        logger.info("输入目录: ${inputDir.absolutePath}")
+        logger.info("输出目录: ${outputDir.absolutePath}")
+        logger.info("待签名 APK 数: ${apks.size}")
+        logger.info("keystore: $keystore")
+        logger.info("水印 ID: ${watermarkId.ifEmpty { "(无)" }}")
+
+        var success = 0
+        var failed = 0
+        val failures = mutableListOf<Pair<File, Exception>>()
+
+        apks.sortedBy { it.name }.forEachIndexed { idx, apk ->
+            val outputApk = outputDir.resolve(apk.nameWithoutExtension + "-signed.apk")
+            logger.info("[${idx + 1}/${apks.size}] 签名: ${apk.name}")
+            try {
+                signSingleQuiet(apk, outputApk)
+                success++
+            } catch (e: Exception) {
+                failed++
+                failures.add(apk to e)
+                logger.error("  失败: ${e.message}")
+            }
+        }
+
+        logger.info("=== 批量签名完成 ===")
+        logger.info("成功: $success / ${apks.size}")
+        if (failed > 0) {
+            logger.warn("失败: $failed")
+            failures.forEach { (apk, e) ->
+                logger.warn("  - ${apk.name}: ${e.message}")
+            }
+            throw RuntimeException("批量签名有 $failed 个失败")
+        }
+    }
+
+    /**
+     * 静默签名(批量时用,不重复打印 header)
+     */
+    private fun signSingleQuiet(inputApk: File, outputApk: File) {
+        val tempDir = createTempDir(prefix = "xcj-sign-${inputApk.nameWithoutExtension}-")
+        try {
+            val workApk = tempDir.resolve("work.apk")
+            inputApk.copyTo(workApk, overwrite = true)
+
+            if (watermarkId.isNotEmpty()) {
+                Watermark().embed(workApk, watermarkId)
+            }
+
+            ApkSigner().sign(workApk, keystore.toFile(), ksPass, ksKeyAlias, keyPass)
+            workApk.copyTo(outputApk, overwrite = true)
+            logger.info("  输出: ${outputApk.name} (${outputApk.length() / 1024} KB)")
+        } finally {
+            if (!debug) {
+                tempDir.deleteRecursively()
             }
         }
     }

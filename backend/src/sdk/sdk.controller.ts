@@ -136,6 +136,22 @@ export class SdkController {
   }
 
   /**
+   * RSA 公钥下发(ADR 0020 / ADR 0042 公开边界)
+   *
+   * SDK 集成工具(injector init)从此端点拉取服务端 RSA 公钥,
+   * 用于 SDK handshake 时加密临时 AES 密钥。
+   *
+   * 公钥本就公开(开源项目),无需鉴权。
+   */
+  @Get('public-key')
+  @ApiOperation({ summary: '获取服务端 RSA 公钥(PEM 格式,供 SDK 集成工具拉取)' })
+  async publicKey() {
+    return {
+      publicKeyPem: this.crypto.getPublicKeyPem(),
+    };
+  }
+
+  /**
    * 完整性校验值下发(ADR 0062)
    *
    * 客户端拉取开发者后台配置的预期签名 hash 列表,

@@ -6,7 +6,7 @@ import java.io.File
 /**
  * APK 签名器(V1 + V2 + V3)
  *
- * 详见 ADR 0033 (签名方案)
+ * 详见 ADR 0030 (防滥用机制,签名方案部分)
  *
  * 实现:调用 Android SDK 的 apksigner 工具
  * 路径:$ANDROID_HOME/build-tools/<version>/apksigner.bat
