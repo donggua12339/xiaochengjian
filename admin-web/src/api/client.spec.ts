@@ -6,6 +6,8 @@
  *  - extractApiError(axios 错误 -> ApiError)
  */
 
+import { describe, beforeEach, it, expect, vi } from 'vitest';
+
 describe('api/client', () => {
   beforeEach(() => {
     localStorage.clear();
@@ -15,7 +17,7 @@ describe('api/client', () => {
     let client: typeof import('./client');
 
     beforeEach(async () => {
-      jest.resetModules();
+      vi.resetModules();
       client = await import('./client');
     });
 
@@ -53,7 +55,7 @@ describe('api/client', () => {
     let axios: typeof import('axios').default;
 
     beforeEach(async () => {
-      jest.resetModules();
+      vi.resetModules();
       client = await import('./client');
       axios = (await import('axios')).default;
     });

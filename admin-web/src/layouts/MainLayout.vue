@@ -14,6 +14,7 @@ const menuOptions = computed<MenuOption[]>(() => [
   { label: '应用管理', key: 'apps' },
   { label: 'SDK 集成指南', key: 'sdk-guide' },
   { label: 'SDK 配置', key: 'sdk-config' },
+  { label: '自有 APK 诊断', key: 'audit' },
   { label: '设置', key: 'settings' },
 ]);
 
