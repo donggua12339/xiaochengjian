@@ -155,7 +155,7 @@ export const appConfig = (): AppConfig => ({
   auditTmpRoot: process.env.AUDIT_TMP_ROOT ?? '/tmp/audit',
   apksignerPath:
     process.env.APKSIGNER_PATH ??
-    '/opt/android-sdk/build-tools/35.0.0/apksigner',
+    '/opt/android-sdk/build-tools/34.0.0/apksigner',
   auditReportRetentionHours: parseInt(
     process.env.AUDIT_REPORT_RETENTION_HOURS ?? '24',
     10,
