@@ -268,6 +268,16 @@ class SignCommand : CliktCommand(
     private val watermarkId by option("--watermark-id", help = "水印标识(开发者 ID,可选)")
         .default("")
 
+    private val watermarkServerUrl by option(
+        "--watermark-server-url",
+        help = "水印服务端 URL(SaaS 模式,如 https://xcj.winmelon.cn)。提供则用 AES-256 加密水印;不提供则走明文水印(开源模式)"
+    ).default("")
+
+    private val watermarkToken by option(
+        "--watermark-token",
+        help = "水印服务端 JWT(SaaS 模式,登录 admin-web 后获取)"
+    ).default("")
+
     private val debug by option("--debug", help = "调试模式(保留中间产物)").flag()
 
     override fun run() {
@@ -300,14 +310,27 @@ class SignCommand : CliktCommand(
         logger.info("输出: ${outputApk.absolutePath}")
         logger.info("keystore: $keystore")
         logger.info("水印 ID: ${watermarkId.ifEmpty { "(无)" }}")
+        if (watermarkServerUrl.isNotEmpty()) {
+            logger.info("水印模式: SaaS(AES-256-GCM 加密,密钥服务端持有)")
+        } else if (watermarkId.isNotEmpty()) {
+            logger.info("水印模式: 开源(明文,deprecated)")
+        }
 
         val tempDir = createTempDir(prefix = "xcj-sign-")
         try {
             val workApk = tempDir.resolve("work.apk")
             inputApk.copyTo(workApk, overwrite = true)
 
-            if (watermarkId.isNotEmpty()) {
-                logger.info("[1/2] 注入水印...")
+            if (watermarkServerUrl.isNotEmpty()) {
+                // SaaS 模式:调后端拿加密水印
+                require(watermarkToken.isNotEmpty()) { "SaaS 模式需提供 --watermark-token" }
+                require(watermarkId.isNotEmpty()) { "SaaS 模式需提供 --watermark-id" }
+                logger.info("[1/2] 从服务端拉取加密水印...")
+                val watermarkBase64 = fetchEncryptedWatermark(watermarkServerUrl, watermarkToken, watermarkId)
+                Watermark().embedEncrypted(workApk, watermarkBase64)
+            } else if (watermarkId.isNotEmpty()) {
+                // 开源模式:明文水印(deprecated)
+                logger.info("[1/2] 注入明文水印(开源模式,推荐改用 --watermark-server-url)...")
                 Watermark().embed(workApk, watermarkId)
             } else {
                 logger.info("[1/2] 跳过水印(未提供 --watermark-id)")
@@ -388,7 +411,10 @@ class SignCommand : CliktCommand(
             val workApk = tempDir.resolve("work.apk")
             inputApk.copyTo(workApk, overwrite = true)
 
-            if (watermarkId.isNotEmpty()) {
+            if (watermarkServerUrl.isNotEmpty()) {
+                val watermarkBase64 = fetchEncryptedWatermark(watermarkServerUrl, watermarkToken, watermarkId)
+                Watermark().embedEncrypted(workApk, watermarkBase64)
+            } else if (watermarkId.isNotEmpty()) {
                 Watermark().embed(workApk, watermarkId)
             }
 
@@ -400,6 +426,48 @@ class SignCommand : CliktCommand(
                 tempDir.deleteRecursively()
             }
         }
+    }
+
+    /**
+     * 从服务端拉取 AES-256-GCM 加密水印(ADR 0030 §c SaaS 模式)
+     *
+     * 端点:POST /v1/watermark/generate
+     * 请求体:{ watermarkId, version? }
+     * 响应:{ watermarkBase64, version, algorithm }
+     */
+    private fun fetchEncryptedWatermark(
+        serverUrl: String,
+        token: String,
+        watermarkId: String,
+    ): String {
+        val url = serverUrl.trimEnd('/') + "/v1/watermark/generate"
+        logger.info("  POST $url")
+
+        val requestBody = """{"watermarkId":"${watermarkId.replace("\"", "\\\"")}","version":"${InjectorConstants.VERSION}"}"""
+        val client = HttpClient.newBuilder()
+            .connectTimeout(Duration.ofSeconds(10))
+            .build()
+        val request = HttpRequest.newBuilder()
+            .uri(URI.create(url))
+            .timeout(Duration.ofSeconds(15))
+            .POST(HttpRequest.BodyPublishers.ofString(requestBody))
+            .header("Content-Type", "application/json")
+            .header("Authorization", "Bearer $token")
+            .build()
+
+        val response = client.send(request, HttpResponse.BodyHandlers.ofString())
+
+        if (response.statusCode() != 200 && response.statusCode() != 201) {
+            throw RuntimeException("水印生成失败: HTTP ${response.statusCode()}: ${response.body().take(200)}")
+        }
+
+        val body = response.body()
+        val watermarkRegex = Pattern.compile("\"watermarkBase64\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"")
+        val match = watermarkRegex.matcher(body)
+        require(match.find()) {
+            "响应中未找到 watermarkBase64 字段: ${body.take(200)}"
+        }
+        return match.group(1).replace("\\\"", "\"").replace("\\\\", "\\")
     }
 }
 

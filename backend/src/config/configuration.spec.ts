@@ -201,7 +201,18 @@ describe('configuration', () => {
       process.env.NODE_ENV = 'production';
       process.env.JWT_ACCESS_SECRET = 'a'.repeat(32);
       process.env.JWT_REFRESH_SECRET = 'b'.repeat(32);
+      // 水印 AES-256 密钥(32 字节 hex = 64 字符,ADR 0030 §c)
+      process.env.WATERMARK_AES_KEY = 'c'.repeat(64);
       expect(() => validate({})).not.toThrow();
+    });
+
+    it('生产环境:WATERMARK_AES_KEY 非 64 字符应拒绝', () => {
+      setValidDevConfig();
+      process.env.NODE_ENV = 'production';
+      process.env.JWT_ACCESS_SECRET = 'a'.repeat(32);
+      process.env.JWT_REFRESH_SECRET = 'b'.repeat(32);
+      process.env.WATERMARK_AES_KEY = 'short';
+      expect(() => validate({})).toThrow(/WATERMARK_AES_KEY/);
     });
 
     it('开发环境:JWT 默认密钥允许通过(豁免)', () => {

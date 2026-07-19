@@ -115,6 +115,9 @@ export class AppConfig {
   auditMaxApkSizeMb!: number;
   // 诊断超时(秒,默认 30 分钟,ADR 0077 §7)
   auditTimeoutSeconds!: number;
+  // 水印 AES-256 密钥(32 字节 hex,ADR 0030 §c 水印加密存储)
+  // 用于 injector sign 子命令生成加密水印,服务端持有密钥可解密追溯
+  watermarkAesKey!: string;
 }
 
 export const appConfig = (): AppConfig => ({
@@ -169,6 +172,9 @@ export const appConfig = (): AppConfig => ({
     process.env.AUDIT_TIMEOUT_SECONDS ?? '1800',
     10,
   ),
+  // 水印 AES-256 密钥(ADR 0030 §c,32 字节 hex = 64 字符)
+  // 生产环境必须配,未配则 /v1/watermark/generate 拒绝
+  watermarkAesKey: process.env.WATERMARK_AES_KEY ?? '',
 });
 
 export const validate = (_raw: unknown): AppConfig => {
@@ -196,6 +202,9 @@ export const validate = (_raw: unknown): AppConfig => {
     }
     if (config.jwtRefreshSecret.length < 32) {
       throw new Error('生产环境 JWT_REFRESH_SECRET 至少 32 字符');
+    }
+    if (!config.watermarkAesKey || config.watermarkAesKey.length !== 64) {
+      throw new Error('生产环境 WATERMARK_AES_KEY 必须是 32 字节 hex(64 字符)');
     }
   }
 
