@@ -1,11 +1,12 @@
 # 小城笺 · Xiaochengjian
 
-> 开源 + SaaS 双模式的 Android 卡密验证系统,保障创作者权益,杜绝付费应用盗版。
+> **独立开发者的私有应用攻防与遗产维护工具**(ADR 0076,2026-07-19)
+> 开源 + SaaS 双模式,蓝方(防:卡密验证/加固/防二次打包)+ 红方(攻:自有 APK 诊断,仅限开发者拥有合法著作权的自有 APK)
 
 > ✅ **v2 已上线(2026-07-17)**
 > 小城笺 v2 重构完成,SaaS 服务已恢复。
 > 访问地址:https://xcj.winmelon.cn
-> v2 改动:HTTPS + 域名 / 后端补齐 change-password/profile + /metrics 端点 / SDK 模块测试覆盖率 98% / injector CLI 改为打包辅助工具(移除 dex 注入路径)/ injector-android 改为合规路径(引导开发者主动集成 SDK)。
+> v2 改动:HTTPS + 域名 / 后端补齐 change-password/profile + /metrics 端点 / SDK 模块测试覆盖率 98% / injector-android (引导开发者主动集成 SDK)。
 > 旧版本代码保留在 `v1-final` tag。
 
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
@@ -13,25 +14,37 @@
 [![SDK](https://img.shields.io/badge/SDK-Rust%20%2B%20Kotlin-orange.svg)](sdk-android/)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
-## 项目定位
+## 项目定位(ADR 0076)
 
 | 维度 | 内容 |
 |---|---|
 | 形态 | 开源 + SaaS 双模式(ADR 0002) |
+| 定位 | 独立开发者的私有应用攻防与遗产维护工具(ADR 0076) |
 | 目标用户 | 个人 Android 应用开发者 |
-| 价值主张 | 保障创作者权益,杜绝付费应用盗版 |
+| 蓝方能力(防) | 卡密验证、加固、防二次打包 -- 保障创作者权益 |
+| 红方能力(攻) | **自有 APK 诊断**(JADX 反编译查看 + 签名信息 + SDK 后门扫描,ADR 0077) |
 | 商业模式 | 开发者订阅(月度 + 终身 + VIP,ADR 0043/0047) |
 
-## 合规红线
+## 合规红线(强制,详见 CLAUDE.md 第 2 节)
 
-本项目仅用于**开发者对自己开发的付费应用做版权保护**。禁止用于:
+**任何情况下不得违反以下红线:**
 
-- ❌ 外挂、私服、破解工具
-- ❌ 规避反作弊系统
-- ❌ 赌博、诈骗
-- ❌ 批量重打包他人 APK
+- ❌ 不得实现"绕过其他验证系统"的功能(通用脱壳 / 通用去签 / 通用绕过反作弊)
+- ❌ 不得在客户端硬编码任何"通用绕过反作弊"的逻辑
+- ❌ 不得对他人 APK 进行重打包、注入、修改字节码(注入工具仅限开发者自有 APK,详见 ADR 0068)
+- ❌ 不得在日志中记录卡密明文
+- ❌ **红方功能(自有 APK 诊断)仅限处理用户拥有合法著作权的自有 APK**,三重校验强制不得跳过(详见 ADR 0077):
+  - 校验 1:包名白名单(APK 包名必须在 admin-web 注册)
+  - 校验 2:签名 hash 比对(APK 签名必须与开发者配置的预期 hash 匹配)
+  - 校验 3:本地私有目录隔离(/tmp/audit/<taskId>/,处理后立即删除)
+  - 任一校验失败即拒绝,不提供跳过开关
 
-详见 [用户协议](docs/compliance/user-agreement.md)。
+**允许的能力**:
+- ✅ 自有 APK 诊断(ADR 0077):仅限开发者拥有合法著作权的自有 APK,三重校验强制
+- ✅ 开发者对自有应用做卡密验证、加固、防二次打包
+- ✅ SDK 集成辅助工具(init 生成模板 + sign 签名加水印,详见 ADR 0068)
+
+详见 [用户协议](docs/compliance/user-agreement.md) + [CLAUDE.md](CLAUDE.md) 第 2 节。
 
 ## 五层安全防护
 
