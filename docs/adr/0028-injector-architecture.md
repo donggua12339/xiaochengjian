@@ -1,9 +1,13 @@
 # ADR 0028 · 注入工具架构
 
-- 状态:accepted
+- 状态:**superseded by 0068**(v2 重构撤除服务器端 APK 处理,改 SDK 集成辅助)
 - 日期:2026-07-13
 - 决策者:小城笺项目
 - 层次:安全
+
+> **本 ADR 已被 [ADR 0068](0068-v2-injector-architecture-sdk-integration-only.md) 取代**(2026-07-19)。
+> v2 重构移除了"上传 APK 到服务器处理"的注入架构,backend/src/inject/ 模块删除,injector CLI 仅保留 init + sign。
+> 本文档保留作为决策追溯,不再有效。
 
 ## 背景
 

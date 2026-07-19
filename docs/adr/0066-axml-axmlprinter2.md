@@ -1,8 +1,12 @@
 # ADR 0066 · AXML 解析:AXMLPrinter2
 
-- 状态:accepted
+- 状态:**superseded by 0068**(v2 重构撤除 dex 注入,无需自动改 Manifest)
 - 日期:2026-07-14
 - 层次:注入工具
+
+> **本 ADR 已被 [ADR 0068](0068-v2-injector-architecture-sdk-integration-only.md) 取代**(2026-07-19)。
+> v2 改为开发者主动集成 SDK,Manifest 注册由开发者手动完成(`injector init` 生成的 README 含步骤说明)。
+> 本文档保留作为决策追溯,不再有效。
 
 ## 背景
 

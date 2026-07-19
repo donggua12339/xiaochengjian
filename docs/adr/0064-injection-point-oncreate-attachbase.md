@@ -1,8 +1,12 @@
 # ADR 0064 · 注入点:Application.onCreate + attachBaseContext
 
-- 状态:accepted
+- 状态:**superseded by 0068**(v2 重构撤除 dex 注入,无注入点概念)
 - 日期:2026-07-14
 - 层次:注入工具
+
+> **本 ADR 已被 [ADR 0068](0068-v2-injector-architecture-sdk-integration-only.md) 取代**(2026-07-19)。
+> v2 改为开发者主动集成 SDK,在自有 Application.onCreate 调用 XiaochengjianSDK.init(this),无需注入工具操作注入点。
+> 本文档保留作为决策追溯,不再有效。
 
 ## 背景
 

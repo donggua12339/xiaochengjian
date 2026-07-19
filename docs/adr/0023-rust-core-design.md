@@ -1,9 +1,14 @@
 # ADR 0023 · Rust 核心模块设计
 
-- 状态:accepted
+- 状态:**superseded by 0071**(9 项子决策中 5 项修订,4 项保留)
 - 日期:2026-07-13
 - 决策者:小城笺项目
 - 层次:安全
+
+> **本 ADR 已被 [ADR 0071](0071-rust-core-design-revision.md) 取代**(2026-07-19)。
+> 修订内容:模块清单从 9 个减至 6 个(撤除 anti_debug / vm_detect / obfuscation);JNI 默认语义化命名(opaque-jni 改为可选 feature);允许 JString;撤除 .text 段自校验(见 ADR 0069);常量混淆改用 obfstr(optional)。
+> 保留内容:输入校验在 Rust 内 / 错误码而非异常 / 测试覆盖率 ≥ 90%。
+> 本文档保留作为决策追溯,不再有效。
 
 ## 背景
 

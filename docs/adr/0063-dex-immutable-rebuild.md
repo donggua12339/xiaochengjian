@@ -1,8 +1,12 @@
 # ADR 0063 · dex 指令插入:ImmutableDexFile 重建
 
-- 状态:accepted
+- 状态:**superseded by 0068**(v2 重构撤除 dex 注入)
 - 日期:2026-07-14
 - 层次:注入工具
+
+> **本 ADR 已被 [ADR 0068](0068-v2-injector-architecture-sdk-integration-only.md) 取代**(2026-07-19)。
+> v2 重构移除了 dex 字节码注入路径,ImmutableDexFile 重建不再需要。
+> 本文档保留作为决策追溯,不再有效。
 
 ## 背景
 

@@ -1,8 +1,12 @@
 # ADR 0065 · 无自定义 Application:创建 XcjApplication + Activity 兜底
 
-- 状态:accepted
+- 状态:**superseded by 0068**(v2 重构撤除 dex 注入,无需自动创建 Application)
 - 日期:2026-07-14
 - 层次:注入工具
+
+> **本 ADR 已被 [ADR 0068](0068-v2-injector-architecture-sdk-integration-only.md) 取代**(2026-07-19)。
+> v2 改为开发者主动集成 SDK,`injector init` 生成 XcjApplication.kt 模板,开发者手动复制到自有项目并注册 Manifest。
+> 本文档保留作为决策追溯,不再有效。
 
 ## 背景
 
