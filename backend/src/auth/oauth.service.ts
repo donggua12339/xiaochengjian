@@ -132,7 +132,7 @@ export class OAuthService {
    */
   private async exchangeCodeForToken(
     provider: 'github' | 'qq',
-    code: string,
+    _code: string,
   ): Promise<string> {
     // TODO: 实现实际 HTTP 请求(待 OAuth app 配置后)
     // GitHub: POST https://github.com/login/oauth/access_token
@@ -153,7 +153,7 @@ export class OAuthService {
    */
   private async fetchUserInfo(
     provider: 'github' | 'qq',
-    oauthAccessToken: string,
+    _oauthAccessToken: string,
   ): Promise<OAuthUserInfo> {
     // TODO: 实现实际 HTTP 请求(待 OAuth app 配置后)
     // GitHub: GET https://api.github.com/user + GET https://api.github.com/user/emails
@@ -213,7 +213,7 @@ export class OAuthService {
     const newDeveloper = await this.prisma.developer.create({
       data: {
         email: email.toLowerCase(),
-        passwordHash: null, // OAuth 用户无密码
+        passwordHash: '', // OAuth 用户无密码,空字符串占位(chema 要求非 null)
         [providerIdField]: providerId,
       },
       select: { id: true, email: true, role: true },

@@ -414,6 +414,19 @@ export class AuthService {
     return { accessToken, refreshToken };
   }
 
+  /**
+   * OAuth 登录入口(ADR 0074)
+   * 供 OAuthService 调用,签发 JWT(跳过密码验证,因 OAuth 已验证身份)
+   */
+  async issueTokensForOAuth(
+    developerId: string,
+    email: string,
+    role: string,
+    meta: { ip?: string; userAgent?: string } = {},
+  ): Promise<TokenPair> {
+    return this.issueTokens(developerId, email, role, meta);
+  }
+
   private generateToken(): string {
     return crypto.randomBytes(32).toString('hex');
   }

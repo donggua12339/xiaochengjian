@@ -22,7 +22,17 @@ FROM node:22-alpine AS runner
 WORKDIR /app
 
 RUN corepack enable && corepack prepare pnpm@9 --activate
-RUN apk add --no-cache openssl wget
+RUN apk add --no-cache openssl wget unzip openjdk17-jre
+
+# 安装 Android SDK build-tools(含 apksigner,ADR 0077 自有 APK 诊断用)
+ENV ANDROID_SDK_ROOT=/opt/android-sdk
+ENV ANDROID_HOME=/opt/android-sdk
+ENV APKSIGNER_PATH=/opt/android-sdk/build-tools/35.0.0/apksigner
+RUN mkdir -p /opt/android-sdk/build-tools && \
+    wget -qO /tmp/build-tools.zip https://dl.google.com/android/repository/build-tools_r35-linux.zip && \
+    unzip -q /tmp/build-tools.zip -d /tmp/bt && \
+    mv /tmp/bt/android-15 /opt/android-sdk/build-tools/35.0.0 && \
+    rm -rf /tmp/build-tools.zip /tmp/bt
 
 # 用淘宝 npm 镜像(海外服务器访问官方源慢)
 RUN pnpm config set registry https://registry.npmmirror.com

@@ -7,6 +7,9 @@ import com.github.ajalt.clikt.parameters.options.flag
 import com.github.ajalt.clikt.parameters.options.option
 import com.github.ajalt.clikt.parameters.options.required
 import com.github.ajalt.clikt.parameters.types.path
+import com.xcj.injector.audit.AuditAnalyzeCommand
+import com.xcj.injector.audit.AuditCommand
+import com.xcj.injector.audit.AuditResignCommand
 import com.xcj.injector.sign.ApkSigner
 import com.xcj.injector.watermark.InjectorConstants
 import com.xcj.injector.watermark.Watermark
@@ -17,6 +20,7 @@ import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.time.Duration
+import java.util.regex.Pattern
 
 private val logger = LoggerFactory.getLogger("InjectorMain")
 
@@ -214,13 +218,16 @@ class InitCommand : CliktCommand(
 
         // 简单 JSON 解析(避免引入 jackson 依赖)
         val body = response.body()
-        val pemMatch = Regex(""""publicKeyPem"\s*:\s*"((?:[^"\\]|\\.)*)"""").find(body)
-            ?: throw RuntimeException("响应中未找到 publicKeyPem 字段: ${body.take(200)}")
+        val publicKeyPemPattern = Pattern.compile("\"publicKeyPem\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"")
+        val pemMatch = publicKeyPemPattern.matcher(body)
+        require(pemMatch.find()) {
+            "响应中未找到 publicKeyPem 字段: ${body.take(200)}"
+        }
 
         // 反转义 JSON 字符串
-        return pemMatch.groupValues[1]
+        return pemMatch.group(1)
             .replace("\\n", "\n")
-            .replace("\\"", "\"")
+            .replace("\\\"", "\"")
             .replace("\\\\", "\\")
     }
 }
@@ -234,7 +241,7 @@ class InitCommand : CliktCommand(
  * 批量模式:
  *  - 单文件:-i app.apk -o app-signed.apk
  *  - 批量(目录):-i input-dir/ -o output-dir/(签名目录下所有 .apk)
- *  - 批量(glob):-i "release/*.apk" -o output-dir/(需 shell 展开 glob)
+ *  - 批量(glob):用 shell 展开 .apk 通配符(如 -i "release/" 加 glob)
  */
 class SignCommand : CliktCommand(
     name = "sign",
@@ -329,8 +336,8 @@ class SignCommand : CliktCommand(
      * 批量签名(目录下所有 .apk)
      */
     private fun signBatch(inputDir: File, outputDir: File) {
-        val apks = inputDir.listFiles { f -> f.extension.equals("apk", ignoreCase = true) }
-            ?: emptyList()
+        val apks: Array<File> = inputDir.listFiles { f -> f.extension.equals("apk", ignoreCase = true) }
+            ?: emptyArray()
 
         if (apks.isEmpty()) {
             logger.warn("输入目录无 .apk 文件: ${inputDir.absolutePath}")
@@ -398,6 +405,10 @@ class SignCommand : CliktCommand(
 
 fun main(args: Array<String>) {
     InjectorCommand()
-        .subcommands(InitCommand(), SignCommand())
+        .subcommands(
+            InitCommand(),
+            SignCommand(),
+            AuditCommand().subcommands(AuditAnalyzeCommand(), AuditResignCommand()),
+        )
         .main(args)
 }

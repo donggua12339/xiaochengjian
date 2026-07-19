@@ -8,6 +8,11 @@
  *  - 生产环境额外检查(JWT 密钥强度 + 默认值检测)
  */
 
+// 必须在 import configuration 之前加载 reflect-metadata
+// (class-validator + class-transformer 依赖 Reflect.getMetadata,但 NestJS main.ts 才全局 import,
+// 单测直接 import configuration 不会触发,需显式加载)
+import 'reflect-metadata';
+
 describe('configuration', () => {
   const originalEnv = { ...process.env };
 

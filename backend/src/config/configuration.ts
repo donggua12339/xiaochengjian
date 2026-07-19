@@ -101,6 +101,20 @@ export class AppConfig {
   githubClientSecret?: string;
   qqAppId?: string;
   qqAppKey?: string;
+
+  // ============= 自有 APK 诊断(ADR 0077)=============
+  // 诊断临时目录根(/tmp/audit 下按 taskId 隔离)
+  auditTmpRoot!: string;
+  // apksigner 二进制路径(容器内为 /opt/android-sdk/build-tools/<ver>/apksigner)
+  apksignerPath!: string;
+  // 诊断报告保留时长(小时,默认 24)
+  auditReportRetentionHours!: number;
+  // 诊断并发上限(每开发者,默认 1,ADR 0077 §7 资源限制)
+  auditMaxConcurrentPerDeveloper!: number;
+  // APK 大小上限(MB,默认 200,ADR 0077 §7)
+  auditMaxApkSizeMb!: number;
+  // 诊断超时(秒,默认 30 分钟,ADR 0077 §7)
+  auditTimeoutSeconds!: number;
 }
 
 export const appConfig = (): AppConfig => ({
@@ -137,6 +151,24 @@ export const appConfig = (): AppConfig => ({
   githubClientSecret: process.env.GITHUB_CLIENT_SECRET || undefined,
   qqAppId: process.env.QQ_APP_ID || undefined,
   qqAppKey: process.env.QQ_APP_KEY || undefined,
+  // 自有 APK 诊断(ADR 0077)
+  auditTmpRoot: process.env.AUDIT_TMP_ROOT ?? '/tmp/audit',
+  apksignerPath:
+    process.env.APKSIGNER_PATH ??
+    '/opt/android-sdk/build-tools/35.0.0/apksigner',
+  auditReportRetentionHours: parseInt(
+    process.env.AUDIT_REPORT_RETENTION_HOURS ?? '24',
+    10,
+  ),
+  auditMaxConcurrentPerDeveloper: parseInt(
+    process.env.AUDIT_MAX_CONCURRENT_PER_DEV ?? '1',
+    10,
+  ),
+  auditMaxApkSizeMb: parseInt(process.env.AUDIT_MAX_APK_SIZE_MB ?? '200', 10),
+  auditTimeoutSeconds: parseInt(
+    process.env.AUDIT_TIMEOUT_SECONDS ?? '1800',
+    10,
+  ),
 });
 
 export const validate = (_raw: unknown): AppConfig => {

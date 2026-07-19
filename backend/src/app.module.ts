@@ -17,6 +17,7 @@ import { SdkModule } from './sdk/sdk.module';
 import { RateLimitModule } from './rate-limit/rate-limit.module';
 import { AuditModule } from './audit/audit.module';
 import { AuditInterceptor } from './audit/audit.interceptor';
+import { AuditOwnModule } from './audit-own/audit-own.module';
 import { MembershipModule } from './membership/membership.module';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { appConfig, validate } from './config/configuration';
@@ -43,6 +44,7 @@ import { appConfig, validate } from './config/configuration';
     RateLimitModule,
     AuditModule,
     MembershipModule,
+    AuditOwnModule,
   ],
   providers: [
     {

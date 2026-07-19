@@ -65,7 +65,7 @@ describe('MembershipController', () => {
   });
 
   it('generate 应转调 service.generate', async () => {
-    const dto = { level: 'VIP', durationDays: 30, count: 2, remark: '测试' };
+    const dto = { level: 'VIP' as const, durationDays: 30, count: 2, remark: '测试' };
     const result = await controller.generate('admin-1', dto);
     expect(membershipService.generate).toHaveBeenCalledWith('admin-1', dto);
     expect(result.count).toBe(2);

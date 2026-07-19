@@ -69,6 +69,8 @@ enum AuditAction {
   GENERATE_MEMBERSHIP_CODE
   REDEEM_MEMBERSHIP_CODE
   INJECT_APK
+  SELF_AUDIT_ANALYZE
+  SELF_AUDIT_RESIGN
 }
 
 // ============= 开发者与会话 =============
@@ -93,6 +95,7 @@ model Developer {
   sessions      Session[]
   applications  Application[]
   auditLogs     AuditLog[]
+  auditLogsOwn  AuditLogOwn[]
   cardTemplates CardTemplate[]
   cardKeys      CardKey[]
   devices       Device[]
@@ -147,6 +150,7 @@ model Application {
   devices           Device[]
   cardTemplates     CardTemplate[]
   validationLogs    ValidationLog[]
+  auditLogsOwn      AuditLogOwn[]
 
   @@unique([developerId, packageName])
   @@index([developerId])
@@ -331,4 +335,51 @@ model MembershipCode {
   @@index([batchId])
   @@index([level])
   @@map("membership_code")
+}
+
+// ============= 自有 APK 诊断(ADR 0077)=============
+
+/// 自有 APK 诊断审计日志(独立表,与 audit_log 分开便于专项查询)
+/// 详见 ADR 0077 §4(审计日志)
+/// 三重校验结果 + 诊断/回填状态 + 脱敏元数据,保留 1 年(ADR 0032)
+model AuditLogOwn {
+  id            String   @id @default(uuid())
+  developerId   String
+  appId         String
+  // APK 整体 SHA-256 hash(脱敏,不存 APK 内容)
+  apkHash       String
+  apkSize       Int
+  // 从 AndroidManifest 解析的包名
+  packageName   String
+  // 从签名块计算的 SHA-256 hash
+  signatureHash String
+  // 三重校验结果
+  check1Passed  Boolean  // 包名白名单
+  check2Passed  Boolean  // 签名 hash 比对
+  check3Passed  Boolean  // 目录隔离(始终 true,记录用)
+  // SUCCESS / REJECTED / FAILED / RESIGN
+  status        String
+  // 校验失败原因(REJECTED 时填)
+  rejectReason  String?
+  // 诊断报告路径(临时,24h 后删除;RESIGN 时为 null)
+  reportPath    String?
+  // 操作类型:ANALYZE / RESIGN
+  operation     String
+  // RESIGN 专用:回填前 APK hash + 回填后 APK hash + keystore 指纹(SHA-256,不存密码)
+  resignFromHash String?
+  resignToHash   String?
+  keystoreFingerprint String?
+  // 请求元数据
+  ip            String
+  userAgent     String?
+  createdAt     DateTime @default(now())
+
+  developer     Developer  @relation(fields: [developerId], references: [id], onDelete: Cascade)
+  application   Application @relation(fields: [appId], references: [id], onDelete: Cascade)
+
+  @@index([developerId, createdAt])
+  @@index([appId, createdAt])
+  @@index([status])
+  @@index([operation])
+  @@map("audit_log_own")
 }
