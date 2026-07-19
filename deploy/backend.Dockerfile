@@ -22,10 +22,11 @@ FROM node:22-alpine AS runner
 WORKDIR /app
 
 RUN corepack enable && corepack prepare pnpm@9 --activate
-RUN apk add --no-cache openssl wget unzip openjdk17-jre
+RUN apk add --no-cache openssl wget unzip openjdk17-jre bash
 
 # 安装 Android SDK build-tools(含 apksigner,ADR 0077 自有 APK 诊断用)
 # 注:build-tools_r35 在 dl.google.com 上 404,用 r34(android-14)
+# 注:apksigner 是 bash 脚本 wrapper,alpine 默认无 bash,需显式安装
 ENV ANDROID_SDK_ROOT=/opt/android-sdk
 ENV ANDROID_HOME=/opt/android-sdk
 ENV APKSIGNER_PATH=/opt/android-sdk/build-tools/34.0.0/apksigner
