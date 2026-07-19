@@ -23,7 +23,7 @@ describe('SdkController', () => {
   let controller: SdkController;
   let handshakeService: { handshake: jest.Mock; refreshSession: jest.Mock };
   let sdkService: { activate: jest.Mock; validate: jest.Mock };
-  let cryptoService: { aesEncrypt: jest.Mock };
+  let cryptoService: { aesEncrypt: jest.Mock; getPublicKeyPem: jest.Mock };
   let prismaService: { application: { findUnique: jest.Mock } };
 
   const aesKey = Buffer.alloc(32, 0xab);
@@ -69,6 +69,9 @@ describe('SdkController', () => {
         const tag = Buffer.alloc(16, 0x22);
         return { iv, ciphertext, tag };
       }),
+      getPublicKeyPem: jest.fn().mockReturnValue(
+        '-----BEGIN PUBLIC KEY-----\nMOCK_PUBLIC_KEY\n-----END PUBLIC KEY-----\n',
+      ),
     };
     prismaService = {
       application: {
@@ -205,8 +208,25 @@ describe('SdkController', () => {
     });
 
     it('APP 不存在应抛 NotFoundException', async () => {
-      prismaService.application.findUnique.mockResolvedValue(null);
+      prismaService.application.findUnique.mockResolvedValueOnce(null);
       await expect(controller.integrity('not-exist')).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('publicKey', () => {
+    it('应返回 crypto.getPublicKeyPem 的结果', async () => {
+      const result = await controller.publicKey();
+      expect(cryptoService.getPublicKeyPem).toHaveBeenCalled();
+      expect(result.publicKeyPem).toContain('-----BEGIN PUBLIC KEY-----');
+      expect(result.publicKeyPem).toContain('MOCK_PUBLIC_KEY');
+      expect(result.publicKeyPem).toContain('-----END PUBLIC KEY-----');
+    });
+
+    it('无需鉴权(公钥本就公开)', async () => {
+      // publicKey 不应依赖 prisma 查询(无需 appId)
+      const result = await controller.publicKey();
+      expect(prismaService.application.findUnique).not.toHaveBeenCalled();
+      expect(result).toBeDefined();
     });
   });
 

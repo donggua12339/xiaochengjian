@@ -8,7 +8,10 @@
     "build": "vue-tsc -b && vite build",
     "preview": "vite preview",
     "lint": "eslint src --ext .ts,.vue",
-    "typecheck": "vue-tsc --noEmit"
+    "typecheck": "vue-tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:cov": "vitest run --coverage"
   },
   "dependencies": {
     "vue": "^3.5.13",
@@ -30,6 +33,10 @@
     "@typescript-eslint/parser": "^8.19.1",
     "@typescript-eslint/eslint-plugin": "^8.19.1",
     "unplugin-auto-import": "^0.19.0",
-    "unplugin-vue-components": "^0.28.0"
+    "unplugin-vue-components": "^0.28.0",
+    "vitest": "^2.1.8",
+    "@vue/test-utils": "^2.4.6",
+    "jsdom": "^25.0.1",
+    "@vitest/coverage-v8": "^2.1.8"
   }
 }
