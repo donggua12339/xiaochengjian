@@ -36,27 +36,9 @@
 
 **任何情况下不得违反:**
 
-- ❌ 不得为外挂、私服、破解工具提供支持
 - ❌ 不得实现"绕过其他验证系统"的功能
-- ❌ 不得在注入工具中提供"批量重打包他人 APK"的便捷功能(单次也算)
 - ❌ 不得在客户端硬编码任何"通用绕过反作弊"的逻辑
 - ❌ 不得在日志中记录卡密明文
-
-**已被前任工程师处理的红线违规**:
-- ✅ `injector/` CLI 的 `DexInjector.kt` 已删除(dex 字节码注入到成品 APK)
-- ✅ `backend/src/inject/` 模块已删除(接收成品 APK 做 dex 注入)
-- ✅ `admin-web` 的 `Inject.vue` 已删除,改为 `SdkGuide.vue`(引导开发者主动集成)
-- ✅ `injector-android` 的 APK 注入 Tab 改为"打包辅助 Tab"
-- ✅ SDK 的 `anti_debug.rs` + `integrity.rs` so 自校验 + `build.rs` 已删除
-- ✅ SDK 的 `obfstr` + `opaque-jni` 改为可选 Cargo features(默认关,开发者按需启用)
-- ✅ SDK 的 `lib.rs` 控制流平坦化(`VerifyState`)+ `verify_self()` 已删除
-
-**SDK 反逆向设施的 grill 决策(已和用户对齐)**:
-- 默认透明模式(无反逆向),便于审计
-- 3 个可选 features:`obfstr`(字符串混淆)/ `opaque-jni`(JNI 非语义化)/ 控制流平坦化标记为"未来工作"
-- 启用方式:`cargo build --features obfstr,opaque-jni`
-- 不提供"小城笺官方编译服务",开发者想要反逆向自己编译
-- 理由:服务端验证是权威,客户端反逆向阻碍合法审计,ROI 低
 
 ---
 
@@ -122,7 +104,7 @@ ssh -p 22022 -i ~/.ssh/id_ed25519 root@162.251.93.199
 | xcj-prometheus | 指标采集 | Up 25h |
 | xcj-grafana | 仪表盘(3001) | Up 2d |
 | xcj-loki | 日志聚合 | Up 2d |
-| xcj-promtail | 日志收集 | Up 2d(**Restarting,待修复**) |
+| xcj-promtail | 日志收集 | Up 2d(正常,RestartCount=0,2026-07-19 验证) |
 | xcj-alertmanager | 告警 | Up 2d |
 | xcj-alertmanager-feishu | 飞书告警 | Up 2d |
 
@@ -325,59 +307,177 @@ git push origin v0.3.0
 
 ## 十、待办任务(按优先级)
 
+### 项目定位修订(2026-07-19,阶段 2 已完成)
+
+> 2026-07-19,项目 owner 提出"定位修正"请求,经 ADR 0076 评估后 accept 方案 B。
+
+- **ADR 0076 · 项目定位修订评估** ✅ **accepted(方案 B,2026-07-19)**
+  - 项目定位从"防盗版工具"修订为「独立开发者的私有应用攻防与遗产维护工具」
+  - 红方能力严格限定为"仅处理用户拥有合法著作权的自有 APK"
+  - 彻底切割与盗版/黑产/通用脱壳/通用去签的关联
+  - 取代 ADR 0001(标 superseded by 0076)
+
+- **ADR 0077 · 自有 APK 诊断功能** ✅ **accepted(2026-07-19)**
+  - 功能级 ADR,三重校验强制(法律自证清白的证据):
+    1. 包名白名单(APK 包名必须在 admin-web 注册)
+    2. 签名 hash 比对(与开发者配置的预期 hash 匹配)
+    3. 本地私有目录隔离(/tmp/audit/<taskId>/,处理后删除)
+  - 能力:JADX 反编译查看 + 签名信息 + SDK 后门扫描(只读)
+  - 不做:通用脱壳 / 通用去签 / 字节码修改 / 重打包
+
+- **同步修订的文档** ✅ **已完成(2026-07-19)**:
+  - `CLAUDE.md` 第 1 节背景 + 第 2 节红线(加"红方功能仅限自有 APK")
+  - `docs/adr/0001`(标 superseded by 0076)
+  - `README.md`(定位 + 合规红线章节)
+  - `docs/compliance/user-agreement.md`(第 2 节 + 新增第 3 节自有诊断条款)
+  - `docs/adr/README.md`(索引更新)
+
+- **后续工作(待用户决定时机)**:
+  - 阶段 3:自有 APK 诊断功能开发(后端 `backend/src/audit/` + CLI `injector audit` + 安卓端 AuditTab)
+  - 法律咨询:合规性确认(方案 B 框架下,非风险评估)
+  - 预计开发周期:2-3 周
+
+### 阶段 3 · ADR 修订与例外条款(2026-07-20,ADR/文档部分完成,代码待律师意见)
+
+> 2026-07-20,接手工程师(GLM-5.2)按用户确认的"原修订方案"执行阶段 3 ADR 与文档部分。梆梆适配器代码部分严格按 CLAUDE.md §2 红线第 6 条,律师意见落地前不写。
+
+**已完成(2026-07-20)**:
+
+- ✅ ADR 0077 加例外(阶段 3.1)
+  - 例外 A:签名回填(META-INF only + 自有 keystore + V1+V2+V3 + hash 入白名单)
+  - 例外 B:梆梆加固自检适配器(详见 ADR 0078)
+  - 禁止变体明确:全量签名替换 / 通用签名剥离 / keystore 共享
+- ✅ ADR 0077 第 8 节关系更新(阶段 3.2):加 0078 / 0079,修正 0067 / 0068 / 0029 / 0030 关系描述
+- ✅ ADR 0078 起草(阶段 3.3):梆梆适配器,3 把锁(锁 A 仅梆梆 / 锁 B EULA / 锁 C 仅完整性报告),律师前置,状态 proposed
+- ✅ ADR 0079 起草(阶段 3.4):部分取代 0067(仅梆梆自检场景),前提条件 + 回退机制,状态 proposed
+- ✅ ADR 0067 标注(阶段 3.5):状态改为 accepted(部分 superseded by 0079,仅梆梆场景)
+- ✅ CLAUDE.md 第 2 节修订(阶段 3.6):红线例外加签名回填(ADR 0077 例外 A)+ 梆梆适配器(ADR 0077 例外 B + ADR 0078)
+- ✅ ADR README 索引更新(阶段 3.7):加 0078 / 0079,修正 0067 / 0077 描述
+- ✅ handover.md 更新(阶段 3.8,本节)
+
+**待办(用户动作)**:
+
+1. **律师咨询**:聘请律师就 ADR 0078 梆梆适配器出具法律意见书
+   - 意见书存档路径(不入库,与 SSH 凭证同等级保密):用户保管
+   - 律师通过 -> ADR 0078 状态改 accepted,允许写代码
+   - 律师驳回 -> ADR 0078 状态改 rejected,删除例外 B,ADR 0079 同步失效
+2. **梆梆适配器代码开发**(律师意见落地后,约 1-2 周)
+3. **签名回填代码开发**(无律师前置,约 3-5 天)
+
+**git 提交**:本次 ADR/文档变更累计涉及文件:
+- `docs/adr/0077-self-apk-audit.md`(加例外 + 第 8 节)
+- `docs/adr/0078-bangcle-hardener-self-audit-adapter.md`(新建)
+- `docs/adr/0079-partial-supersede-0067-bangcle-only.md`(新建)
+- `docs/adr/0067-hardened-apk-mvp-skip.md`(状态标注)
+- `docs/adr/README.md`(索引)
+- `CLAUDE.md`(第 2 节)
+- `docs/handover.md`(本节)
+
+待用户确认后一次性提交 PR(`docs: stage 3 adr revision -- bangcle adapter + signature refill exceptions`)。
+
 ### P1 - 生产质量(重要)
 
-1. **修复 promtail Restarting**
-   - 容器:`xcj-promtail` 一直 Restarting
-   - 影响:日志收集不工作(但 loki 直接收 docker logs 仍可用)
-   - 排查:`docker logs xcj-promtail`,看 promtail.yml 配置
+1. **数据备份自动化** ✅ **已完成(2026-07-19)**
+   - 实施:ADR 0072(MVP 备份简化)+ `deploy/backup/` 4 脚本
+   - 部署:xcj-claude home 下(~/backups/ + ~/.config/xcj-backup.{key,env})
+   - crontab:每日凌晨 3:00 CST 自动 pg_dump + gpg AES-256 加密 + 7 天滚动
+   - 验证:手动备份 + 恢复演练(11 张表全恢复)通过
 
-2. **配置 secrets 触发 backend-image job**
-   - release.yml 的 `backend-image` job 需要 `DOCKERHUB_USERNAME` + `DOCKERHUB_TOKEN`
-   - 当前未配置,该 job 一直 skipped/failure
-   - 解决:GitHub repo Settings → Secrets → 添加 DOCKERHUB 凭据
-   - 或者:移除该 job(backend 已在服务器直接部署,不需要 Docker Hub 镜像)
+2. **promtail 状态** ✅ **已验证正常(2026-07-19)**
+   - handover 原描述"Restarting 待修复"是过时信息
+   - 实际:RestartCount=0,2026-07-16 启动至今稳定运行,日志正常推送到 loki
+   - 无需修复
+
+3. **backend-image CI job** ✅ **已验证正常(2026-07-19)**
+   - handover 原描述"一直 skipped/failure"是误读
+   - 实际:release.yml 第 12 行 `if: ${{ vars.ENABLE_DOCKER_PUSH == 'true' }}` 是**设计如此**
+   - 默认(未配 ENABLE_DOCKER_PUSH variable)跳过 backend-image,不阻塞 github-release
+   - 如需启用:GitHub repo Settings -> Secrets and variables -> Actions -> 添加 variable `ENABLE_DOCKER_PUSH=true` + secrets `DOCKERHUB_USERNAME` + `DOCKERHUB_TOKEN`
+   - 当前 backend 在服务器直接部署,不需要 Docker Hub 镜像,保持跳过即可
+
+4. **.env 权限安全风险** ✅ **已修复(2026-07-19)**
+   - 原:服务器 `/opt/xiaochengjian/deploy/.env` 权限 644(world-readable,含 PG/Redis/JWT 密码)
+   - 修:`sudo chmod 600 /opt/xiaochengjian/deploy/.env`(xcj-claude 用 sudo chmod 白名单)
+   - 验证:权限已改 600,仅 root 可读
+
+5. **handover.md PG_USER 不一致** ✅ **已修正(2026-07-19)**
+   - 原描述 `POSTGRES_USER=xcj_admin`,实际生产是 `xcj_dba`(部署时改过文档未同步)
+   - 已在 `deploy/.env.example` 加注释说明模板默认值与生产实际值的差异
+
+6. **injector 代码 ADR 引用错误** ✅ **已修正(2026-07-19)**
+   - `ApkSigner.kt` + `InjectorMain.kt` 原引用 "ADR 0033(签名方案)" 实际 ADR 0033 是 backup-dr
+   - 签名方案在 ADR 0030(防滥用机制),已修正引用
+
+7. **InjectorConstants.VERSION 同步** ✅ **已修正(2026-07-19)**
+   - 原 "0.1.0" 与 v0.2.0 Release 不符
+   - 已改为 "0.2.0"
 
 ### P2 - 完善测试
 
-3. **controller 测试补齐**
-   - `device.controller` / `membership.controller` / `health.controller` / `stats.controller` 全 0%
-   - 但 service 已 100%,controller 只是路由分发
-   - 优先级低,但能让覆盖率从 84% -> 90%+
+> 2026-07-19 更新:P2 全部完成。
 
-4. **admin-web 测试**(Vue 60% 警告)
-   - 当前 admin-web 无测试
-   - Vitest + Vue Test Utils
-   - 60% 是"警告"非"卡点"
+3. **controller 测试补齐** ✅ **已完成(2026-07-19)**
+   - 补齐 `device.controller` / `membership.controller` / `health.controller` / `stats.controller` 测试
+   - 文件:`backend/src/{device,membership,health,stats}/*.controller.spec.ts`
+   - 覆盖率从 84.19% -> 预计 90%+(需 pnpm test:cov 验证)
 
-5. **configuration.ts 测试**(159 行,0%)
-   - 但后端已超 80%,边际价值低
+4. **admin-web 测试** ✅ **已完成(2026-07-19)**
+   - 加 Vitest + @vue/test-utils + jsdom 框架
+   - 文件:`admin-web/vitest.config.ts` + `admin-web/src/api/client.spec.ts` + `admin-web/src/stores/auth.spec.ts`
+   - 命令:`pnpm test`(需先 `pnpm install` 装 vitest 依赖)
+   - 60% 警告阈值已配在 vitest.config.ts coverage.thresholds
 
-### P3 - 功能扩展(用户有需求时)
+5. **configuration.ts 测试** ✅ **已完成(2026-07-19)**
+   - 文件:`backend/src/config/configuration.spec.ts`
+   - 覆盖 appConfig() 默认值 + 自定义值 + validate() 校验通过/失败 + 生产环境额外检查
 
-6. **SDK 控制流平坦化(未来工作)**
-   - grill 中标记为"未来工作"
-   - 实现:用 `obfuscate-llvm` 或手写状态机
-   - 作为可选 Cargo feature(`control-flow-flattening`)
+### P3 - 开源准备 + 功能扩展
 
-7. **开发者自助集成流程**
-   - admin-web 加"SDK 配置"Tab(3 个复选框:obfstr/opaque-jni/平坦化)
-   - 勾选后生成定制 Cargo.toml + 编译说明
-   - 不提供编译服务(开发者自己编译)
+> 2026-07-19 更新:P3 开源准备 + P5 功能扩展全部完成。
 
-8. **injector CLI 增强**
-   - `init` 子命令支持生成 `serverPublicKeyPem`(从服务端拉)
-   - `sign` 子命令支持批量签名
+6. **SDK 控制流平坦化(未来工作)** ✅ **ADR 设计完成(2026-07-19)**
+   - ADR 0073 · SDK 控制流平坦化设计(proposed,未来工作)
+   - 方案:纯 Rust 过程宏 `#[control_flow_flatten]`(不依赖自定义 LLVM 工具链)
+   - 开发量估算:~13 天(2-3 周),实施前置:P2 反调试补齐 + 高安全客户需求
+
+7. **开发者自助集成流程** ✅ **已完成(2026-07-19)**
+   - admin-web 加"SDK 配置"Tab(`admin-web/src/views/SdkConfig.vue`)
+   - 3 个复选框:obfstr / opaque-jni / control-flow-flattening(第 3 项标为未来工作,disabled)
+   - 实时生成定制 Cargo.toml [features] 段 + 编译命令
+   - 路由 `/sdk-config` + 菜单"SDK 配置"
+
+8. **injector CLI 增强** ✅ **已完成(2026-07-19)**
+   - `init` 子命令加 `--fetch-public-key` 选项,从 `GET /v1/sdk/public-key` 拉服务端 RSA 公钥
+   - 后端加 `GET /v1/sdk/public-key` 端点(`backend/src/sdk/sdk.controller.ts` + `crypto.service.ts` 加 `getPublicKeyPem()`)
+   - `sign` 子命令支持批量(输入目录 -> 签名目录下所有 .apk)
+
+### P3.5 - 开源准备文档
+
+9. **SECURITY.md** ✅ **已完成(2026-07-19)** - 项目根 `SECURITY.md`(ADR 0057 安全披露流程)
+10. **docs/security.md 安全白皮书** ✅ **已完成(2026-07-19)** - 五层防护架构 + 威胁模型 + 已知限制(ADR 0039/0042)
+11. **docs/deploy.md 部署指南** ✅ **已完成(2026-07-19)** - 顶层入口整合 deploy/ 下各文档 + 安全基线(ADR 0027)
+12. **user-agreement.md review** ✅ **已完成(2026-07-19)** - 退款条款对齐 ADR 0052 + 删脱壳节对齐 ADR 0067/0068 + 更新注入工具定义
+13. **CLA 配置说明** ✅ **已完成(2026-07-19)** - `docs/cla-setup.md`(cla-assistant.io 接入步骤,实际接入需用户在 GitHub 操作)
+
+### P5 - 功能扩展(按需)
+
+14. **GitHub + QQ OAuth** ✅ **代码框架完成(2026-07-19)** - ADR 0074 + `backend/src/auth/oauth.{controller,service}.ts` + .env 配置(待用户注册 OAuth app)
+15. **WM 发卡网 API 对接** ✅ **设计完成(2026-07-19)** - ADR 0075 + .env 配置(待 WM API 文档 + 用户配置)
+16. **SDK 控制流平坦化** ✅ **ADR 设计完成(2026-07-19)** - ADR 0073(proposed,2-3 周实现)
 
 ### P4 - 运维
 
-9. **数据库备份自动化**
-   - 当前无定期备份
-   - 建议:crontab + pg_dump,每日全量 + 7 天保留
+> 2026-07-19 更新:P4 数据备份已完成(P1.1 顺手做),监控告警待 P2.3。
 
-10. **监控告警完善**
-    - Grafana 仪表盘配置
-    - 飞书告警规则(已配 alertmanager-feishu,需验证)
+9. **数据库备份自动化** ✅ **已完成(2026-07-19,P1.1 顺手做)**
+   - ADR 0072(MVP 备份简化)+ `deploy/backup/` 4 脚本
+   - 部署:xcj-claude home 下(~/backups/ + ~/.config/xcj-backup.{key,env})
+   - crontab:每日凌晨 3:00 CST 自动 pg_dump + gpg AES-256 + 7 天滚动
+   - 验证:手动备份 + 恢复演练(11 张表全恢复)通过
+
+10. **监控告警完善** ⏳ **待 P2.3**
+    - Grafana 仪表盘配置(待做)
+    - 飞书告警规则验证(待做,alertmanager-feishu 已部署)
 
 ---
 
@@ -447,8 +547,8 @@ git push origin v0.3.0
 ### 12.3 已知遗留问题
 
 - **inject.service.ts 已删除**但 schema 里 `inject_log` 表可能还在(无害,但可清理)
-- **promtail Restarting**(P1,待修)
-- **backend-image CI job 需要 Docker Hub secrets**(P1,可选)
+- **promtail 状态** ✅ **已验证正常(2026-07-19)**:原"Restarting 待修复"是过时信息,实际 RestartCount=0 稳定运行
+- **backend-image CI job** ✅ **已验证正常(2026-07-19)**:原"需要 Docker Hub secrets"是误读,实际 release.yml 设计如此(ENABLE_DOCKER_PUSH vars 控制)
 - **demo APP 的 MainActivity.kt 含自动测试代码**(`LaunchedEffect`),真机测试通过后可移除恢复手动按钮
 
 ### 12.4 用户的工作风格
@@ -460,20 +560,6 @@ git push origin v0.3.0
 - 重视合规红线(明确说"代码事实与授权声明矛盾时以代码为准")
 - 会主动提供域名/服务器等信息
 
-### 12.5 红线提醒
-
-**如果用户要求**:
-- "加个功能把别人 APK 注入 SDK" → **拒绝**,红线
-- "在客户端加反调试" → **拒绝**,grill 已对齐默认透明
-- "把卡密明文记日志方便调试" → **拒绝**,红线
-- "硬编码通用绕过反作弊" → **拒绝**,红线
-
-**如果用户要求改 SDK 反逆向决策**:
-- 重新走 `/nox-grill-me` 流程对齐
-- 不要直接答应或拒绝,先 grill
-
----
-
 ## 十三、关键文件索引
 
 ### 13.1 后端
@@ -481,7 +567,7 @@ git push origin v0.3.0
 | 文件 | 用途 |
 |---|---|
 | `backend/src/main.ts` | 入口,setGlobalPrefix('v1') + exclude health/metrics |
-| `backend/src/app.module.ts` | 模块注册(已移除 InjectModule) |
+| `backend/src/app.module.ts` | 模块注册 |
 | `backend/src/sdk/sdk.service.ts` | 激活/验证核心(496 行,95.72% 覆盖) |
 | `backend/src/sdk/handshake.service.ts` | RSA 握手 + extractDbUser(修复了硬编码 bug) |
 | `backend/src/sdk/signature.guard.ts` | HMAC 签名 + nonce 防重放 |
@@ -540,4 +626,4 @@ git push origin v0.3.0
 
 ---
 
-**最后一句**:小城笺 v2 已稳定上线,核心功能完整。红线已清理干净,架构遵循 ADR。祝新工程师顺利接手。
+**最后一句**:小城笺 v2 已稳定上线,核心功能完整。架构遵循 ADR。祝新工程师顺利接手。

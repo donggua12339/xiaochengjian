@@ -6,7 +6,7 @@
 
 ### 战略与产品
 
-- [ADR 0001 · 项目定位与合规红线](0001-project-positioning-and-compliance.md)
+- [ADR 0001 · 项目定位与合规红线](0001-project-positioning-and-compliance.md) · ⚠️ **superseded by 0076**
 - [ADR 0002 · 部署形态与商业模式](0002-deployment-and-business-model.md)
 - [ADR 0003 · 里程碑规划](0003-milestone-planning.md)
 - [ADR 0004 · 协作模式与开源治理](0004-collaboration-and-open-source-governance.md)
@@ -19,7 +19,7 @@
 - [ADR 0008 · 管理后台:Vue3 + Naive UI](0008-admin-vue3-naive-ui.md)
 - [ADR 0009 · Android SDK:Kotlin + Rust JNI](0009-sdk-kotlin-rust-jni.md)
 - [ADR 0010 · SDK 分发:AAR + 私有 Maven](0010-sdk-distribution.md)
-- [ADR 0011 · APK 注入方案:Smali + dex](0011-injection-smali-dex.md)
+- [ADR 0011 · APK 注入方案:Smali + dex](0011-injection-smali-dex.md) · ⚠️ **superseded by 0068**
 - [ADR 0012 · 部署:Docker Compose + K8s](0012-deployment-compose-k8s.md)
 
 ### 核心功能
@@ -37,15 +37,15 @@
 - [ADR 0020 · 通信加密方案](0020-communication-encryption.md)
 - [ADR 0021 · 请求签名与防重放](0021-request-signing.md)
 - [ADR 0022 · 服务端防爆破](0022-anti-brute-force.md)
-- [ADR 0023 · Rust 核心模块设计](0023-rust-core-design.md)
+- [ADR 0023 · Rust 核心模块设计](0023-rust-core-design.md) · ⚠️ **superseded by 0071**
 - [ADR 0024 · 反调试与 VM 检测](0024-anti-debug-vm-detection.md)
-- [ADR 0025 · 完整性校验与防重打包](0025-integrity-check.md)
+- [ADR 0025 · 完整性校验与防重打](0025-integrity-check.md)
 - [ADR 0026 · 离线缓存加密](0026-offline-cache-encryption.md)
 - [ADR 0027 · 服务端安全基线](0027-server-security-baseline.md)
 
 ### 注入工具
 
-- [ADR 0028 · 注入工具架构](0028-injector-architecture.md)
+- [ADR 0028 · 注入工具架构](0028-injector-architecture.md) · ⚠️ **superseded by 0068**
 - [ADR 0029 · 加固 APK 兼容性](0029-hardened-apk-compatibility.md)
 - [ADR 0030 · 防滥用机制](0030-anti-abuse.md)
 
@@ -95,19 +95,40 @@
 
 #### F 层 安全加固深化
 
-- [ADR 0058 · Rust so 自校验:编译时嵌入 + 服务端下发](0058-rust-self-verify.md)
+- [ADR 0058 · Rust so 自校验:编译时嵌入 + 服务端下发](0058-rust-self-verify.md) · ⚠️ **superseded by 0069**
 - [ADR 0059 · 反调试深化:Frida 高级 + Xposed 检测](0059-anti-debug-frida-xposed.md)
 - [ADR 0060 · 通信密钥轮换:每 20 分钟](0060-key-rotation-20min.md)
 - [ADR 0061 · 混淆策略:字符串 + 控制流](0061-obfuscation-string-control-flow.md)
-- [ADR 0062 · 防重打包:直接读 APK + 服务端下发](0062-anti-repackage-apk-hash.md)
+- [ADR 0062 · 防重打包:直接读 APK + 服务端下发](0062-anti-repackage-apk-hash.md) · ⚠️ **superseded by 0070**
 
 #### B 层 dex 指令插入深化
 
-- [ADR 0063 · dex 指令插入:ImmutableDexFile 重建](0063-dex-immutable-rebuild.md)
-- [ADR 0064 · 注入点:onCreate + attachBaseContext](0064-injection-point-oncreate-attachbase.md)
-- [ADR 0065 · 无自定义 Application:创建 XcjApplication + Activity 兜底](0065-create-application-activity-fallback.md)
-- [ADR 0066 · AXML 解析:AXMLPrinter2](0066-axml-axmlprinter2.md)
-- [ADR 0067 · 加固 APK 兼容:MVP 不支持](0067-hardened-apk-mvp-skip.md)
+- [ADR 0063 · dex 指令插入:ImmutableDexFile 重建](0063-dex-immutable-rebuild.md) · ⚠️ **superseded by 0068**
+- [ADR 0064 · 注入点:onCreate + attachBaseContext](0064-injection-point-oncreate-attachbase.md) · ⚠️ **superseded by 0068**
+- [ADR 0065 · 无自定义 Application:创建 XcjApplication + Activity 兜底](0065-create-application-activity-fallback.md) · ⚠️ **superseded by 0068**
+- [ADR 0066 · AXML 解析:AXMLPrinter2](0066-axml-axmlprinter2.md) · ⚠️ **superseded by 0068**
+- [ADR 0067 · 加固 APK 兼容:MVP 不支持](0067-hardened-apk-mvp-skip.md) · ⚠️ **部分 superseded by 0079**(仅梆梆自检场景,其他加固方案仍按本 ADR)
+
+### v2 重构决策追溯(2026-07-19,补齐上任工程师未完成的 ADR 合规)
+
+- [ADR 0068 · v2 注入工具架构:仅 SDK 集成辅助](0068-v2-injector-architecture-sdk-integration-only.md) - 取代 0011/0028/0063/0064/0065/0066
+- [ADR 0069 · Rust so 自校验撤除:服务端验证权威](0069-rust-self-verify-removal.md) - 取代 0058
+- [ADR 0070 · APK 签名 hash 简化实现:整文件 hash + 服务端白名单兜底](0070-apk-signature-hash-simplified.md) - 取代 0062
+- [ADR 0071 · Rust 核心设计修订:语义化 JNI + 撤除反逆向设施](0071-rust-core-design-revision.md) - 取代 0023
+- [ADR 0072 · MVP 备份简化:本地 + 7 天滚动 + gpg AES-256](0072-mvp-backup-simplified.md) - ADR 0033 分阶段落地
+
+### P3-P5 扩展(2026-07-19)
+
+- [ADR 0073 · SDK 控制流平坦化设计(未来工作)](0073-sdk-control-flow-flattening-design.md) - proposed
+- [ADR 0074 · 第三方 OAuth 集成:GitHub + QQ(代码框架)](0074-oauth-github-qq.md) - proposed,待 OAuth app 配置
+- [ADR 0075 · WM 发卡网 API 对接设计](0075-wm-faka-api-integration.md) - proposed,待 WM API 文档
+
+### 项目定位修订评估(2026-07-19)
+
+- [ADR 0076 · 项目定位修订评估:攻防工作台](0076-project-positioning-revision-assessment.md) - **accepted**(方案 B,自有 APK 诊断),取代 ADR 0001
+- [ADR 0077 · 自有 APK 诊断功能(含技术兜底)](0077-self-apk-audit.md) - accepted(2026-07-20 修订加例外 A 签名回填 + 例外 B 梆梆适配器),功能级 ADR,三重校验(包名白名单 + 签名比对 + 目录隔离)
+- [ADR 0078 · 梆梆加固自检适配器(自有 APK 诊断例外 B 的实现)](0078-bangcle-hardener-self-audit-adapter.md) - **proposed**(律师前置,代码未实现),3 把锁(仅梆梆 / EULA / 仅完整性报告)
+- [ADR 0079 · 部分取代 ADR 0067(仅梆梆自检场景)](0079-partial-supersede-0067-bangcle-only.md) - **proposed**(与 0078 同步,律师前置),明确 0078 与 0067 的边界
 
 ## 模板
 
