@@ -1,6 +1,6 @@
 # ADR 0067 · 加固 APK 兼容:MVP 不支持
 
-- 状态:accepted(部分 superseded by 0079,仅梆梆自检场景;其他加固方案仍按本 ADR)
+- 状态:accepted
 - 日期:2026-07-14
 - 层次:注入工具
 

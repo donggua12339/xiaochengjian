@@ -107,7 +107,7 @@
 - [ADR 0064 · 注入点:onCreate + attachBaseContext](0064-injection-point-oncreate-attachbase.md) · ⚠️ **superseded by 0068**
 - [ADR 0065 · 无自定义 Application:创建 XcjApplication + Activity 兜底](0065-create-application-activity-fallback.md) · ⚠️ **superseded by 0068**
 - [ADR 0066 · AXML 解析:AXMLPrinter2](0066-axml-axmlprinter2.md) · ⚠️ **superseded by 0068**
-- [ADR 0067 · 加固 APK 兼容:MVP 不支持](0067-hardened-apk-mvp-skip.md) · ⚠️ **部分 superseded by 0079**(仅梆梆自检场景,其他加固方案仍按本 ADR)
+- [ADR 0067 · 加固 APK 兼容:MVP 不支持](0067-hardened-apk-mvp-skip.md) · ⚠️ **"自动脱壳推 v3"条款被 ADR 0079 部分取代(仅梆梆自检场景)**
 
 ### v2 重构决策追溯(2026-07-19,补齐上任工程师未完成的 ADR 合规)
 
@@ -127,8 +127,8 @@
 
 - [ADR 0076 · 项目定位修订评估:攻防工作台](0076-project-positioning-revision-assessment.md) - **accepted**(方案 B,自有 APK 诊断),取代 ADR 0001
 - [ADR 0077 · 自有 APK 诊断功能(含技术兜底)](0077-self-apk-audit.md) - accepted(2026-07-20 修订加例外 A 签名回填 + 例外 B 梆梆适配器),功能级 ADR,三重校验(包名白名单 + 签名比对 + 目录隔离)
-- [ADR 0078 · 梆梆加固自检适配器(自有 APK 诊断例外 B 的实现)](0078-bangcle-hardener-self-audit-adapter.md) - **proposed**(律师前置,代码未实现),3 把锁(仅梆梆 / EULA / 仅完整性报告)
-- [ADR 0079 · 部分取代 ADR 0067(仅梆梆自检场景)](0079-partial-supersede-0067-bangcle-only.md) - **proposed**(与 0078 同步,律师前置),明确 0078 与 0067 的边界
+- [ADR 0078 · 梆梆加固自检适配器(自有 APK 诊断例外 B 的实现)](0078-bangcle-hardener-self-audit-adapter.md) - **proposed**(律师前置,代码未实现),3 把锁(仅梆梆 / EULA / 仅完整性报告),Supersedes ADR 0067 partial
+- [ADR 0079 · 部分取代 ADR 0067(仅"自动脱壳推 v3"条款,梆梆自检场景)](0079-partial-supersede-0067-bangcle-only.md) - **proposed**(与 0078 同步,律师前置),最小取代范围,4 个限定(仅梆梆 / 仅 integrity / 不解未知 / 不外输 dex)
 
 ## 模板
 
