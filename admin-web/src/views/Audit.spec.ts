@@ -4,7 +4,6 @@ import { createMemoryHistory, createRouter } from 'vue-router';
 import { createPinia, setActivePinia } from 'pinia';
 import Audit from './Audit.vue';
 import { auditApi } from '@/api/audit';
-import { useAuthStore } from '@/stores/auth';
 
 // mock auditApi
 vi.mock('@/api/audit', () => ({
@@ -16,7 +15,7 @@ vi.mock('@/api/audit', () => ({
   },
 }));
 
-// mock auth store
+// mock auth store(ADMIN 角色,让水印追溯 Tab 可见)
 vi.mock('@/stores/auth', () => ({
   useAuthStore: () => ({
     developer: { id: 'dev-1', email: 'test@test.com', role: 'ADMIN' },
