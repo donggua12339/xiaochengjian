@@ -357,23 +357,48 @@ git push origin v0.3.0
 
 **待办(用户动作)**:
 
-1. **律师咨询**:聘请律师就 ADR 0078 梆梆适配器出具法律意见书
-   - 意见书存档路径(不入库,与 SSH 凭证同等级保密):用户保管
-   - 律师通过 -> ADR 0078 状态改 accepted,允许写代码
-   - 律师驳回 -> ADR 0078 状态改 rejected,删除例外 B,ADR 0079 同步失效
-2. **梆梆适配器代码开发**(律师意见落地后,约 1-2 周)
-3. **签名回填代码开发**(无律师前置,约 3-5 天)
+1. ~~律师咨询~~(2026-07-20 已完成,审核通过,0078/0079 状态 accepted)
+2. ~~梆梆适配器代码开发~~(2026-07-20 已完成,541 测试通过,生产已部署)
+3. **梆梆自检集成测试**(待用户做):用真梆梆加固的自有 APK 端到端验证
+4. **injector-android 端梆梆自检 Tab**(可选,ADR 0077 §3.3,后续按需做)
 
 **git 提交**:本次 ADR/文档变更累计涉及文件:
 - `docs/adr/0077-self-apk-audit.md`(加例外 + 第 8 节)
 - `docs/adr/0078-bangcle-hardener-self-audit-adapter.md`(新建)
 - `docs/adr/0079-partial-supersede-0067-bangcle-only.md`(新建)
-- `docs/adr/0067-hardened-apk-mvp-skip.md`(状态标注)
+- `docs/adr/0067-hardened-apk-mvp-skip.md`(状态保持 accepted,不改)
 - `docs/adr/README.md`(索引)
 - `CLAUDE.md`(第 2 节)
 - `docs/handover.md`(本节)
 
-待用户确认后一次性提交 PR(`docs: stage 3 adr revision -- bangcle adapter + signature refill exceptions`)。
+### 阶段 3 · 梆梆适配器代码开发(2026-07-20,已完成,生产已部署)
+
+**已完成(2026-07-20)**:
+
+- ✅ ADR 0078/0079 律师逐字核对,状态 proposed -> accepted
+  - 0079 supersede 0067 规范化:只动"自动脱壳推 v3"条款,0067 本身状态不改
+  - 0078 正文显式标注 `Supersedes: ADR 0067 (partial, 仅自动脱壳条款)`
+  - 0079 引用律师原文一字不差,3 个限定(仅梆梆/仅 integrity/不解未知)
+- ✅ EULA 文档(`docs/compliance/audit-eula.md`,v1.0.0,锁 B 前置)
+- ✅ Prisma schema 扩展:AuditLogOwn 加 hardener/eulaVersion/eulaAccepted + migration
+- ✅ backend/src/audit-own/hardener/ 新模块:
+  - `hardener-detector.ts`(锁 A:仅梆梆,检测 360/爱加密/乐固/百度拒绝)
+  - `bangcle.adapter.ts`(锁 C:仅完整性报告,不输出源码)
+  - `hardener-eula.service.ts`(锁 B:EULA 前置,版本号 + 接受状态)
+- ✅ audit-own.controller 加端点:
+  - `GET /v1/audit/eula`(获取 EULA 文本 + 版本号)
+  - `POST /v1/audit/eula/accept`(接受 EULA)
+  - `POST /v1/audit/analyze?hardener=bangcle`(触发梆梆自检,EULA 前置)
+- ✅ audit-own.service 加 `analyzeBangcle`:三重校验 + 锁 A 检测 + 锁 C 报告 + 审计日志
+- ✅ admin-web Audit.vue:诊断 Tab 加"加固厂商"下拉 + EULA 弹窗(锁 B UI)
+- ✅ injector CLI:`audit analyze --hardener bangcle` + `audit bangcle-eula` 子命令
+- ✅ 测试:27 个新测试,hardener 模块 100% 覆盖率,backend 全量 541 测试通过
+- ✅ 生产部署:backend + admin-web 重建,audit_log_own 表加字段,3 个新端点 401(正确)
+
+**3 把锁实现验证**:
+- 锁 A(仅梆梆):`HardenerDetector.detect` 检测到 360/爱加密/乐固/百度 so 抛 `UNSUPPORTED_HARDENER`
+- 锁 B(EULA 前置):`HardenerEulaService.validateAccepted` 未接受当前版本 EULA 抛 `EULA_REQUIRED`
+- 锁 C(仅完整性报告):`BangcleAdapter.generateReport` 输出字段限定(soFiles/entryClass/signatures/suspiciousCalls/scanVersion/scanTime,不含源码)
 
 ### P1 - 生产质量(重要)
 
