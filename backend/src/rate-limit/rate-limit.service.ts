@@ -43,6 +43,19 @@ export class RateLimitService {
   }
 
   /**
+   * 检查开发者级限流(防滥用,ADR 0022 扩展)
+   * 同 developerId 每分钟 N 次(默认 100)
+   */
+  async checkDeveloperRateLimit(
+    developerId: string,
+    limit: number,
+    windowSeconds = 60,
+  ): Promise<{ allowed: boolean; remaining: number; retryAfter?: number }> {
+    const key = `rl:developer:${developerId}`;
+    return this.checkRateLimit(key, limit, windowSeconds);
+  }
+
+  /**
    * 检查失败锁定
    * @returns { locked, retryAfter } locked=true 表示已锁定
    *

@@ -4,6 +4,7 @@ import { CardKeyService } from './card-key.service';
 import { GenerateCardsDto, CreateCardTemplateDto, UnbindDeviceDto } from './dto/card-key.dto';
 import { PaginationDto } from '../common/dto/pagination.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { DeveloperRateLimitGuard, DeveloperRateLimit } from '../rate-limit/developer-rate-limit.guard';
 import { CurrentDeveloper } from '../common/decorators/current-developer.decorator';
 import { Audit } from '../audit/audit.decorator';
 import type { CardKeyType } from '@prisma/client';
@@ -16,6 +17,8 @@ export class CardKeyController {
   constructor(private readonly cardKeyService: CardKeyService) {}
 
   @Post('generate')
+  @DeveloperRateLimit({ limit: 10, window: 60 }) // 每分钟最多 10 次生成(防滥用)
+  @UseGuards(DeveloperRateLimitGuard)
   @Audit('GENERATE_CARDS')
   @ApiOperation({ summary: '批量生成卡密(返回明文,仅此一次)' })
   async generate(

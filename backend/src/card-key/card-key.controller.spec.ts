@@ -1,5 +1,7 @@
 import { Test } from '@nestjs/testing';
 import { CardKeyController } from './card-key.controller';
+import { RateLimitService } from '../rate-limit/rate-limit.service';
+import { Reflector } from '@nestjs/core';
 import { CardKeyService } from './card-key.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AuditInterceptor } from '../audit/audit.interceptor';
@@ -52,7 +54,11 @@ describe('CardKeyController', () => {
 
     const moduleRef = await Test.createTestingModule({
       controllers: [CardKeyController],
-      providers: [{ provide: CardKeyService, useValue: cardKeyService }],
+      providers: [
+        { provide: CardKeyService, useValue: cardKeyService },
+        { provide: RateLimitService, useValue: { checkDeveloperRateLimit: jest.fn().mockResolvedValue({ allowed: true, remaining: 10 }) } },
+        Reflector,
+      ],
     })
       .overrideGuard(JwtAuthGuard)
       .useValue({ canActivate: () => true })
