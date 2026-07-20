@@ -3,17 +3,24 @@ import {
   Post,
   Body,
   UseGuards,
+  Req,
   BadRequestException,
+  ForbiddenException,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import {
   ApiBearerAuth,
   ApiOperation,
   ApiTags,
   ApiBody,
+  ApiConsumes,
 } from '@nestjs/swagger';
 import { IsString, MaxLength, MinLength } from 'class-validator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentDeveloper } from '../common/decorators/current-developer.decorator';
+import type { AuthenticatedRequest } from '../common/decorators/current-developer.decorator';
 import { WatermarkService } from './watermark.service';
 
 /**
@@ -73,5 +80,67 @@ export class WatermarkController {
       wid,
       dto.version ?? '0.2.0',
     );
+  }
+
+  /**
+   * POST /v1/watermark/trace
+   * 追溯水印(ADMIN only)
+   *
+   * 上传含 META-INF/xcj-watermark.enc.txt 的 APK,后端:
+   *  1. 从 APK zip 中提取 META-INF/xcj-watermark.enc.txt
+   *  2. AES-256-GCM 解密
+   *  3. 返回明文(version / watermarkId / timestamp / nonce)
+   *
+   * 用途:被滥用时,管理员拿到 APK 可追溯水印来源(开发者 ID + 时间)
+   */
+  @Post('trace')
+  @ApiOperation({ summary: '追溯水印(ADMIN only,ADR 0030 §c 追溯闭环)' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        apk: { type: 'string', format: 'binary' },
+      },
+      required: ['apk'],
+    },
+  })
+  @UseInterceptors(
+    FileInterceptor('apk', {
+      limits: { fileSize: 200 * 1024 * 1024 },
+    }),
+  )
+  async trace(
+    @Req() req: AuthenticatedRequest,
+    @UploadedFile() file: Express.Multer.File,
+  ): Promise<{
+    found: boolean;
+    watermark?: {
+      version: string;
+      watermarkId: string;
+      timestamp: number;
+      nonce: string;
+    };
+    extractedAt: string;
+  }> {
+    // 仅 ADMIN 可追溯(避免普通开发者解密他人 APK 水印)
+    if (req.user?.role !== 'ADMIN') {
+      throw new ForbiddenException('ADMIN_ONLY', {
+        cause: 'watermark trace is admin-only (abuse investigation)',
+      });
+    }
+    if (!file) {
+      throw new BadRequestException('APK_FILE_REQUIRED');
+    }
+
+    const result = await this.watermarkService.extractAndDecryptFromApk(
+      file.buffer,
+    );
+
+    return {
+      found: result.found,
+      watermark: result.watermark,
+      extractedAt: new Date().toISOString(),
+    };
   }
 }

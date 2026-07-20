@@ -122,4 +122,45 @@ describe('WatermarkService', () => {
       expect(() => service.decryptWatermark(tampered)).toThrow();
     });
   });
+
+  describe('extractAndDecryptFromApk', () => {
+    it('APK 无水印文件应返回 { found: false }', async () => {
+      const yazl = await import('yazl');
+      const zipBuf = await new Promise<Buffer>((resolve) => {
+        const zipfile = new yazl.ZipFile();
+        zipfile.addBuffer(Buffer.from('hello'), 'META-INF/other.txt');
+        zipfile.end();
+        const chunks: Buffer[] = [];
+        zipfile.outputStream.on('data', (c) => chunks.push(c));
+        zipfile.outputStream.on('end', () => resolve(Buffer.concat(chunks)));
+      });
+      const result = await service.extractAndDecryptFromApk(zipBuf);
+      expect(result.found).toBe(false);
+    });
+
+    it('APK 含水印文件应提取并解密成功', async () => {
+      const yazl = await import('yazl');
+      // 先生成加密水印
+      const watermark = service.generateEncryptedWatermark('dev-trace-test', '0.2.0');
+      // 构造含水印的 zip
+      const zipBuf = await new Promise<Buffer>((resolve) => {
+        const zipfile = new yazl.ZipFile();
+        zipfile.addBuffer(Buffer.from('app content'), 'classes.dex');
+        zipfile.addBuffer(
+          Buffer.from(watermark.watermarkBase64),
+          'META-INF/xcj-watermark.enc.txt',
+        );
+        zipfile.end();
+        const chunks: Buffer[] = [];
+        zipfile.outputStream.on('data', (c) => chunks.push(c));
+        zipfile.outputStream.on('end', () => resolve(Buffer.concat(chunks)));
+      });
+      const result = await service.extractAndDecryptFromApk(zipBuf);
+      expect(result.found).toBe(true);
+      expect(result.watermark?.watermarkId).toBe('dev-trace-test');
+      expect(result.watermark?.version).toBe('0.2.0');
+      expect(result.watermark?.timestamp).toBeGreaterThan(0);
+      expect(result.watermark?.nonce).toMatch(/^[0-9a-f]{32}$/);
+    });
+  });
 });

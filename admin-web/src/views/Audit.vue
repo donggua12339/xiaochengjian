@@ -14,18 +14,19 @@
  *  - 三重校验前置(后端强制,前端不绕过)
  */
 
-import { ref, h, onMounted } from 'vue';
+import { ref, h, onMounted, computed } from 'vue';
 import {
   NCard, NTabs, NTabPane, NUpload, NButton, NSpace, NText, NAlert,
   NForm, NFormItem, NInput, NTag, NDataTable, NCode,
   NSpin, NDescriptions, NDescriptionsItem, NPopconfirm,
   useMessage, type UploadFileInfo, type DataTableColumns,
 } from 'naive-ui';
-import { auditApi, type AuditLogOwnItem, type AnalyzeReport, type ResignResponse } from '@/api/audit';
+import { auditApi, type AuditLogOwnItem, type AnalyzeReport, type ResignResponse, type WatermarkTraceResponse } from '@/api/audit';
 import { useAuthStore } from '@/stores/auth';
 
 const message = useMessage();
 const auth = useAuthStore();
+const isAdmin = computed(() => auth.developer?.role === 'ADMIN');
 
 // ============= 诊断 Tab =============
 const analyzeApkFile = ref<File | null>(null);
@@ -201,6 +202,66 @@ const historyColumns: DataTableColumns<AuditLogOwnItem> = [
 onMounted(() => {
   loadHistory();
 });
+
+// ============= CSV 导出 =============
+const exporting = ref(false);
+
+async function exportCsv() {
+  exporting.value = true;
+  try {
+    const result = await auditApi.exportLogsCsv(10000);
+    // 触发浏览器下载
+    const blob = new Blob([result.csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = result.filename;
+    a.click();
+    URL.revokeObjectURL(url);
+    message.success(`已导出 ${result.filename}`);
+  } catch (error) {
+    message.error(auth.handleError(error));
+  } finally {
+    exporting.value = false;
+  }
+}
+
+// ============= 水印追溯 Tab(ADMIN only)=============
+const traceApkFile = ref<File | null>(null);
+const tracing = ref(false);
+const traceResult = ref<WatermarkTraceResponse | null>(null);
+
+function handleTraceFileChange(data: { fileList: UploadFileInfo[] }) {
+  const file = data.fileList[0]?.file;
+  traceApkFile.value = file ?? null;
+  traceResult.value = null;
+}
+
+async function doTrace() {
+  if (!traceApkFile.value) {
+    message.warning('请先选择 APK 文件');
+    return;
+  }
+  tracing.value = true;
+  traceResult.value = null;
+  try {
+    const result = await auditApi.traceWatermark(traceApkFile.value);
+    traceResult.value = result;
+    if (result.found) {
+      message.success('水印追溯成功');
+    } else {
+      message.warning('APK 中未找到水印文件');
+    }
+  } catch (error) {
+    message.error(auth.handleError(error));
+  } finally {
+    tracing.value = false;
+  }
+}
+
+function formatTimestamp(ms: number): string {
+  return new Date(ms).toLocaleString('zh-CN');
+}
 </script>
 
 <template>
@@ -401,6 +462,9 @@ onMounted(() => {
         <NSpace vertical size="large">
           <NSpace>
             <NButton @click="loadHistory" :loading="historyLoading">刷新</NButton>
+            <NButton @click="exportCsv" :loading="exporting" type="primary" ghost>
+              导出 CSV
+            </NButton>
             <NText depth="3">
               显示最近 {{ historyLimit }} 条(从第 {{ historyOffset + 1 }} 条起)
             </NText>
@@ -415,6 +479,78 @@ onMounted(() => {
             size="small"
             :scroll="{ x: 1400 }"
           />
+        </NSpace>
+      </NTabPane>
+
+      <!-- Tab 4: 水印追溯(ADMIN only) -->
+      <NTabPane v-if="isAdmin" name="trace" tab="水印追溯(ADMIN)">
+        <NSpace vertical size="large">
+          <NAlert type="warning" :show-icon="true">
+            <strong>水印追溯(ADR 0030 §c 追溯闭环)</strong>:
+            上传含 <code>META-INF/xcj-watermark.enc.txt</code> 的 APK,
+            后端用 AES-256-GCM 解密,返回水印明文(version / watermarkId / timestamp / nonce)。
+            仅 ADMIN 可用,用于滥用追溯调查。
+          </NAlert>
+
+          <NCard title="上传 APK" size="small">
+            <NSpace vertical>
+              <NUpload
+                :max="1"
+                accept=".apk,application/vnd.android.package-archive"
+                :default-upload="false"
+                @change="handleTraceFileChange"
+              >
+                <NButton>选择 APK 文件</NButton>
+              </NUpload>
+
+              <NSpace>
+                <NButton
+                  type="primary"
+                  :loading="tracing"
+                  :disabled="!traceApkFile"
+                  @click="doTrace"
+                >
+                  追溯水印
+                </NButton>
+                <NText v-if="traceApkFile" depth="3">
+                  {{ traceApkFile.name }} ({{ formatSize(traceApkFile.size) }})
+                </NText>
+              </NSpace>
+            </NSpace>
+          </NCard>
+
+          <NSpin v-if="tracing" size="large" />
+
+          <NCard v-if="traceResult" title="追溯结果" size="small">
+            <NAlert
+              :type="traceResult.found ? 'success' : 'warning'"
+              :show-icon="true"
+              style="margin-bottom: 16px;"
+            >
+              {{ traceResult.found ? '水印已找到并解密成功' : 'APK 中未找到水印文件(可能未用 injector sign 加水印,或被擦除)' }}
+            </NAlert>
+
+            <NDescriptions v-if="traceResult.found && traceResult.watermark" :column="1" label-placement="left" bordered>
+              <NDescriptionsItem label="水印版本">
+                {{ traceResult.watermark.version }}
+              </NDescriptionsItem>
+              <NDescriptionsItem label="水印 ID(开发者标识)">
+                <NCode :code="traceResult.watermark.watermarkId" language="text" />
+              </NDescriptionsItem>
+              <NDescriptionsItem label="注入时间">
+                {{ formatTimestamp(traceResult.watermark.timestamp) }}
+                <NText depth="3" style="margin-left: 12px;">
+                  (Unix ms: {{ traceResult.watermark.timestamp }})
+                </NText>
+              </NDescriptionsItem>
+              <NDescriptionsItem label="nonce">
+                <NCode :code="traceResult.watermark.nonce" language="text" />
+              </NDescriptionsItem>
+              <NDescriptionsItem label="提取时间">
+                {{ formatTime(traceResult.extractedAt) }}
+              </NDescriptionsItem>
+            </NDescriptions>
+          </NCard>
         </NSpace>
       </NTabPane>
     </NTabs>

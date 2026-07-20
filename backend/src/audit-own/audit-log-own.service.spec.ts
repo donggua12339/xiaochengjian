@@ -129,4 +129,84 @@ describe('AuditLogOwnService', () => {
       skip: 20,
     });
   });
+
+  describe('exportCsvByDeveloper', () => {
+    it('应返回含 UTF-8 BOM 的 CSV', async () => {
+      prisma.auditLogOwn.findMany.mockResolvedValue([]);
+      const csv = await service.exportCsvByDeveloper('dev-1');
+      expect(csv.startsWith('\ufeff')).toBe(true);
+      // 含表头
+      expect(csv).toContain('createdAt,operation,status');
+    });
+
+    it('应正确转义含逗号的字段', async () => {
+      prisma.auditLogOwn.findMany.mockResolvedValue([
+        {
+          id: 'log-1',
+          developerId: 'dev-1',
+          appId: 'app-1',
+          apkHash: 'hash,with,comma',
+          apkSize: 1024,
+          packageName: 'com.test',
+          signatureHash: 'sig',
+          check1Passed: true,
+          check2Passed: true,
+          check3Passed: true,
+          status: 'SUCCESS',
+          rejectReason: null,
+          reportPath: null,
+          operation: 'ANALYZE',
+          resignFromHash: null,
+          resignToHash: null,
+          keystoreFingerprint: null,
+          ip: '1.2.3.4',
+          userAgent: null,
+          createdAt: new Date('2026-07-20T00:00:00Z'),
+        },
+      ]);
+      const csv = await service.exportCsvByDeveloper('dev-1');
+      // 含逗号的字段应用双引号包裹
+      expect(csv).toContain('"hash,with,comma"');
+    });
+
+    it('limit 上限 50000 防滥用', async () => {
+      prisma.auditLogOwn.findMany.mockResolvedValue([]);
+      await service.exportCsvByDeveloper('dev-1', { limit: 100000 });
+      expect(prisma.auditLogOwn.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ take: 50000 }),
+      );
+    });
+
+    it('应包含 RESIGN 记录的回填字段', async () => {
+      prisma.auditLogOwn.findMany.mockResolvedValue([
+        {
+          id: 'log-2',
+          developerId: 'dev-1',
+          appId: 'app-1',
+          apkHash: 'old',
+          apkSize: 1024,
+          packageName: 'com.test',
+          signatureHash: 'sig',
+          check1Passed: true,
+          check2Passed: true,
+          check3Passed: true,
+          status: 'RESIGN',
+          rejectReason: null,
+          reportPath: null,
+          operation: 'RESIGN',
+          resignFromHash: 'old-hash',
+          resignToHash: 'new-hash',
+          keystoreFingerprint: 'ks-fp',
+          ip: '1.2.3.4',
+          userAgent: 'UA',
+          createdAt: new Date('2026-07-20T00:00:00Z'),
+        },
+      ]);
+      const csv = await service.exportCsvByDeveloper('dev-1');
+      expect(csv).toContain('old-hash');
+      expect(csv).toContain('new-hash');
+      expect(csv).toContain('ks-fp');
+      expect(csv).toContain('RESIGN');
+    });
+  });
 });

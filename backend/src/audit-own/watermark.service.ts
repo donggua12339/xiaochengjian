@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
+import * as yauzl from 'yauzl';
 import { CryptoService } from '../crypto/crypto.service';
 import type { AppConfig } from '../config/configuration';
 
@@ -124,5 +125,110 @@ export class WatermarkService {
       Buffer.from(envelope.tag, 'base64'),
     );
     return JSON.parse(plaintext.toString('utf8'));
+  }
+
+  /**
+   * 从 APK 中提取并解密水印(ADMIN 追溯用)
+   *
+   * 流程:
+   *  1. 用 yauzl 流式扫描 APK zip 的 entry
+   *  2. 找到 META-INF/xcj-watermark.enc.txt -> 读取内容
+   *  3. AES-256-GCM 解密 -> 返回明文
+   *
+   * @returns { found: true, watermark } 找到并解密成功
+   *          { found: false } APK 无水印文件
+   */
+  async extractAndDecryptFromApk(apkBuffer: Buffer): Promise<{
+    found: boolean;
+    watermark?: {
+      version: string;
+      watermarkId: string;
+      timestamp: number;
+      nonce: string;
+    };
+  }> {
+    if (!this.watermarkKey) {
+      throw new BadRequestException('WATERMARK_KEY_NOT_CONFIGURED');
+    }
+
+    const watermarkBase64 = await this.extractWatermarkFileFromZip(apkBuffer);
+    if (!watermarkBase64) {
+      return { found: false };
+    }
+
+    try {
+      const watermark = this.decryptWatermark(watermarkBase64);
+      this.logger.log(
+        `水印追溯成功: watermarkId=${watermark.watermarkId} version=${watermark.version} ts=${watermark.timestamp}`,
+      );
+      return { found: true, watermark };
+    } catch (e) {
+      this.logger.warn(`水印解密失败(可能被篡改): ${(e as Error).message}`);
+      throw new BadRequestException('WATERMARK_DECRYPT_FAILED', {
+        cause: 'watermark file exists but decryption failed (tampered or wrong key)',
+      });
+    }
+  }
+
+  /**
+   * 从 APK zip 中提取 META-INF/xcj-watermark.enc.txt 内容
+   * @returns Base64 字符串,或 null(文件不存在)
+   */
+  private extractWatermarkFileFromZip(apkBuffer: Buffer): Promise<string | null> {
+    return new Promise((resolve, reject) => {
+      const targetEntry = 'META-INF/xcj-watermark.enc.txt';
+      let resolved = false;
+
+      yauzl.fromBuffer(apkBuffer, { lazyEntries: true }, (err, zipfile) => {
+        if (err) {
+          reject(
+            new BadRequestException('APK_PARSE_FAILED', {
+              cause: `failed to open apk as zip: ${err.message}`,
+            }),
+          );
+          return;
+        }
+
+        zipfile.on('entry', (entry) => {
+          if (entry.fileName === targetEntry && !resolved) {
+            resolved = true;
+            zipfile.openReadStream(entry, (readErr, readStream) => {
+              if (readErr) {
+                reject(readErr);
+                return;
+              }
+              const chunks: Buffer[] = [];
+              readStream.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
+              readStream.on('end', () => {
+                const content = Buffer.concat(chunks).toString('utf8').trim();
+                zipfile.close();
+                resolve(content);
+              });
+              readStream.on('error', (e) => reject(e));
+            });
+          } else {
+            zipfile.readEntry();
+          }
+        });
+
+        zipfile.on('end', () => {
+          if (!resolved) {
+            resolve(null);
+          }
+        });
+
+        zipfile.on('error', (e) => {
+          if (!resolved) {
+            reject(
+              new BadRequestException('APK_PARSE_FAILED', {
+                cause: e.message,
+              }),
+            );
+          }
+        });
+
+        zipfile.readEntry();
+      });
+    });
   }
 }

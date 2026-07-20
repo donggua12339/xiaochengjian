@@ -198,4 +198,31 @@ export class AuditOwnController {
       offset: parsedOffset,
     });
   }
+
+  /**
+   * GET /v1/audit/logs/export
+   * 导出本人诊断历史为 CSV(合规审计用,ADR 0032)
+   *
+   * 返回 text/csv + UTF-8 BOM,浏览器直接下载
+   */
+  @Get('logs/export')
+  @ApiOperation({ summary: '导出本人诊断历史为 CSV' })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  async exportLogsCsv(
+    @CurrentDeveloper() developerId: string,
+    @Query('limit') limit?: string,
+  ): Promise<{ csv: string; filename: string }> {
+    const parsedLimit = limit ? parseInt(limit, 10) : 10000;
+    if (isNaN(parsedLimit) || parsedLimit < 1 || parsedLimit > 50000) {
+      throw new BadRequestException('INVALID_LIMIT');
+    }
+    const csv = await this.auditLogOwnService.exportCsvByDeveloper(developerId, {
+      limit: parsedLimit,
+    });
+    const today = new Date().toISOString().slice(0, 10);
+    return {
+      csv,
+      filename: `xcj-audit-logs-${developerId.slice(0, 8)}-${today}.csv`,
+    };
+  }
 }

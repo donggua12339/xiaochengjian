@@ -111,4 +111,83 @@ export class AuditLogOwnService {
       skip: offset,
     });
   }
+
+  /**
+   * 导出某开发者的诊断历史为 CSV(合规审计用,ADR 0032)
+   *
+   * 字段:时间/操作/状态/包名/APK hash/APK 大小/签名 hash/校验1/校验2/拒绝原因/回填后 hash/keystore 指纹/IP/UA
+   *
+   * @returns CSV 字符串(UTF-8 with BOM,Excel 友好)
+   */
+  async exportCsvByDeveloper(
+    developerId: string,
+    options: { limit?: number } = {},
+  ): Promise<string> {
+    const { limit = 10000 } = options;
+    const logs = await this.prisma.auditLogOwn.findMany({
+      where: { developerId },
+      orderBy: { createdAt: 'desc' },
+      take: Math.min(limit, 50000), // 上限 5 万行,防止滥用
+    });
+
+    const headers = [
+      'createdAt',
+      'operation',
+      'status',
+      'packageName',
+      'apkHash',
+      'apkSize',
+      'signatureHash',
+      'check1Passed',
+      'check2Passed',
+      'check3Passed',
+      'rejectReason',
+      'resignFromHash',
+      'resignToHash',
+      'keystoreFingerprint',
+      'appId',
+      'ip',
+      'userAgent',
+    ];
+
+    const escapeCsv = (val: unknown): string => {
+      if (val === null || val === undefined) return '';
+      const s = String(val);
+      // 含逗号/引号/换行的字段用双引号包裹,内部引号转义为两个引号
+      if (/[",\n\r]/.test(s)) {
+        return `"${s.replace(/"/g, '""')}"`;
+      }
+      return s;
+    };
+
+    const lines = [headers.join(',')];
+    for (const log of logs) {
+      lines.push(
+        [
+          log.createdAt.toISOString(),
+          log.operation,
+          log.status,
+          log.packageName,
+          log.apkHash,
+          log.apkSize,
+          log.signatureHash,
+          log.check1Passed,
+          log.check2Passed,
+          log.check3Passed,
+          log.rejectReason,
+          log.resignFromHash,
+          log.resignToHash,
+          log.keystoreFingerprint,
+          log.appId,
+          log.ip,
+          log.userAgent,
+        ]
+          .map(escapeCsv)
+          .join(','),
+      );
+    }
+
+    // UTF-8 BOM(Excel 友好,中文不乱码)
+    return '\ufeff' + lines.join('\r\n');
+  }
 }

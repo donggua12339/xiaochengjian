@@ -65,6 +65,17 @@ export interface ResignResponse {
   resignedApkSize: number;
 }
 
+export interface WatermarkTraceResponse {
+  found: boolean;
+  watermark?: {
+    version: string;
+    watermarkId: string;
+    timestamp: number;
+    nonce: string;
+  };
+  extractedAt: string;
+}
+
 export const auditApi = {
   /**
    * 上传 APK 做只读诊断
@@ -118,10 +129,39 @@ export const auditApi = {
    * 查询诊断历史
    */
   listLogs: (params: { limit?: number; offset?: number } = {}) => {
+    const hasParams = Object.keys(params).length > 0;
     return request<AuditLogOwnItem[]>({
       method: 'GET',
       url: '/audit/logs',
-      params,
+      params: hasParams ? params : undefined,
+    });
+  },
+
+  /**
+   * 导出诊断历史为 CSV(合规审计用)
+   * @returns { csv, filename }
+   */
+  exportLogsCsv: (limit?: number) => {
+    return request<{ csv: string; filename: string }>({
+      method: 'GET',
+      url: '/audit/logs/export',
+      params: limit ? { limit } : undefined,
+    });
+  },
+
+  /**
+   * 水印追溯(ADMIN only,ADR 0030 §c 追溯闭环)
+   * @param apkFile 含 META-INF/xcj-watermark.enc.txt 的 APK
+   */
+  traceWatermark: (apkFile: File) => {
+    const formData = new FormData();
+    formData.append('apk', apkFile);
+    return request<WatermarkTraceResponse>({
+      method: 'POST',
+      url: '/watermark/trace',
+      data: formData,
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 60000,
     });
   },
 };
