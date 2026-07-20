@@ -150,7 +150,6 @@ model Application {
   devices           Device[]
   cardTemplates     CardTemplate[]
   validationLogs    ValidationLog[]
-  auditLogsOwn      AuditLogOwn[]
 
   @@unique([developerId, packageName])
   @@index([developerId])
@@ -345,7 +344,8 @@ model MembershipCode {
 model AuditLogOwn {
   id            String   @id @default(uuid())
   developerId   String
-  appId         String
+  // appId 可选:EULA_ACCEPT 记录不关联具体应用(避免外键约束失败)
+  appId         String?
   // APK 整体 SHA-256 hash(脱敏,不存 APK 内容)
   apkHash       String
   apkSize       Int
@@ -363,7 +363,7 @@ model AuditLogOwn {
   rejectReason  String?
   // 诊断报告路径(临时,24h 后删除;RESIGN 时为 null)
   reportPath    String?
-  // 操作类型:ANALYZE / RESIGN
+  // 操作类型:ANALYZE / RESIGN / EULA_ACCEPT
   operation     String
   // RESIGN 专用:回填前 APK hash + 回填后 APK hash + keystore 指纹(SHA-256,不存密码)
   resignFromHash String?
@@ -381,7 +381,6 @@ model AuditLogOwn {
   createdAt     DateTime @default(now())
 
   developer     Developer  @relation(fields: [developerId], references: [id], onDelete: Cascade)
-  application   Application @relation(fields: [appId], references: [id], onDelete: Cascade)
 
   @@index([developerId, createdAt])
   @@index([appId, createdAt])
