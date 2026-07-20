@@ -369,6 +369,12 @@ model AuditLogOwn {
   resignFromHash String?
   resignToHash   String?
   keystoreFingerprint String?
+  // 梆梆加固自检专用(ADR 0078,锁 B EULA 前置)
+  // hardener: "bangcle" / null(无加固诊断);其他加固厂商不支持(锁 A)
+  // eulaVersion / eulaAccepted:仅 hardener=bangcle 时必填
+  hardener     String?
+  eulaVersion  String?
+  eulaAccepted Boolean?
   // 请求元数据
   ip            String
   userAgent     String?

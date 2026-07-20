@@ -9,6 +9,8 @@ import * as crypto from 'crypto';
 import { AuditOwnService } from './audit-own.service';
 import { AuditOwnValidators } from './audit-own-validators';
 import { AuditLogOwnService } from './audit-log-own.service';
+import { HardenerDetector } from './hardener/hardener-detector';
+import { BangcleAdapter } from './hardener/bangcle.adapter';
 import { PrismaService } from '../prisma/prisma.service';
 
 /**
@@ -66,6 +68,8 @@ describe('AuditOwnService', () => {
         { provide: AuditOwnValidators, useValue: validators },
         { provide: AuditLogOwnService, useValue: auditLog },
         { provide: PrismaService, useValue: prisma },
+        { provide: HardenerDetector, useValue: { detect: jest.fn() } },
+        { provide: BangcleAdapter, useValue: { generateReport: jest.fn() } },
         {
           provide: ConfigService,
           useValue: configService,

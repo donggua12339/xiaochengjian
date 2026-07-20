@@ -3,6 +3,7 @@ import { BadRequestException } from '@nestjs/common';
 import { AuditOwnController } from './audit-own.controller';
 import { AuditOwnService } from './audit-own.service';
 import { AuditLogOwnService } from './audit-log-own.service';
+import { HardenerEulaService } from './hardener/hardener-eula.service';
 
 /**
  * AuditOwnController 单元测试(ADR 0077)
@@ -32,11 +33,23 @@ describe('AuditOwnController', () => {
       listByDeveloper: jest.fn().mockResolvedValue([]),
     } as unknown as jest.Mocked<AuditLogOwnService>;
 
+    const hardenerEulaService = {
+      getCurrentEula: jest.fn().mockReturnValue({
+        version: '1.0.0',
+        text: 'EULA text',
+        effectiveDate: '2026-07-20',
+      }),
+      validateVersion: jest.fn(),
+      validateAccepted: jest.fn().mockResolvedValue(undefined),
+      recordAcceptance: jest.fn().mockResolvedValue(undefined),
+    } as unknown as jest.Mocked<HardenerEulaService>;
+
     const moduleRef = await Test.createTestingModule({
       controllers: [AuditOwnController],
       providers: [
         { provide: AuditOwnService, useValue: auditOwnService },
         { provide: AuditLogOwnService, useValue: auditLogOwnService },
+        { provide: HardenerEulaService, useValue: hardenerEulaService },
       ],
     }).compile();
     controller = moduleRef.get(AuditOwnController);
@@ -52,7 +65,7 @@ describe('AuditOwnController', () => {
   describe('analyze', () => {
     it('缺 file 应抛 BadRequestException', async () => {
       await expect(
-        controller.analyze('dev-1', makeReq(), 'test.apk', undefined as any),
+        controller.analyze('dev-1', makeReq(), 'test.apk', undefined, undefined as any),
       ).rejects.toThrow(BadRequestException);
     });
 
@@ -62,6 +75,7 @@ describe('AuditOwnController', () => {
         'dev-1',
         makeReq({ 'x-forwarded-for': '5.6.7.8' }),
         'test.apk',
+        undefined,
         file,
       );
       expect(auditOwnService.analyze).toHaveBeenCalledWith(
@@ -73,7 +87,7 @@ describe('AuditOwnController', () => {
 
     it('originalName 缺失时用 file.originalname', async () => {
       const file = { buffer: Buffer.from('apk'), originalname: 'fallback.apk' } as any;
-      await controller.analyze('dev-1', makeReq(), undefined as any, file);
+      await controller.analyze('dev-1', makeReq(), null as unknown as string, undefined, file as any);
       expect(auditOwnService.analyze).toHaveBeenCalledWith(
         expect.objectContaining({ originalName: 'fallback.apk' }),
       );
