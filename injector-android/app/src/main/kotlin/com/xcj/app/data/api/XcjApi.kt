@@ -7,13 +7,19 @@ import com.xcj.app.data.model.LoginRequest
 import com.xcj.app.data.model.LoginResponse
 import com.xcj.app.data.model.OperationResponse
 import com.xcj.app.data.model.StatsOverview
+import okhttp3.MultipartBody
+import okhttp3.RequestBody
+import okhttp3.ResponseBody
 import retrofit2.Response
 import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.Header
+import retrofit2.http.Multipart
 import retrofit2.http.POST
+import retrofit2.http.Part
 import retrofit2.http.Path
 import retrofit2.http.Query
+import retrofit2.http.Streaming
 
 /**
  * 小城笺后端 API
@@ -67,4 +73,50 @@ interface XcjApi {
     suspend fun getStatsOverview(
         @Header("Authorization") auth: String,
     ): Response<StatsOverview>
+
+    // ============= 自有 APK 诊断(ADR 0077)=============
+
+    /**
+     * 普通诊断(只读,无加固)
+     * POST /v1/audit/analyze
+     */
+    @Multipart
+    @POST("audit/analyze")
+    suspend fun analyzeApk(
+        @Header("Authorization") auth: String,
+        @Part apk: MultipartBody.Part,
+        @Part("originalName") originalName: RequestBody,
+    ): Response<ResponseBody>
+
+    /**
+     * 梆梆加固自检(ADR 0078,需先接受 EULA)
+     * POST /v1/audit/analyze?hardener=bangcle
+     */
+    @Multipart
+    @POST("audit/analyze")
+    suspend fun analyzeBangcle(
+        @Header("Authorization") auth: String,
+        @Query("hardener") hardener: String,
+        @Part apk: MultipartBody.Part,
+        @Part("originalName") originalName: RequestBody,
+    ): Response<ResponseBody>
+
+    /**
+     * 获取梆梆自检 EULA(锁 B 前置)
+     * GET /v1/audit/eula
+     */
+    @GET("audit/eula")
+    suspend fun getEula(
+        @Header("Authorization") auth: String,
+    ): Response<ResponseBody>
+
+    /**
+     * 接受梆梆自检 EULA(锁 B 前置)
+     * POST /v1/audit/eula/accept
+     */
+    @POST("audit/eula/accept")
+    suspend fun acceptEula(
+        @Header("Authorization") auth: String,
+        @Body body: Map<String, String>,
+    ): Response<ResponseBody>
 }

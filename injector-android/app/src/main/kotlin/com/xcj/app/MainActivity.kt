@@ -11,6 +11,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Inventory
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.QueryStats
+import androidx.compose.material.icons.filled.Security
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -32,6 +33,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.xcj.app.data.prefs.TokenStore
+import com.xcj.app.ui.AuditTab
 import com.xcj.app.ui.CardsTab
 import com.xcj.app.ui.LoginScreen
 import com.xcj.app.ui.PackHelperTab
@@ -116,11 +118,18 @@ private fun MainScaffold(store: TokenStore) {
                     text = { Text("统计") },
                     icon = { Icon(Icons.Default.QueryStats, contentDescription = null) },
                 )
+                Tab(
+                    selected = tab == 3,
+                    onClick = { tab = 3 },
+                    text = { Text("自有诊断") },
+                    icon = { Icon(Icons.Default.Security, contentDescription = null) },
+                )
             }
             when (tab) {
                 0 -> CardsTab(viewModel = cardsVm)
                 1 -> PackHelperTab()
                 2 -> StatsTab(viewModel = statsVm)
+                3 -> AuditTab(store = store)
             }
         }
     }

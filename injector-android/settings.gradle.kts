@@ -17,3 +17,4 @@ dependencyResolutionManagement {
 rootProject.name = "xcj-android-app"
 
 include(":app")
+include(":bangcle-test-app")

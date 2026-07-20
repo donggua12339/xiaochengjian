@@ -180,6 +180,68 @@ SDK 内部签名错误,通常是 `appSecret` 配置错误。检查 `buildConfigF
 - 检查 APP 的离线缓存天数设置(Web 后台应用配置)
 - SDK 会在缓存有效期内允许离线验证,过期后必须在线验证
 
+## 自有 APK 诊断(ADR 0077)+ 梆梆加固自检(ADR 0078)
+
+小城笺提供"自有 APK 诊断"功能,允许开发者对自己的 APK 做只读分析。**仅限开发者拥有合法著作权的自有 APK**,三重校验强制(包名白名单 + 签名 hash 比对 + 目录隔离),任一失败即拒绝。
+
+### 功能模式
+
+| 模式 | 用途 | 端点 | 约束 |
+|---|---|---|---|
+| 普通诊断 | APK 静态分析(签名/Manifest/权限) | `POST /v1/audit/analyze` | 三重校验 |
+| 梆梆自检 | 梆梆加固 APK 完整性扫描 | `POST /v1/audit/analyze?hardener=bangcle` | 三重校验 + 锁 A/B/C |
+| 签名回填 | 自有 APK 重签(例外 A) | `POST /v1/audit/resign` | 三重校验 + META-INF only |
+| 水印生成 | 加密水印嵌入 APK | `POST /v1/watermark/generate` | ADR 0030 §c |
+| 水印追溯 | ADMIN 解密水印追溯 | `POST /v1/watermark/trace` | ADMIN only |
+
+### 梆梆加固自检(ADR 0078)
+
+梆梆加固自检是**唯一允许的加固层自检目标**,3 把锁约束:
+
+- **锁 A(仅梆梆一家)**:360/爱加密/乐固/腾讯乐固/百度等其他加固厂商**明确不支持**,适配器不扩展
+- **锁 B(EULA 前置)**:必须先在 admin-web 接受 EULA 才能启用,无 EULA 不开放
+- **锁 C(仅完整性报告)**:只输出 so 文件 SHA-256 + 签名状态 + API 扫描,**不输出反编译源码**
+
+#### 使用流程
+
+1. **admin-web 注册应用**:包名 + 预期签名 hash(加固后重签的 hash)
+
+2. **接受 EULA**(锁 B 前置):
+   - admin-web:"自有 APK 诊断"Tab -> 选"加固厂商:梆梆" -> 查看并接受 EULA
+   - 或 CLI:`injector audit bangcle-eula --server-url ... --token ... --accept`
+
+3. **上传梆梆加固 APK**:
+   - admin-web:"自有 APK 诊断"Tab -> 选"加固厂商:梆梆" -> 选择 APK -> "执行梆梆自检"
+   - 或 CLI:`injector audit analyze --hardener bangcle --apk ... --token ...`
+   - 或 injector-android APP:"自有诊断"Tab -> 选择 APK -> "执行梆梆自检"
+
+4. **查看报告**:返回 JSON 含 soFiles/entryClass/signatures/suspiciousCalls,不含源码
+
+#### 测试 APP
+
+仓库自带测试 APP `injector-android/bangcle-test-app`,用于被梆梆加固后做端到端验证:
+
+```bash
+cd injector-android
+./gradlew :bangcle-test-app:assembleRelease
+# 产物:bangcle-test-app/build/outputs/apk/release/bangcle-test-app-release-unsigned.apk
+```
+
+把这个 APK 上梆梆官网(https://www.bangcle.com)加固,然后用自有 keystore 重签,再用小城笺梆梆自检验证。详见 `injector-android/bangcle-test-app/README.md`。
+
+#### 错误码
+
+| 错误码 | 含义 | 处理 |
+|---|---|---|
+| `APP_NOT_OWNED` | 包名不在白名单 | 在 admin-web 注册应用包名 |
+| `SIGNATURE_MISMATCH` | 签名 hash 不匹配 | 配置加固后重签的签名 hash 到白名单 |
+| `SIGNATURE_WHITELIST_EMPTY` | 白名单为空 | 先在 admin-web 配置签名 hash |
+| `UNSUPPORTED_HARDENER` | 检测到非梆梆加固(锁 A) | 工具不支持其他加固厂商,换梆梆或用普通诊断 |
+| `BANGCLE_NOT_DETECTED` | APK 无梆梆加固特征 | 用梆梆加固后再上传,或用普通诊断 |
+| `EULA_REQUIRED` | 未接受当前版本 EULA(锁 B) | 先接受 EULA |
+| `EULA_VERSION_MISMATCH` | EULA 版本号不匹配 | 重新获取 EULA |
+| `WATERMARK_KEY_NOT_CONFIGURED` | 服务端未配 WATERMARK_AES_KEY | 联系管理员配 .env |
+
 ## 限制
 
 - SDK 需要 Android API 24+(Android 7.0)
