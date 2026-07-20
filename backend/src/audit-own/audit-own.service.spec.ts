@@ -31,6 +31,8 @@ describe('AuditOwnService', () => {
   let auditLog: jest.Mocked<AuditLogOwnService>;
   let prisma: { application: { update: jest.Mock } };
   let configService: { get: jest.Mock };
+  let hardenerDetector: { detect: jest.Mock };
+  let bangcleAdapter: { generateReport: jest.Mock };
 
   beforeEach(async () => {
     validators = {
@@ -46,6 +48,22 @@ describe('AuditOwnService', () => {
 
     prisma = {
       application: { update: jest.fn().mockResolvedValue({}) },
+    };
+
+    hardenerDetector = {
+      detect: jest.fn(),
+    };
+
+    bangcleAdapter = {
+      generateReport: jest.fn().mockResolvedValue({
+        hardener: 'bangcle',
+        soFiles: [],
+        entryClass: null,
+        signatures: { v1: true, v2: true, v3: true },
+        suspiciousCalls: [],
+        scanVersion: '1.0.0',
+        scanTime: '2026-07-20T00:00:00Z',
+      }),
     };
 
     configService = {
@@ -68,8 +86,8 @@ describe('AuditOwnService', () => {
         { provide: AuditOwnValidators, useValue: validators },
         { provide: AuditLogOwnService, useValue: auditLog },
         { provide: PrismaService, useValue: prisma },
-        { provide: HardenerDetector, useValue: { detect: jest.fn() } },
-        { provide: BangcleAdapter, useValue: { generateReport: jest.fn() } },
+        { provide: HardenerDetector, useValue: hardenerDetector },
+        { provide: BangcleAdapter, useValue: bangcleAdapter },
         {
           provide: ConfigService,
           useValue: configService,
@@ -467,6 +485,195 @@ describe('AuditOwnService', () => {
       copySpy.mockRestore();
       writeSpy.mockRestore();
       rmSpy.mockRestore();
+    });
+  });
+
+  describe('analyzeBangcle - 梆梆加固自检(ADR 0078)', () => {
+    it('三重校验通过 + 检测到梆梆 + 生成报告 + 审计日志 SUCCESS', async () => {
+      validators.validatePackageName.mockResolvedValue({
+        id: 'app-1',
+        name: 'Test',
+        signHashAllowList: ['sig-hash'],
+      });
+      validators.validateSignatureHash.mockResolvedValue(undefined);
+
+      const parseSpy = jest.spyOn(
+        service as unknown as { parsePackageName: (a: string, b: string) => Promise<string> },
+        'parsePackageName',
+      );
+      parseSpy.mockResolvedValue('com.test.app');
+
+      const sigSpy = jest.spyOn(
+        service as unknown as { extractSignatureHash: (a: string) => Promise<string> },
+        'extractSignatureHash',
+      );
+      sigSpy.mockResolvedValue('sig-hash');
+
+      // mock listApkEntries + getSignatureStatus
+      const listSpy = jest.spyOn(
+        service as unknown as { listApkEntries: (a: string) => Promise<string[]> },
+        'listApkEntries',
+      );
+      listSpy.mockResolvedValue(['lib/arm64-v8a/libSecShell.so', 'classes.dex']);
+
+      const sigStatusSpy = jest.spyOn(
+        service as unknown as {
+          getSignatureStatus: (a: string) => Promise<{ v1: boolean; v2: boolean; v3: boolean }>;
+        },
+        'getSignatureStatus',
+      );
+      sigStatusSpy.mockResolvedValue({ v1: true, v2: true, v3: false });
+
+      // 锁 A:检测到梆梆
+      hardenerDetector.detect.mockReturnValue({
+        hardener: 'bangcle',
+        evidence: ['so: lib/arm64-v8a/libSecShell.so'],
+      });
+
+      const result = await service.analyzeBangcle({
+        developerId: 'dev-1',
+        apkBuffer: Buffer.from('fake-apk'),
+        originalName: 'test.apk',
+        ip: '1.2.3.4',
+      });
+
+      expect(result.taskId).toMatch(/^audit-/);
+      expect(result.report.hardener).toBe('bangcle');
+      expect(bangcleAdapter.generateReport).toHaveBeenCalledWith(
+        expect.objectContaining({
+          apkEntries: ['lib/arm64-v8a/libSecShell.so', 'classes.dex'],
+        }),
+      );
+      expect(auditLog.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          status: 'SUCCESS',
+          operation: 'ANALYZE',
+          appId: 'app-1',
+        }),
+      );
+
+      parseSpy.mockRestore();
+      sigSpy.mockRestore();
+      listSpy.mockRestore();
+      sigStatusSpy.mockRestore();
+    });
+
+    it('检测到非梆梆加固应抛 UNSUPPORTED_HARDENER(detector 内部抛)', async () => {
+      validators.validatePackageName.mockResolvedValue({
+        id: 'app-1',
+        name: 'Test',
+        signHashAllowList: ['sig-hash'],
+      });
+      validators.validateSignatureHash.mockResolvedValue(undefined);
+
+      const parseSpy = jest.spyOn(
+        service as unknown as { parsePackageName: (a: string, b: string) => Promise<string> },
+        'parsePackageName',
+      );
+      parseSpy.mockResolvedValue('com.test.app');
+
+      const sigSpy = jest.spyOn(
+        service as unknown as { extractSignatureHash: (a: string) => Promise<string> },
+        'extractSignatureHash',
+      );
+      sigSpy.mockResolvedValue('sig-hash');
+
+      const listSpy = jest.spyOn(
+        service as unknown as { listApkEntries: (a: string) => Promise<string[]> },
+        'listApkEntries',
+      );
+      listSpy.mockResolvedValue(['lib/arm64-v8a/libjiagu.so']);
+
+      // 锁 A:检测到 360 抛 UNSUPPORTED_HARDENER
+      hardenerDetector.detect.mockImplementation(() => {
+        throw new ForbiddenException('UNSUPPORTED_HARDENER');
+      });
+
+      await expect(
+        service.analyzeBangcle({
+          developerId: 'dev-1',
+          apkBuffer: Buffer.from('fake-apk'),
+          originalName: 'test.apk',
+          ip: '1.2.3.4',
+        }),
+      ).rejects.toThrow(ForbiddenException);
+
+      expect(bangcleAdapter.generateReport).not.toHaveBeenCalled();
+
+      parseSpy.mockRestore();
+      sigSpy.mockRestore();
+      listSpy.mockRestore();
+    });
+
+    it('APK 无梆梆加固特征应抛 BANGCLE_NOT_DETECTED', async () => {
+      validators.validatePackageName.mockResolvedValue({
+        id: 'app-1',
+        name: 'Test',
+        signHashAllowList: ['sig-hash'],
+      });
+      validators.validateSignatureHash.mockResolvedValue(undefined);
+
+      const parseSpy = jest.spyOn(
+        service as unknown as { parsePackageName: (a: string, b: string) => Promise<string> },
+        'parsePackageName',
+      );
+      parseSpy.mockResolvedValue('com.test.app');
+
+      const sigSpy = jest.spyOn(
+        service as unknown as { extractSignatureHash: (a: string) => Promise<string> },
+        'extractSignatureHash',
+      );
+      sigSpy.mockResolvedValue('sig-hash');
+
+      const listSpy = jest.spyOn(
+        service as unknown as { listApkEntries: (a: string) => Promise<string[]> },
+        'listApkEntries',
+      );
+      listSpy.mockResolvedValue(['classes.dex', 'AndroidManifest.xml']);
+
+      // 无加固特征
+      hardenerDetector.detect.mockReturnValue({ hardener: null });
+
+      await expect(
+        service.analyzeBangcle({
+          developerId: 'dev-1',
+          apkBuffer: Buffer.from('fake-apk'),
+          originalName: 'test.apk',
+          ip: '1.2.3.4',
+        }),
+      ).rejects.toThrow('BANGCLE_NOT_DETECTED');
+
+      expect(bangcleAdapter.generateReport).not.toHaveBeenCalled();
+
+      parseSpy.mockRestore();
+      sigSpy.mockRestore();
+      listSpy.mockRestore();
+    });
+
+    it('三重校验失败应抛错 + 不调 detector', async () => {
+      validators.validatePackageName.mockRejectedValue(
+        new ForbiddenException('APP_NOT_OWNED'),
+      );
+
+      const parseSpy = jest.spyOn(
+        service as unknown as { parsePackageName: (a: string, b: string) => Promise<string> },
+        'parsePackageName',
+      );
+      parseSpy.mockResolvedValue('com.evil.app');
+
+      await expect(
+        service.analyzeBangcle({
+          developerId: 'dev-1',
+          apkBuffer: Buffer.from('fake-apk'),
+          originalName: 'test.apk',
+          ip: '1.2.3.4',
+        }),
+      ).rejects.toThrow(ForbiddenException);
+
+      expect(hardenerDetector.detect).not.toHaveBeenCalled();
+      expect(bangcleAdapter.generateReport).not.toHaveBeenCalled();
+
+      parseSpy.mockRestore();
     });
   });
 });

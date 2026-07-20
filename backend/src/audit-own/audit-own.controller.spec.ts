@@ -17,6 +17,7 @@ describe('AuditOwnController', () => {
   let controller: AuditOwnController;
   let auditOwnService: jest.Mocked<AuditOwnService>;
   let auditLogOwnService: jest.Mocked<AuditLogOwnService>;
+  let hardenerEulaService: jest.Mocked<HardenerEulaService>;
 
   beforeEach(async () => {
     auditOwnService = {
@@ -33,7 +34,7 @@ describe('AuditOwnController', () => {
       listByDeveloper: jest.fn().mockResolvedValue([]),
     } as unknown as jest.Mocked<AuditLogOwnService>;
 
-    const hardenerEulaService = {
+    hardenerEulaService = {
       getCurrentEula: jest.fn().mockReturnValue({
         version: '1.0.0',
         text: 'EULA text',
@@ -176,6 +177,86 @@ describe('AuditOwnController', () => {
 
     it('offset < 0 应抛 BadRequestException', async () => {
       await expect(controller.listLogs('dev-1', '10', '-1')).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('getEula', () => {
+    it('应返回 EULA 文本 + 版本号', async () => {
+      const result = await controller.getEula();
+      expect(hardenerEulaService.getCurrentEula).toHaveBeenCalled();
+      expect(result.version).toBe('1.0.0');
+      expect(result.text).toBe('EULA text');
+      expect(result.effectiveDate).toBe('2026-07-20');
+    });
+  });
+
+  describe('acceptEula', () => {
+    it('缺 version 应抛 BadRequestException', async () => {
+      await expect(
+        controller.acceptEula('dev-1', makeReq(), { version: '' } as any),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('version 缺失(body 为空)应抛 BadRequestException', async () => {
+      await expect(
+        controller.acceptEula('dev-1', makeReq(), undefined as any),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('正常应调 validateVersion + recordAcceptance', async () => {
+      const result = await controller.acceptEula('dev-1', makeReq({ 'user-agent': 'UA' }), { version: '1.0.0' });
+      expect(hardenerEulaService.validateVersion).toHaveBeenCalledWith('1.0.0');
+      expect(hardenerEulaService.recordAcceptance).toHaveBeenCalledWith(
+        'dev-1',
+        '1.2.3.4',
+        'UA',
+      );
+      expect(result.accepted).toBe(true);
+      expect(result.version).toBe('1.0.0');
+    });
+
+    it('x-forwarded-for 存在时优先用', async () => {
+      await controller.acceptEula('dev-1', makeReq({ 'x-forwarded-for': '5.6.7.8' }), { version: '1.0.0' });
+      expect(hardenerEulaService.recordAcceptance).toHaveBeenCalledWith(
+        'dev-1',
+        '5.6.7.8',
+        undefined,
+      );
+    });
+  });
+
+  describe('analyze - hardener=bangcle', () => {
+    it('hardener=bangcle 应先验证 EULA + 调 analyzeBangcle', async () => {
+      auditOwnService.analyzeBangcle = jest.fn().mockResolvedValue({
+        taskId: 't-bangcle',
+        report: { hardener: 'bangcle' },
+      }) as any;
+      const file = { buffer: Buffer.from('apk'), originalname: 'a.apk' } as any;
+      const result = await controller.analyze(
+        'dev-1',
+        makeReq(),
+        'a.apk',
+        'bangcle',
+        file,
+      );
+      expect(hardenerEulaService.validateAccepted).toHaveBeenCalledWith('dev-1');
+      expect(auditOwnService.analyzeBangcle).toHaveBeenCalled();
+      expect(auditOwnService.analyze).not.toHaveBeenCalled();
+      expect(result.taskId).toBe('t-bangcle');
+    });
+
+    it('hardener 未指定应走普通 analyze', async () => {
+      const file = { buffer: Buffer.from('apk'), originalname: 'a.apk' } as any;
+      await controller.analyze('dev-1', makeReq(), 'a.apk', undefined, file);
+      expect(hardenerEulaService.validateAccepted).not.toHaveBeenCalled();
+      expect(auditOwnService.analyze).toHaveBeenCalled();
+    });
+
+    it('hardener=unknown 应走普通 analyze(不触发梆梆)', async () => {
+      const file = { buffer: Buffer.from('apk'), originalname: 'a.apk' } as any;
+      await controller.analyze('dev-1', makeReq(), 'a.apk', 'unknown', file);
+      expect(hardenerEulaService.validateAccepted).not.toHaveBeenCalled();
+      expect(auditOwnService.analyze).toHaveBeenCalled();
     });
   });
 });
