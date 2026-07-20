@@ -8,6 +8,9 @@ WORKDIR /app
 # 安装 pnpm
 RUN corepack enable && corepack prepare pnpm@9 --activate
 
+# 用淘宝 npm 镜像(海外服务器访问官方源慢)
+RUN pnpm config set registry https://registry.npmmirror.com
+
 # 复制 workspace 根(用于 pnpm workspace 解析)
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
 COPY backend/ ./backend/
