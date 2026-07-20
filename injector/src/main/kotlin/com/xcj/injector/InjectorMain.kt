@@ -10,6 +10,7 @@ import com.github.ajalt.clikt.parameters.types.path
 import com.xcj.injector.audit.AuditAnalyzeCommand
 import com.xcj.injector.audit.AuditCommand
 import com.xcj.injector.audit.AuditResignCommand
+import com.xcj.injector.audit.BangcleEulaCommand
 import com.xcj.injector.sign.ApkSigner
 import com.xcj.injector.watermark.InjectorConstants
 import com.xcj.injector.watermark.Watermark
@@ -476,7 +477,11 @@ fun main(args: Array<String>) {
         .subcommands(
             InitCommand(),
             SignCommand(),
-            AuditCommand().subcommands(AuditAnalyzeCommand(), AuditResignCommand()),
+            AuditCommand().subcommands(
+                AuditAnalyzeCommand(),
+                AuditResignCommand(),
+                BangcleEulaCommand(),
+            ),
         )
         .main(args)
 }

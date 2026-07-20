@@ -76,6 +76,18 @@ export interface WatermarkTraceResponse {
   extractedAt: string;
 }
 
+export interface EulaInfo {
+  version: string;
+  text: string;
+  effectiveDate: string;
+}
+
+export interface AcceptEulaResponse {
+  accepted: boolean;
+  version: string;
+  developerId: string;
+}
+
 export const auditApi = {
   /**
    * 上传 APK 做只读诊断
@@ -162,6 +174,42 @@ export const auditApi = {
       data: formData,
       headers: { 'Content-Type': 'multipart/form-data' },
       timeout: 60000,
+    });
+  },
+
+  /**
+   * 获取梆梆加固自检 EULA(ADR 0078 锁 B 前置)
+   */
+  getEula: () => {
+    return request<EulaInfo>({ method: 'GET', url: '/audit/eula' });
+  },
+
+  /**
+   * 接受梆梆加固自检 EULA(锁 B)
+   * @param version EULA 版本号(从 getEula 获取)
+   */
+  acceptEula: (version: string) => {
+    return request<AcceptEulaResponse>({
+      method: 'POST',
+      url: '/audit/eula/accept',
+      data: { version },
+    });
+  },
+
+  /**
+   * 梆梆加固自检(ADR 0078,需先接受 EULA)
+   * @param apkFile 自有梆梆加固 APK
+   */
+  analyzeBangcle: (apkFile: File) => {
+    const formData = new FormData();
+    formData.append('apk', apkFile);
+    formData.append('originalName', apkFile.name);
+    return request<{ taskId: string; report: AnalyzeReport }>({
+      method: 'POST',
+      url: '/audit/analyze?hardener=bangcle',
+      data: formData,
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 600000,
     });
   },
 };

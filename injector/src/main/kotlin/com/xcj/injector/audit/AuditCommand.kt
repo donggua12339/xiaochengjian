@@ -3,6 +3,7 @@ package com.xcj.injector.audit
 import com.github.ajalt.clikt.core.CliktCommand
 import com.github.ajalt.clikt.core.subcommands
 import com.github.ajalt.clikt.parameters.options.default
+import com.github.ajalt.clikt.parameters.options.flag
 import com.github.ajalt.clikt.parameters.options.option
 import com.github.ajalt.clikt.parameters.options.required
 import com.github.ajalt.clikt.parameters.types.path
@@ -30,11 +31,11 @@ private val logger = LoggerFactory.getLogger("AuditCommand")
  */
 class AuditCommand : CliktCommand(
     name = "audit",
-    help = "自有 APK 诊断 + 签名回填(ADR 0077,需先在 admin-web 注册包名 + 配置签名 hash)"
+    help = "自有 APK 诊断 + 签名回填 + 梆梆加固自检(ADR 0077/0078,需先在 admin-web 注册包名 + 配置签名 hash)"
 ) {
     override fun run() {
-        logger.info("=== 小城笺自有 APK 诊断工具(ADR 0077)===")
-        logger.info("子命令:analyze(只读诊断)/ resign(签名回填)")
+        logger.info("=== 小城笺自有 APK 诊断工具(ADR 0077/0078)===")
+        logger.info("子命令:analyze(只读诊断)/ resign(签名回填)/ bangcle-eula(梆梆 EULA)/ bangcle(梆梆自检)")
         logger.info("三重校验在后端执行,CLI 不绕过")
     }
 }
@@ -68,11 +69,19 @@ class AuditAnalyzeCommand : CliktCommand(
     private val output by option("-o", "--output", help = "报告输出路径(默认输出到 stdout)")
         .path(canBeDir = false)
 
+    private val hardener by option(
+        "--hardener",
+        help = "加固厂商(可选:bangcle。未指定则普通诊断;指定 bangcle 触发梆梆自检,ADR 0078)"
+    ).default("")
+
     override fun run() {
         logger.info("=== 自有 APK 诊断(只读)===")
         logger.info("APK: ${apk.toAbsolutePath()}")
         logger.info("appId: $appId")
         logger.info("服务器: $serverUrl")
+        if (hardener == "bangcle") {
+            logger.info("加固厂商: 梆梆(ADR 0078,需先接受 EULA)")
+        }
 
         val apkFile = apk.toFile()
         if (!apkFile.exists()) {
@@ -85,7 +94,12 @@ class AuditAnalyzeCommand : CliktCommand(
         val boundary = "xcj-audit-boundary-${System.currentTimeMillis()}"
         val multipartBody = buildMultipartBody(boundary, apkFile)
 
-        val url = "$serverUrl/v1/audit/analyze"
+        // 梆梆自检走 ?hardener=bangcle,普通诊断走默认端点
+        val url = if (hardener == "bangcle") {
+            "$serverUrl/v1/audit/analyze?hardener=bangcle"
+        } else {
+            "$serverUrl/v1/audit/analyze"
+        }
         val client = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(15))
             .build()
@@ -288,5 +302,90 @@ class AuditResignCommand : CliktCommand(
         dos.writeBytes("--$boundary--\r\n")
         dos.flush()
         return baos.toByteArray()
+    }
+}
+
+/**
+ * audit bangcle-eula 子命令:查看/接受梆梆加固自检 EULA(ADR 0078 锁 B)
+ *
+ * 用法:
+ *  injector audit bangcle-eula --server-url ... --token ... --accept
+ *  injector audit bangcle-eula --server-url ... --token ...   (仅查看)
+ */
+class BangcleEulaCommand : CliktCommand(
+    name = "bangcle-eula",
+    help = "查看/接受梆梆加固自检 EULA(ADR 0078 锁 B 前置)"
+) {
+    private val serverUrl by option("--server-url", help = "SaaS 服务器 URL")
+        .required()
+
+    private val token by option("--token", help = "管理员 JWT")
+        .required()
+
+    private val accept by option(
+        "--accept",
+        help = "接受当前版本 EULA(不加此参数则只查看 EULA 文本)"
+    ).flag()
+
+    override fun run() {
+        logger.info("=== 梆梆加固自检 EULA(ADR 0078 锁 B)===")
+
+        val client = HttpClient.newBuilder()
+            .connectTimeout(Duration.ofSeconds(15))
+            .build()
+
+        // 1. GET /v1/audit/eula 获取 EULA
+        val getUrl = "$serverUrl/v1/audit/eula"
+        val getRequest = HttpRequest.newBuilder()
+            .uri(URI.create(getUrl))
+            .timeout(Duration.ofSeconds(15))
+            .GET()
+            .header("Authorization", "Bearer $token")
+            .build()
+
+        val getResponse = client.send(getRequest, HttpResponse.BodyHandlers.ofString())
+        if (getResponse.statusCode() != 200) {
+            throw RuntimeException("获取 EULA 失败: HTTP ${getResponse.statusCode()}: ${getResponse.body().take(300)}")
+        }
+
+        val eulaBody = getResponse.body()
+        val versionRegex = Regex("\"version\"\\s*:\\s*\"([^\"]+)\"")
+        val versionMatch = versionRegex.find(eulaBody)
+            ?: throw RuntimeException("EULA 响应未含 version 字段: ${eulaBody.take(300)}")
+        val version = versionMatch.groupValues[1]
+        val effectiveDateRegex = Regex("\"effectiveDate\"\\s*:\\s*\"([^\"]+)\"")
+        val effectiveDateMatch = effectiveDateRegex.find(eulaBody)
+        val effectiveDate = if (effectiveDateMatch != null) effectiveDateMatch.groupValues[1] else "(unknown)"
+
+        logger.info("EULA 版本: $version")
+        logger.info("生效日期: $effectiveDate")
+        println()
+        println(eulaBody)
+
+        if (!accept) {
+            logger.info("---")
+            logger.info("如需接受,请加 --accept 参数")
+            return
+        }
+
+        // 2. POST /v1/audit/eula/accept 接受 EULA
+        val postUrl = "$serverUrl/v1/audit/eula/accept"
+        val postBody = """{"version":"$version"}"""
+        val postRequest = HttpRequest.newBuilder()
+            .uri(URI.create(postUrl))
+            .timeout(Duration.ofSeconds(15))
+            .POST(HttpRequest.BodyPublishers.ofString(postBody))
+            .header("Content-Type", "application/json")
+            .header("Authorization", "Bearer $token")
+            .build()
+
+        val postResponse = client.send(postRequest, HttpResponse.BodyHandlers.ofString())
+        if (postResponse.statusCode() != 200 && postResponse.statusCode() != 201) {
+            throw RuntimeException("接受 EULA 失败: HTTP ${postResponse.statusCode()}: ${postResponse.body().take(300)}")
+        }
+
+        logger.info("=== EULA 已接受 ===")
+        logger.info("版本: $version")
+        logger.info("现在可以使用 injector audit analyze --hardener bangcle 执行梆梆自检")
     }
 }

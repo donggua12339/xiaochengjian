@@ -19,6 +19,7 @@ import {
   NCard, NTabs, NTabPane, NUpload, NButton, NSpace, NText, NAlert,
   NForm, NFormItem, NInput, NTag, NDataTable, NCode,
   NSpin, NDescriptions, NDescriptionsItem, NPopconfirm,
+  NSelect, NModal,
   useMessage, type UploadFileInfo, type DataTableColumns,
 } from 'naive-ui';
 import { auditApi, type AuditLogOwnItem, type AnalyzeReport, type ResignResponse, type WatermarkTraceResponse } from '@/api/audit';
@@ -32,6 +33,37 @@ const isAdmin = computed(() => auth.developer?.role === 'ADMIN');
 const analyzeApkFile = ref<File | null>(null);
 const analyzing = ref(false);
 const analyzeReport = ref<AnalyzeReport | null>(null);
+const hardenerSelect = ref<'none' | 'bangcle'>('none');
+
+// 梆梆 EULA(锁 B 前置)
+const eulaInfo = ref<{ version: string; text: string; effectiveDate: string } | null>(null);
+const eulaAccepted = ref(false);
+const eulaLoading = ref(false);
+const showEulaModal = ref(false);
+
+async function loadEula() {
+  try {
+    eulaInfo.value = await auditApi.getEula();
+    eulaAccepted.value = false;
+  } catch (error) {
+    // EULA 加载失败不阻塞诊断 Tab(只影响梆梆自检)
+  }
+}
+
+async function acceptEula() {
+  if (!eulaInfo.value) return;
+  eulaLoading.value = true;
+  try {
+    await auditApi.acceptEula(eulaInfo.value.version);
+    eulaAccepted.value = true;
+    showEulaModal.value = false;
+    message.success(`EULA v${eulaInfo.value.version} 已接受,可使用梆梆自检`);
+  } catch (error) {
+    message.error(auth.handleError(error));
+  } finally {
+    eulaLoading.value = false;
+  }
+}
 
 function handleAnalyzeFileChange(data: { fileList: UploadFileInfo[] }) {
   const file = data.fileList[0]?.file;
@@ -44,12 +76,22 @@ async function doAnalyze() {
     message.warning('请先选择 APK 文件');
     return;
   }
+  // 梆梆自检:EULA 前置验证(锁 B)
+  if (hardenerSelect.value === 'bangcle') {
+    if (!eulaAccepted.value) {
+      showEulaModal.value = true;
+      return;
+    }
+  }
+
   analyzing.value = true;
   analyzeReport.value = null;
   try {
-    const result = await auditApi.analyze(analyzeApkFile.value);
+    const result = hardenerSelect.value === 'bangcle'
+      ? await auditApi.analyzeBangcle(analyzeApkFile.value)
+      : await auditApi.analyze(analyzeApkFile.value);
     analyzeReport.value = result.report;
-    message.success('诊断完成');
+    message.success(hardenerSelect.value === 'bangcle' ? '梆梆自检完成' : '诊断完成');
   } catch (error) {
     message.error(auth.handleError(error));
   } finally {
@@ -201,6 +243,7 @@ const historyColumns: DataTableColumns<AuditLogOwnItem> = [
 
 onMounted(() => {
   loadHistory();
+  loadEula();
 });
 
 // ============= CSV 导出 =============
@@ -283,6 +326,25 @@ function formatTimestamp(ms: number): string {
 
           <NCard title="上传 APK" size="small">
             <NSpace vertical>
+              <NFormItem label="加固厂商" label-placement="left">
+                <NSelect
+                  v-model:value="hardenerSelect"
+                  :options="[
+                    { label: '无加固(普通诊断)', value: 'none' },
+                    { label: '梆梆加固自检(ADR 0078,需 EULA)', value: 'bangcle' },
+                  ]"
+                  style="width: 320px;"
+                />
+              </NFormItem>
+
+              <NAlert v-if="hardenerSelect === 'bangcle' && !eulaAccepted" type="warning" :show-icon="true">
+                梆梆自检需先接受 EULA(锁 B)。
+                <NButton text type="primary" @click="showEulaModal = true">查看 EULA</NButton>
+              </NAlert>
+              <NAlert v-else-if="hardenerSelect === 'bangcle' && eulaAccepted" type="success" :show-icon="true">
+                EULA v{{ eulaInfo?.version }} 已接受,可执行梆梆自检(锁 A 仅梆梆 / 锁 C 仅完整性报告)
+              </NAlert>
+
               <NUpload
                 :max="1"
                 accept=".apk,application/vnd.android.package-archive"
@@ -299,7 +361,7 @@ function formatTimestamp(ms: number): string {
                   :disabled="!analyzeApkFile"
                   @click="doAnalyze"
                 >
-                  开始诊断
+                  {{ hardenerSelect === 'bangcle' ? '执行梆梆自检' : '开始诊断' }}
                 </NButton>
                 <NText v-if="analyzeApkFile" depth="3">
                   {{ analyzeApkFile.name }} ({{ formatSize(analyzeApkFile.size) }})
@@ -554,5 +616,26 @@ function formatTimestamp(ms: number): string {
         </NSpace>
       </NTabPane>
     </NTabs>
+
+    <!-- 梆梆 EULA 弹窗(锁 B 前置) -->
+    <NModal
+      v-model:show="showEulaModal"
+      preset="card"
+      :title="`梆梆加固自检 EULA v${eulaInfo?.version ?? ''}`"
+      style="max-width: 700px;"
+    >
+      <NSpace vertical>
+        <NAlert type="info" :show-icon="true">
+          生效日期:{{ eulaInfo?.effectiveDate ?? '-' }}。接受后才能使用梆梆加固自检功能(锁 B)。
+        </NAlert>
+        <NCode :code="eulaInfo?.text ?? '加载中...'" language="text" style="white-space: pre-wrap; max-height: 400px; overflow: auto;" />
+        <NSpace justify="end">
+          <NButton @click="showEulaModal = false">取消</NButton>
+          <NButton type="primary" :loading="eulaLoading" @click="acceptEula">
+            我已阅读并接受 EULA
+          </NButton>
+        </NSpace>
+      </NSpace>
+    </NModal>
   </NCard>
 </template>
