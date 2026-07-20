@@ -98,4 +98,73 @@ describe('HardenerDetector', () => {
     const result = detector.detect([], 'com.tencent.tauth.TencentApplication');
     expect(result.hardener).toBeNull();
   });
+
+  describe('真实梆梆样本(logo设计制作.apk,2026-07-20 验证)', () => {
+    // 样本来源:用户提供,已梆梆加固(含 libSecShell.so)
+    // 注:样本含 msa OAID SDK(libmsaoaidsec.so / libmsaoaidauth.so)+ libanti_break_debug.so,
+    //     这些不在梆梆特征列表也不在不支持厂商列表,不应影响检测
+    const realBangcleEntries = [
+      'lib/arm64-v8a/libCtaApiLib.so',
+      'lib/arm64-v8a/libanti_break_debug.so',
+      'lib/arm64-v8a/libdevInfo.so',
+      'lib/arm64-v8a/libmsaoaidauth.so',
+      'lib/arm64-v8a/libmsaoaidsec.so',
+      'lib/armeabi-v7a/libCtaApiLib.so',
+      'lib/armeabi-v7a/libanti_break_debug.so',
+      'lib/armeabi-v7a/libdevInfo.so',
+      'lib/armeabi-v7a/libmsaoaidauth.so',
+      'lib/armeabi-v7a/libmsaoaidsec.so',
+      'lib/armeabi/libCtaApiLib.so',
+      'lib/x86/libCtaApiLib.so',
+      'lib/x86/libanti_break_debug.so',
+      'lib/x86/libdevInfo.so',
+      'lib/x86/libmsaoaidauth.so',
+      'lib/x86/libmsaoaidsec.so',
+      'lib/x86_64/libCtaApiLib.so',
+      'lib/x86_64/libanti_break_debug.so',
+      'lib/x86_64/libdevInfo.so',
+      'lib/x86_64/libmsaoaidauth.so',
+      'lib/x86_64/libmsaoaidsec.so',
+      // 梆梆加固 so(5 个 ABI 全覆盖)
+      'lib/armeabi-v7a/libSecShell.so',
+      'lib/x86/libSecShell.so',
+      'lib/arm64-v8a/libSecShell.so',
+      'lib/x86_64/libSecShell.so',
+      'lib/armeabi/libSecShell.so',
+      // 梆梆加固把原 dex 加密放 assets
+      'assets/classes0.jar',
+      'classes.dex',
+      'AndroidManifest.xml',
+    ];
+
+    it('应识别为 bangcle(锁 A 通过)', () => {
+      const result = detector.detect(realBangcleEntries);
+      expect(result.hardener).toBe('bangcle');
+      expect(result.evidence).toBeDefined();
+      expect(result.evidence?.length).toBeGreaterThan(0);
+    });
+
+    it('不应误判 msa OAID SDK(libmsaoaidsec.so)为不支持的加固厂商', () => {
+      // 关键:libmsaoaidsec.so 含 "sec" 但不是 libshell.so/libjiagu.so,不应触发 UNSUPPORTED
+      // 检测应正常返回 bangcle,不抛 ForbiddenException
+      const result = detector.detect(realBangcleEntries);
+      expect(result.hardener).toBe('bangcle');
+    });
+
+    it('不应误判 libanti_break_debug.so 为不支持的加固厂商', () => {
+      // 反调试 so,名称含 "debug" 但不在不支持列表
+      const result = detector.detect(realBangcleEntries);
+      expect(result.hardener).toBe('bangcle');
+    });
+
+    it('梆梆证据应含 libSecShell.so(5 个 ABI)', () => {
+      const result = detector.detect(realBangcleEntries);
+      expect(result.hardener).toBe('bangcle');
+      // evidence 应含 libSecShell.so 的匹配
+      const secShellEvidence = result.evidence?.filter((e) =>
+        e.includes('libSecShell.so'),
+      );
+      expect(secShellEvidence?.length).toBeGreaterThan(0);
+    });
+  });
 });
