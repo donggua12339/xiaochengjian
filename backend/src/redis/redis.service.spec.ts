@@ -1,5 +1,25 @@
 import { Test } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
+
+// mock ioredis:在 RedisService 构造时返回我们的 mock client
+const mockClient = {
+  set: jest.fn().mockResolvedValue('OK'),
+  get: jest.fn(),
+  del: jest.fn().mockResolvedValue(1),
+  exists: jest.fn(),
+  incr: jest.fn().mockResolvedValue(5),
+  pipeline: jest.fn(),
+  quit: jest.fn().mockResolvedValue('OK'),
+  on: jest.fn(),
+};
+
+jest.mock('ioredis', () => ({
+  __esModule: true,
+  default: jest.fn().mockImplementation(() => mockClient),
+}));
+
+// import 必须在 jest.mock 之后
+// eslint-disable-next-line import/first
 import { RedisService } from './redis.service';
 
 /**
@@ -13,119 +33,88 @@ import { RedisService } from './redis.service';
  *  - incr
  *  - incrWithTtl: pipeline + incr + expire NX
  *  - onModuleDestroy: quit
+ *  - 构造时注册 connect / error 事件回调
  */
 describe('RedisService', () => {
   let service: RedisService;
-  let client: {
-    set: jest.Mock;
-    get: jest.Mock;
-    del: jest.Mock;
-    exists: jest.Mock;
-    incr: jest.Mock;
-    pipeline: jest.Mock;
-    quit: jest.Mock;
-    on: jest.Mock;
-  };
 
   beforeEach(async () => {
-    client = {
-      set: jest.fn().mockResolvedValue('OK'),
-      get: jest.fn(),
-      del: jest.fn().mockResolvedValue(1),
-      exists: jest.fn(),
-      incr: jest.fn().mockResolvedValue(5),
-      pipeline: jest.fn(),
-      quit: jest.fn().mockResolvedValue('OK'),
-      on: jest.fn(),
-    };
-
-    // 用 useValue 直接覆盖 RedisService 实例的 client
+    jest.clearAllMocks();
     const moduleRef = await Test.createTestingModule({
       providers: [
-        {
-          provide: RedisService,
-          useValue: {
-            client,
-            set: (key: string, value: string, ttlSeconds?: number) => {
-              if (ttlSeconds && ttlSeconds > 0) {
-                return client.set(key, value, 'EX', ttlSeconds);
-              }
-              return client.set(key, value);
-            },
-            get: (key: string) => client.get(key),
-            del: (key: string) => client.del(key),
-            exists: async (key: string) => {
-              const r = await client.exists(key);
-              return r === 1;
-            },
-            incr: (key: string) => client.incr(key),
-            incrWithTtl: async (key: string, ttlSeconds: number) => {
-              const p = client.pipeline();
-              p.incr(key);
-              p.expire(key, ttlSeconds, 'NX');
-              const results = await p.exec();
-              return results?.[0]?.[1] as number;
-            },
-            onModuleDestroy: () => client.quit(),
-          } as unknown as RedisService,
-        },
+        RedisService,
         {
           provide: ConfigService,
-          useValue: { get: () => undefined },
+          useValue: {
+            get: (key: string) => {
+              const config: Record<string, unknown> = {
+                redisHost: 'localhost',
+                redisPort: 6379,
+                redisPassword: '',
+                redisDb: 0,
+              };
+              return config[key];
+            },
+          },
         },
       ],
     }).compile();
     service = moduleRef.get(RedisService);
   });
 
+  it('构造时应注册 connect + error 事件回调', () => {
+    expect(mockClient.on).toHaveBeenCalledWith('connect', expect.any(Function));
+    expect(mockClient.on).toHaveBeenCalledWith('error', expect.any(Function));
+  });
+
   it('set 带 TTL 应调 client.set(key, value, "EX", ttl)', async () => {
     await service.set('k', 'v', 60);
-    expect(client.set).toHaveBeenCalledWith('k', 'v', 'EX', 60);
+    expect(mockClient.set).toHaveBeenCalledWith('k', 'v', 'EX', 60);
   });
 
   it('set 不带 TTL 应调 client.set(key, value)', async () => {
     await service.set('k', 'v');
-    expect(client.set).toHaveBeenCalledWith('k', 'v');
+    expect(mockClient.set).toHaveBeenCalledWith('k', 'v');
   });
 
   it('set TTL=0 应调 client.set(key, value)(不传 EX)', async () => {
     await service.set('k', 'v', 0);
-    expect(client.set).toHaveBeenCalledWith('k', 'v');
+    expect(mockClient.set).toHaveBeenCalledWith('k', 'v');
   });
 
   it('set TTL 负数应调 client.set(key, value)(不传 EX)', async () => {
     await service.set('k', 'v', -1);
-    expect(client.set).toHaveBeenCalledWith('k', 'v');
+    expect(mockClient.set).toHaveBeenCalledWith('k', 'v');
   });
 
   it('get 应调 client.get', async () => {
-    client.get.mockResolvedValue('value');
+    mockClient.get.mockResolvedValue('value');
     const result = await service.get('k');
-    expect(client.get).toHaveBeenCalledWith('k');
+    expect(mockClient.get).toHaveBeenCalledWith('k');
     expect(result).toBe('value');
   });
 
   it('del 应调 client.del', async () => {
     const result = await service.del('k');
-    expect(client.del).toHaveBeenCalledWith('k');
+    expect(mockClient.del).toHaveBeenCalledWith('k');
     expect(result).toBe(1);
   });
 
   it('exists 返回 1 时应返回 true', async () => {
-    client.exists.mockResolvedValue(1);
+    mockClient.exists.mockResolvedValue(1);
     const result = await service.exists('k');
     expect(result).toBe(true);
   });
 
   it('exists 返回 0 时应返回 false', async () => {
-    client.exists.mockResolvedValue(0);
+    mockClient.exists.mockResolvedValue(0);
     const result = await service.exists('k');
     expect(result).toBe(false);
   });
 
   it('incr 应调 client.incr', async () => {
     const result = await service.incr('k');
-    expect(client.incr).toHaveBeenCalledWith('k');
+    expect(mockClient.incr).toHaveBeenCalledWith('k');
     expect(result).toBe(5);
   });
 
@@ -135,7 +124,7 @@ describe('RedisService', () => {
       expire: jest.fn(),
       exec: jest.fn().mockResolvedValue([[null, 7], [null, 1]]),
     };
-    client.pipeline.mockReturnValue(pipeline);
+    mockClient.pipeline.mockReturnValue(pipeline);
     const result = await service.incrWithTtl('k', 60);
     expect(pipeline.incr).toHaveBeenCalledWith('k');
     expect(pipeline.expire).toHaveBeenCalledWith('k', 60, 'NX');
@@ -144,6 +133,6 @@ describe('RedisService', () => {
 
   it('onModuleDestroy 应调 client.quit', async () => {
     await service.onModuleDestroy();
-    expect(client.quit).toHaveBeenCalled();
+    expect(mockClient.quit).toHaveBeenCalled();
   });
 });

@@ -15,7 +15,7 @@ import { AuditOwnValidators } from './audit-own-validators';
 import { AuditLogOwnService } from './audit-log-own.service';
 import type { AppConfig } from '../config/configuration';
 
-const execFileAsync = promisify(execFile);
+const execFileAsyncRaw = promisify(execFile);
 
 /**
  * 自有 APK 诊断主服务(ADR 0077)
@@ -324,7 +324,7 @@ export class AuditOwnService {
       const apksignerPath = this.configService.get('apksignerPath', {
         infer: true,
       });
-      await execFileAsync(
+      await this.execFileAsync(
         apksignerPath,
         [
           'sign',
@@ -409,6 +409,17 @@ export class AuditOwnService {
   }
 
   /**
+   * execFile 的 Promise 包装(便于单元测试 mock)
+   */
+  private async execFileAsync(
+    cmd: string,
+    args: string[],
+    options: { timeout?: number; maxBuffer?: number } = {},
+  ): Promise<{ stdout: string; stderr: string }> {
+    return execFileAsyncRaw(cmd, args, options);
+  }
+
+  /**
    * 清理隔离目录(校验 3)
    * rm -rf <workDir>
    */
@@ -433,7 +444,7 @@ export class AuditOwnService {
   private async parsePackageName(apkPath: string, workDir: string): Promise<string> {
     try {
       // 解压 AndroidManifest.xml
-      await execFileAsync('unzip', ['-o', apkPath, 'AndroidManifest.xml', '-d', workDir], {
+      await this.execFileAsync('unzip', ['-o', apkPath, 'AndroidManifest.xml', '-d', workDir], {
         timeout: 30_000,
       });
       const manifestPath = path.join(workDir, 'AndroidManifest.xml');
@@ -477,7 +488,7 @@ export class AuditOwnService {
   private async extractSignatureHash(apkPath: string): Promise<string> {
     const apksignerPath = this.configService.get('apksignerPath', { infer: true });
     try {
-      const { stdout } = await execFileAsync(
+      const { stdout } = await this.execFileAsync(
         apksignerPath,
         ['verify', '--print-certs', apkPath],
         { timeout: 30_000, maxBuffer: 1024 * 1024 },

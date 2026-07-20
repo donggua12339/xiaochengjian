@@ -329,12 +329,140 @@ describe('AuditOwnService', () => {
     });
   });
 
-  describe('resign - 成功路径(需 mock child_process 模块,留给集成测试)', () => {
-    it('placeholder: 三重校验 + apksigner + 白名单更新见集成测试', () => {
-      // resign 成功路径涉及 execFileAsync(promisify(execFile)),
-      // 单元测试无法通过 jest.spyOn 替换(promisify 在模块加载时绑定)。
-      // 集成测试在装了 apksigner 的容器内跑(见 Dockerfile + deploy/backup/restore-test.sh)。
-      expect(true).toBe(true);
+  describe('resign - 成功路径(mock execFileAsync 私有方法)', () => {
+    it('三重校验通过 + apksigner 重签 + 白名单更新 + 审计日志 RESIGN', async () => {
+      validators.validatePackageName.mockResolvedValue({
+        id: 'app-1',
+        name: 'Test',
+        signHashAllowList: ['old-hash'],
+      });
+      validators.validateSignatureHash.mockResolvedValue(undefined);
+
+      const parseSpy = jest.spyOn(
+        service as unknown as { parsePackageName: (a: string, b: string) => Promise<string> },
+        'parsePackageName',
+      );
+      parseSpy.mockResolvedValue('com.test.app');
+
+      const sigSpy = jest.spyOn(
+        service as unknown as { extractSignatureHash: (a: string) => Promise<string> },
+        'extractSignatureHash',
+      );
+      sigSpy.mockResolvedValue('old-hash');
+
+      // mock execFileAsync 私有方法(已重构为可 mock)
+      const execSpy = jest.spyOn(
+        service as unknown as { execFileAsync: (...args: unknown[]) => Promise<{ stdout: string; stderr: string }> },
+        'execFileAsync',
+      );
+      execSpy.mockResolvedValue({ stdout: '', stderr: '' });
+
+      // mock fs.copyFile + fs.readFile(让 resign 流程跑通)
+      const fs = require('fs/promises');
+      const copySpy = jest.spyOn(fs, 'copyFile').mockResolvedValue(undefined);
+      // apksigner --out resignedPath,service 后续 readFile 读它
+      // 让 readFile 返回固定内容(模拟 apksigner 已写出)
+      const readSpy = jest.spyOn(fs, 'readFile').mockResolvedValue(Buffer.from('resigned-apk-content'));
+      const writeSpy = jest.spyOn(fs, 'writeFile').mockResolvedValue(undefined);
+      const rmSpy = jest.spyOn(fs, 'rm').mockResolvedValue(undefined);
+
+      const result = await service.resign({
+        developerId: 'dev-1',
+        apkBuffer: Buffer.from('fake-apk'),
+        originalName: 'test.apk',
+        keystoreBuffer: Buffer.from('keystore'),
+        keystorePassword: 'pass',
+        keyAlias: 'key0',
+        keyPassword: 'pass',
+        ip: '1.2.3.4',
+      });
+
+      expect(result.taskId).toMatch(/^audit-/);
+      expect(result.oldHash).toBeTruthy();
+      expect(result.newHash).toBeTruthy();
+      expect(result.newHash).not.toBe(result.oldHash);
+      expect(prisma.application.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'app-1' },
+          data: expect.objectContaining({
+            signHashAllowList: { push: result.newHash },
+          }),
+        }),
+      );
+      expect(auditLog.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          status: 'RESIGN',
+          operation: 'RESIGN',
+          appId: 'app-1',
+          resignFromHash: result.oldHash,
+          resignToHash: result.newHash,
+        }),
+      );
+      // 隔离目录应被清理
+      expect(rmSpy).toHaveBeenCalled();
+
+      parseSpy.mockRestore();
+      sigSpy.mockRestore();
+      execSpy.mockRestore();
+      copySpy.mockRestore();
+      readSpy.mockRestore();
+      writeSpy.mockRestore();
+      rmSpy.mockRestore();
+    });
+
+    it('apksigner 失败应抛错 + 不更新白名单 + 仍清理目录', async () => {
+      validators.validatePackageName.mockResolvedValue({
+        id: 'app-1',
+        name: 'Test',
+        signHashAllowList: ['old-hash'],
+      });
+      validators.validateSignatureHash.mockResolvedValue(undefined);
+
+      const parseSpy = jest.spyOn(
+        service as unknown as { parsePackageName: (a: string, b: string) => Promise<string> },
+        'parsePackageName',
+      );
+      parseSpy.mockResolvedValue('com.test.app');
+
+      const sigSpy = jest.spyOn(
+        service as unknown as { extractSignatureHash: (a: string) => Promise<string> },
+        'extractSignatureHash',
+      );
+      sigSpy.mockResolvedValue('old-hash');
+
+      const execSpy = jest.spyOn(
+        service as unknown as { execFileAsync: (...args: unknown[]) => Promise<{ stdout: string; stderr: string }> },
+        'execFileAsync',
+      );
+      execSpy.mockRejectedValue(new Error('apksigner failed'));
+
+      const fs = require('fs/promises');
+      const copySpy = jest.spyOn(fs, 'copyFile').mockResolvedValue(undefined);
+      const writeSpy = jest.spyOn(fs, 'writeFile').mockResolvedValue(undefined);
+      const rmSpy = jest.spyOn(fs, 'rm').mockResolvedValue(undefined);
+
+      await expect(
+        service.resign({
+          developerId: 'dev-1',
+          apkBuffer: Buffer.from('fake-apk'),
+          originalName: 'test.apk',
+          keystoreBuffer: Buffer.from('keystore'),
+          keystorePassword: 'pass',
+          keyAlias: 'key0',
+          keyPassword: 'pass',
+          ip: '1.2.3.4',
+        }),
+      ).rejects.toThrow('apksigner failed');
+
+      expect(prisma.application.update).not.toHaveBeenCalled();
+      expect(rmSpy).toHaveBeenCalled();
+
+      parseSpy.mockRestore();
+      sigSpy.mockRestore();
+      execSpy.mockRestore();
+      copySpy.mockRestore();
+      writeSpy.mockRestore();
+      rmSpy.mockRestore();
     });
   });
 });
