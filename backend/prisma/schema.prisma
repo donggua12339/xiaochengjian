@@ -96,6 +96,7 @@ model Developer {
   applications  Application[]
   auditLogs     AuditLog[]
   auditLogsOwn  AuditLogOwn[]
+  packerLogs    PackerLog[]
   cardTemplates CardTemplate[]
   cardKeys      CardKey[]
   devices       Device[]
@@ -150,6 +151,7 @@ model Application {
   devices           Device[]
   cardTemplates     CardTemplate[]
   validationLogs    ValidationLog[]
+  packerLogs        PackerLog[]
 
   @@unique([developerId, packageName])
   @@index([developerId])
@@ -387,4 +389,50 @@ model AuditLogOwn {
   @@index([status])
   @@index([operation])
   @@map("audit_log_own")
+}
+
+// ============= 自有 APK SDK 封装(ADR 0081)=============
+
+/// Packer 封装审计日志(独立表,七锁校验结果 + dex 注入状态)
+/// 详见 ADR 0081 §审计日志字段
+/// 保留 1 年(ADR 0032)
+model PackerLog {
+  id            String   @id @default(uuid())
+  developerId   String
+  appId         String
+  // 原 APK 信息
+  apkHash       String
+  apkSize       Int
+  packageName   String
+  signatureHash String
+  // 七锁校验结果
+  check1Passed  Boolean  // 锁 1:对象锁定(三重校验)
+  check2Passed  Boolean  // 锁 2:内容锁定(固定 dex SHA-256 白名单)
+  check3Passed  Boolean  // 锁 3:入口锁定(Manifest 修改范围)
+  check4Passed  Boolean  // 锁 4:签名锁定(自备 Keystore)
+  check5Passed  Boolean  // 锁 5:权限锁定(JWT 开发者自身)
+  check6Passed  Boolean  // 锁 6:数据锁定(OAID + 包信息,无敏感隐私)
+  check7Passed  Boolean  // 锁 7:客户端签名自检(SDK 初始化校验)
+  // 封装状态:SUCCESS / REJECTED / FAILED
+  status        String
+  rejectReason  String?
+  // dex 注入信息
+  dexInjected   Boolean
+  multidexHandled Boolean
+  injectedDexHash String?  // 注入的 classes-xcj.dex SHA-256(白名单校验)
+  // 重签信息
+  resignedApkHash String?
+  keystoreFingerprint String?
+  // 请求元数据
+  ip            String
+  userAgent     String?
+  createdAt     DateTime @default(now())
+
+  developer     Developer  @relation(fields: [developerId], references: [id], onDelete: Cascade)
+  application   Application @relation(fields: [appId], references: [id], onDelete: Cascade)
+
+  @@index([developerId, createdAt])
+  @@index([appId, createdAt])
+  @@index([status])
+  @@map("packer_log")
 }
