@@ -131,8 +131,8 @@
 - [ADR 0079 · 部分取代 ADR 0067(仅"自动脱壳推 v3"条款,梆梆自检场景)](0079-partial-supersede-0067-bangcle-only.md) - **accepted**(律师意见已落地,2026-07-20),最小取代范围,3 个限定(仅梆梆 / 仅 integrity / 不解未知)
 - [ADR 0080 · SDK 源码级集成(零字节码修改,ADR 0081 回退方案)](0080-sdk-source-integration.md) - **accepted**,默认推荐集成方式,无源码场景需 ADR 0081 补充
 - [ADR 0081 · 自有 APK 的 xcj-auth-sdk 封装器(Packer 模块)](0081-self-apk-sdk-packer.md) - **accepted**(律师预审通过,2026-07-21,🟡 中低风险),七锁架构(含客户端签名自检),回退方案 ADR 0080
-- [ADR 0082-A · 360 加固保自检适配器(V1.5b)](0082-a-360-jiagu-self-audit-adapter.md) - **proposed**(律师前置),libjiagu.so 检测,低风险
-- [ADR 0082-B · 腾讯乐固自检适配器(V1.5a,优先实现)](0082-b-tencent-legu-self-audit-adapter.md) - **proposed**(律师前置),libshell.so 检测,低风险
+- [ADR 0082-A · 360 加固保自检适配器(V1.5b)](0082-a-360-jiagu-self-audit-adapter.md) - **proposed**(合规核查已通过,2026-07-21),libjiagu.so 检测,360 EULA 第 4.1 条"本软件"指加固助手本身不指 APK
+- [ADR 0082-B · 腾讯乐固自检适配器(V1.5a,优先实现)](0082-b-tencent-legu-self-audit-adapter.md) - **proposed**(合规核查已通过,2026-07-21),libshell.so 检测,协议环境宽松
 - [ADR 0082-C · 爱加密自检适配器(V2 评估)](0082-c-ijiami-self-audit-adapter.md) - **draft**(暂不开发),V2 评估
 
 ## 模板
