@@ -39,19 +39,37 @@ ADR 0077 例外 B 允许在严格约束下做梆梆加固层自检。本 ADR 定
 
 ### 2. 三把锁(核心约束)
 
-#### 锁 A:仅梆梆一家
+#### 锁 A:仅指定厂商(V1.5 扩展,2026-07-21 修订)
 
-- 适配器仅识别梆梆加固特征(so 名称 / 加固入口 / native bridge 模式)
-- 检测到非梆梆加固 -> 返回 `UNSUPPORTED_HARDENER`,拒绝诊断
-- 已知不支持的加固厂商(明确拒绝列表):
-  - 360 加固(360 Jiagu)
-  - 爱加密(Ijiami)
-  - 腾讯乐固(Tencent Legu)
-  - 百度加固(Baidu)
-  - 通付盾(Mobifree)
-  - 娜迦(Nagain)
-  - 其他厂商一律不支持
-- 锁 A **不可扩展**:扩展支持其他厂商必须新建 ADR 并与用户 + 律师确认
+**支持范围(V1.5)**:
+
+| 厂商 | 状态 | ADR | 风险 |
+|---|---|---|---|
+| ✅ 梆梆 | 已实现 | ADR 0078(本 ADR) | 中(EULA 前置已落实) |
+| ✅ 腾讯乐固 | V1.5a 优先实现 | ADR 0082-B | 低(律师前置) |
+| ✅ 360 加固保 | V1.5b 并行 | ADR 0082-A | 低(律师前置) |
+| ⏳ 爱加密 | V2 评估 | ADR 0082-C(draft) | 中(EULA 限制较高) |
+
+**不支持范围(明确拒绝)**:
+
+| 厂商 | 状态 |
+|---|---|
+| ❌ 网易易盾 | UNSUPPORTED_HARDENER |
+| ❌ 百度加固 | UNSUPPORTED_HARDENER |
+| ❌ 几维安全 | UNSUPPORTED_HARDENER |
+| ❌ 顶象 App 加固 | UNSUPPORTED_HARDENER |
+| ❌ 天磊卫士 | UNSUPPORTED_HARDENER |
+| ❌ FairGuard | UNSUPPORTED_HARDENER |
+| ❌ Guardsquare DexGuard / iXGuard | UNSUPPORTED_HARDENER |
+| ❌ Appdome | UNSUPPORTED_HARDENER |
+| ❌ Digital.ai App Protection | UNSUPPORTED_HARDENER |
+| ❌ Promon SHIELD | UNSUPPORTED_HARDENER |
+| ❌ AppSealing | UNSUPPORTED_HARDENER |
+
+**扩展规则**:
+- 扩展支持其他厂商必须新建 ADR(0082 系列)+ 律师确认
+- 适配器仅识别已支持厂商的特征(so 名称 / 加固入口)
+- 检测到不支持的厂商 -> 返回 `UNSUPPORTED_HARDENER`,拒绝诊断
 
 #### 锁 B:EULA 前置
 
