@@ -119,4 +119,34 @@ interface XcjApi {
         @Header("Authorization") auth: String,
         @Body body: Map<String, String>,
     ): Response<ResponseBody>
+
+    // ============= 自有 APK SDK 封装(ADR 0081)=============
+
+    /**
+     * 执行 SDK 封装(七锁校验)
+     * POST /v1/packer/pack
+     */
+    @Multipart
+    @POST("packer/pack")
+    suspend fun pack(
+        @Header("Authorization") auth: String,
+        @Part apk: MultipartBody.Part,
+        @Part keystore: MultipartBody.Part,
+        @Part xcjAuthSdkDex: MultipartBody.Part,
+        @Part("keystorePassword") keystorePassword: RequestBody,
+        @Part("keyAlias") keyAlias: RequestBody,
+        @Part("keyPassword") keyPassword: RequestBody,
+        @Part("sdkConfig") sdkConfig: RequestBody,
+        @Part("originalName") originalName: RequestBody,
+    ): Response<ResponseBody>
+
+    /**
+     * 查询封装历史
+     * GET /v1/packer/logs
+     */
+    @GET("packer/logs")
+    suspend fun listPackerLogs(
+        @Header("Authorization") auth: String,
+        @Query("limit") limit: Int = 50,
+    ): Response<ResponseBody>
 }
