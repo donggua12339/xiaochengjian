@@ -74,22 +74,22 @@ describe('PackerValidators', () => {
   });
 
   describe('锁 2 内容锁定', () => {
-    it('白名单为空时应放行(MVP 阶段)', () => {
-      // XCJ_AUTH_SDK_DEX_WHITELIST 默认为空
-      expect(XCJ_AUTH_SDK_DEX_WHITELIST.length).toBe(0);
-      expect(() => service.validateContentLock('any-hash')).not.toThrow();
+    it('白名单非空(SDK v0.2.0 已配置)', () => {
+      // XCJ_AUTH_SDK_DEX_WHITELIST 已含 SDK v0.2.0 hash
+      expect(XCJ_AUTH_SDK_DEX_WHITELIST.length).toBe(1);
+      expect(XCJ_AUTH_SDK_DEX_WHITELIST[0]).toBe(
+        'd624e2a9243ffbb9e5b3e6ada5ce8e05ec993580a253f9a01090b9e60ae462be',
+      );
     });
 
-    it('白名单非空时,hash 不在白名单应抛 ForbiddenException', () => {
-      // 临时加白名单
-      (XCJ_AUTH_SDK_DEX_WHITELIST as string[]).push('whitelist-hash-1');
-      try {
-        expect(() => service.validateContentLock('wrong-hash')).toThrow(ForbiddenException);
-        expect(() => service.validateContentLock('whitelist-hash-1')).not.toThrow();
-      } finally {
-        // 恢复
-        (XCJ_AUTH_SDK_DEX_WHITELIST as string[]).pop();
-      }
+    it('hash 在白名单应通过', () => {
+      expect(() =>
+        service.validateContentLock('d624e2a9243ffbb9e5b3e6ada5ce8e05ec993580a253f9a01090b9e60ae462be'),
+      ).not.toThrow();
+    });
+
+    it('hash 不在白名单应抛 ForbiddenException', () => {
+      expect(() => service.validateContentLock('wrong-hash')).toThrow(ForbiddenException);
     });
   });
 

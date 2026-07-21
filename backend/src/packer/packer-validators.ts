@@ -30,8 +30,8 @@ import { PrismaService } from '../prisma/prisma.service';
  * 当前 v0.2.0 的 classes-xcj.dex hash(占位,实际编译后填入):
  */
 export const XCJ_AUTH_SDK_DEX_WHITELIST: string[] = [
-  // TODO: SDK v0.2.0 编译后填入实际 hash
-  // 示例:'a1b2c3d4e5f6...'(64 字符 hex)
+  // SDK v0.2.0 classes-xcj.dex SHA-256(2026-07-21 编译)
+  'd624e2a9243ffbb9e5b3e6ada5ce8e05ec993580a253f9a01090b9e60ae462be',
 ];
 
 /**

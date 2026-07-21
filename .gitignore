@@ -12,6 +12,7 @@ target/
 *.apk
 *.aab
 *.dex
+!sdk-android/dex/classes-xcj.dex
 *.class
 local.properties
 .gradle/
