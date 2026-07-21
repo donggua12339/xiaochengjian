@@ -129,6 +129,8 @@
 - [ADR 0077 · 自有 APK 诊断功能(含技术兜底)](0077-self-apk-audit.md) - accepted(2026-07-20 修订加例外 A 签名回填 + 例外 B 梆梆适配器),功能级 ADR,三重校验(包名白名单 + 签名比对 + 目录隔离)
 - [ADR 0078 · 梆梆加固自检适配器(自有 APK 诊断例外 B 的实现)](0078-bangcle-hardener-self-audit-adapter.md) - **accepted**(律师意见已落地,2026-07-20),3 把锁(仅梆梆 / EULA / 仅完整性报告),Supersedes ADR 0067 partial
 - [ADR 0079 · 部分取代 ADR 0067(仅"自动脱壳推 v3"条款,梆梆自检场景)](0079-partial-supersede-0067-bangcle-only.md) - **accepted**(律师意见已落地,2026-07-20),最小取代范围,3 个限定(仅梆梆 / 仅 integrity / 不解未知)
+- [ADR 0080 · SDK 源码级集成(零字节码修改,ADR 0081 回退方案)](0080-sdk-source-integration.md) - **accepted**,默认推荐集成方式,无源码场景需 ADR 0081 补充
+- [ADR 0081 · 自有 APK 的 xcj-auth-sdk 封装器(Packer 模块)](0081-self-apk-sdk-packer.md) - **proposed**(律师前置,代码未实现),六锁架构,回退方案 ADR 0080
 
 ## 模板
 
