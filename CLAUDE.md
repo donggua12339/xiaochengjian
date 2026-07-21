@@ -41,7 +41,7 @@
 - ✅ SDK 集成辅助工具(init 生成模板 + sign 签名加水印,详见 ADR 0068)
 - ✅ **自有 APK 签名回填**(ADR 0077 例外 A,2026-07-20 修订):仅限 META-INF only + 自有 keystore + V1+V2+V3 + hash 入白名单,**禁止全量签名替换 / 通用签名剥离 / keystore 共享**
 - ✅ **自有梆梆加固 APK 自检**(ADR 0077 例外 B + ADR 0078,2026-07-20 律师意见已落地,状态 accepted):仅限梆梆一家(锁 A)+ EULA 前置(锁 B)+ 仅完整性报告不输出源码(锁 C);其他加固厂商(360 / 爱加密 / 乐固 / 腾讯乐固等)明确不支持,适配器不扩展;代码已开发完成并部署
-- ⏳ **自有 APK 的 xcj-auth-sdk 封装**(ADR 0077 例外 C + ADR 0081,2026-07-21 提议,状态 proposed,**律师前置,代码未实现**):六锁架构(对象/内容/入口/签名/权限/数据锁定);仅注入固定 classes-xcj.dex,不允许自定义 smali;Manifest 修改仅限 Application 委托;强制自备 Keystore 重签;**若律师评估风险不可控,自动回退至 ADR 0080(源码级集成)**
+- ✅ **自有 APK 的 xcj-auth-sdk 封装**(ADR 0077 例外 C + ADR 0081,2026-07-21 律师预审通过,状态 accepted):七锁架构(对象/内容/入口/签名/权限/数据/客户端签名自检);仅注入固定 classes-xcj.dex,**禁止扩展为自定义 smali 或非 SDK 注入**(红线,后续 PR 不准悄悄扩);Manifest 修改仅限 Application 委托;强制自备 Keystore V1+V2+V3 重签;**锁 7 客户端签名自检**(SDK 初始化时校验 APK 签名 hash,不一致拒启 PACKAGE_TAMPERED);会员获利规模控制在"情节不严重"档(< 5 万/年);风险熔断:若律师正式意见书驳回,回退 ADR 0080(源码级集成)
 
 ## 3. 技术栈锁定
 
