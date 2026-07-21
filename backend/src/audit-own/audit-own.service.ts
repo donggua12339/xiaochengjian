@@ -605,14 +605,15 @@ export class AuditOwnService {
    *  3. 生成梆梆完整性报告(锁 C)
    *  4. 审计日志(含 hardener/eulaVersion/eulaAccepted)
    */
-  async analyzeBangcle(params: {
+  async analyzeHardener(params: {
     developerId: string;
     apkBuffer: Buffer;
     originalName: string;
     ip: string;
     userAgent?: string;
+    hardener: 'bangcle' | 'legu' | 'qihoo360';
   }): Promise<{ taskId: string; report: Record<string, unknown> }> {
-    const { developerId, apkBuffer, originalName, ip, userAgent } = params;
+    const { developerId, apkBuffer, originalName, ip, userAgent, hardener } = params;
 
     const prepared = await this.prepareApk({
       developerId,
@@ -637,22 +638,20 @@ export class AuditOwnService {
       // MVP:用 unzip -l 列出 entry
       const apkEntries = await this.listApkEntries(prepared.apkPath);
 
-      // 锁 A:检测加固厂商(非梆梆直接拒绝)
+      // 锁 A:检测加固厂商(非指定厂商直接拒绝)
       const detectResult = this.hardenerDetector.detect(apkEntries);
-      if (detectResult.hardener !== 'bangcle') {
-        // 检测到非梆梆加固(detector 内部已抛 UNSUPPORTED_HARDENER)或无加固
-        // 无加固时返回 BANGCLE_NOT_DETECTED
-        throw new BadRequestException('BANGCLE_NOT_DETECTED', {
-          cause: 'APK is not bangcle-hardened (ADR 0078 锁 A)',
+      if (detectResult.hardener !== hardener) {
+        throw new BadRequestException('HARDENER_NOT_DETECTED', {
+          cause: `APK is not ${hardener}-hardened (expected ${hardener}, got ${detectResult.hardener ?? 'none'})`,
         });
       }
 
-      // 锁 C:生成梆梆完整性报告(不含源码)
+      // 锁 C:生成完整性报告(不含源码,复用 bangcleAdapter 通用报告)
       const signatures = await this.getSignatureStatus(prepared.apkPath);
-      const bangcleReport = await this.bangcleAdapter.generateReport({
+      const hardenerReport = await this.bangcleAdapter.generateReport({
         apkEntries,
         apkBuffer,
-        applicationClassName: undefined, // MVP:不解析 Manifest 中的 application class
+        applicationClassName: undefined,
         signatures,
       });
 
@@ -665,9 +664,9 @@ export class AuditOwnService {
           apkSize: prepared.apkSize,
           signatureHash: checked.signatureHash,
         },
-        hardener: 'bangcle',
-        bangcle: bangcleReport,
-        note: '梆梆加固自检(ADR 0078),仅完整性报告,不含反编译源码(锁 C)',
+        hardener,
+        hardenerReport,
+        note: `${hardener} 加固自检(ADR 0078/0082),仅完整性报告,不含反编译源码(锁 C)`,
       };
 
       // 审计日志(含 hardener/eulaVersion/eulaAccepted)

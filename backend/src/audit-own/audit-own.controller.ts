@@ -53,7 +53,7 @@ export class AuditOwnController {
   @Post('analyze')
   @ApiOperation({ summary: '自有 APK 诊断(只读:JADX/签名/SDK 后门扫描)' })
   @ApiConsumes('multipart/form-data')
-  @ApiQuery({ name: 'hardener', required: false, type: String, description: '加固厂商(仅 bangcle,ADR 0078)' })
+  @ApiQuery({ name: 'hardener', required: false, type: String, description: '加固厂商(bangcle/legu/qihoo360,ADR 0078+0082-A/B)' })
   @ApiBody({
     schema: {
       type: 'object',
@@ -81,20 +81,23 @@ export class AuditOwnController {
     const ip = (req.headers['x-forwarded-for'] as string) || req.ip || 'unknown';
     const userAgent = req.headers['user-agent'];
 
-    // 梆梆加固自检(ADR 0078):hardener=bangcle 时走梆梆路径
-    // 锁 B:EULA 前置(未接受当前版本 EULA 拒绝)
-    const hardenerParam = hardener === 'bangcle' ? 'bangcle' : undefined;
+    // 加固自检(ADR 0078 + 0082-A/B):hardener 参数触发对应厂商路径
+    const supportedHardeners = ['bangcle', 'legu', 'qihoo360'];
 
-    if (hardenerParam === 'bangcle') {
-      // 锁 B:验证 EULA 已接受
-      await this.hardenerEulaService.validateAccepted(developerId);
+    if (hardener && supportedHardeners.includes(hardener)) {
+      // 锁 B:验证 EULA 已接受(对应厂商)
+      await this.hardenerEulaService.validateAccepted(
+        developerId,
+        hardener as 'bangcle' | 'legu' | 'qihoo360',
+      );
 
-      const result = await this.auditOwnService.analyzeBangcle({
+      const result = await this.auditOwnService.analyzeHardener({
         developerId,
         apkBuffer: file.buffer,
         originalName: originalName || file.originalname,
         ip,
         userAgent,
+        hardener: hardener as 'bangcle' | 'legu' | 'qihoo360',
       });
       return result;
     }
@@ -250,25 +253,28 @@ export class AuditOwnController {
 
   /**
    * GET /v1/audit/eula
-   * 获取当前梆梆加固自检 EULA 文本 + 版本号(ADR 0078 锁 B)
+   * 获取加固自检 EULA 文本 + 版本号(支持多厂商,锁 B 前置)
    */
   @Get('eula')
-  @ApiOperation({ summary: '获取梆梆加固自检 EULA(锁 B 前置)' })
-  async getEula() {
-    return this.hardenerEulaService.getCurrentEula();
+  @ApiOperation({ summary: '获取加固自检 EULA(锁 B 前置,支持 bangcle/legu/qihoo360)' })
+  @ApiQuery({ name: 'hardener', required: false, type: String, description: '加固厂商(默认 bangcle)' })
+  async getEula(@Query('hardener') hardener?: string) {
+    const h = (hardener === 'legu' || hardener === 'qihoo360') ? hardener : 'bangcle';
+    return this.hardenerEulaService.getCurrentEula(h);
   }
 
   /**
    * POST /v1/audit/eula/accept
-   * 接受当前版本 EULA(锁 B 前置,接受后才能启用梆梆自检)
+   * 接受当前版本 EULA(锁 B 前置,支持多厂商)
    */
   @Post('eula/accept')
-  @ApiOperation({ summary: '接受梆梆加固自检 EULA(锁 B)' })
+  @ApiOperation({ summary: '接受加固自检 EULA(锁 B,支持 bangcle/legu/qihoo360)' })
   @ApiBody({
     schema: {
       type: 'object',
       properties: {
-        version: { type: 'string', description: 'EULA 版本号(从 GET /v1/audit/eula 获取)' },
+        version: { type: 'string', description: 'EULA 版本号' },
+        hardener: { type: 'string', description: '加固厂商(默认 bangcle)' },
       },
       required: ['version'],
     },
@@ -276,15 +282,16 @@ export class AuditOwnController {
   async acceptEula(
     @CurrentDeveloper() developerId: string,
     @Req() req: AuthenticatedRequest,
-    @Body() body: { version: string },
+    @Body() body: { version: string; hardener?: string },
   ) {
     if (!body?.version) {
       throw new BadRequestException('EULA_VERSION_REQUIRED');
     }
     this.hardenerEulaService.validateVersion(body.version);
+    const h = (body.hardener === 'legu' || body.hardener === 'qihoo360') ? body.hardener : 'bangcle';
     const ip = (req.headers['x-forwarded-for'] as string) || req.ip || 'unknown';
     const userAgent = req.headers['user-agent'];
-    await this.hardenerEulaService.recordAcceptance(developerId, ip, userAgent);
+    await this.hardenerEulaService.recordAcceptance(developerId, ip, userAgent, h);
     return {
       accepted: true,
       version: CURRENT_EULA_VERSION,

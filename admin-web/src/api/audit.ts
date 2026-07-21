@@ -200,13 +200,13 @@ export const auditApi = {
    * 梆梆加固自检(ADR 0078,需先接受 EULA)
    * @param apkFile 自有梆梆加固 APK
    */
-  analyzeBangcle: (apkFile: File) => {
+  analyzeBangcle: (apkFile: File, hardener: 'bangcle' | 'legu' | 'qihoo360' = 'bangcle') => {
     const formData = new FormData();
     formData.append('apk', apkFile);
     formData.append('originalName', apkFile.name);
     return request<{ taskId: string; report: AnalyzeReport }>({
       method: 'POST',
-      url: '/audit/analyze?hardener=bangcle',
+      url: `/audit/analyze?hardener=${hardener}`,
       data: formData,
       headers: { 'Content-Type': 'multipart/form-data' },
       timeout: 600000,

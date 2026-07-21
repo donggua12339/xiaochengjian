@@ -25,6 +25,7 @@ describe('HardenerDetector', () => {
   });
 
   it('检测到 libDexHelper.so 应返回 bangcle', () => {
+    // 注:libDexHelper.so 同时在梆梆和顶象特征里,梆梆优先匹配
     const result = detector.detect(['lib/armeabi-v7a/libDexHelper.so']);
     expect(result.hardener).toBe('bangcle');
   });
@@ -45,20 +46,35 @@ describe('HardenerDetector', () => {
     expect(result.hardener).toBe('bangcle');
   });
 
-  it('检测到 360 加固 so 应抛 UNSUPPORTED_HARDENER', () => {
-    expect(() => detector.detect(['lib/arm64-v8a/libjiagu.so'])).toThrow(
-      ForbiddenException,
-    );
+  // V1.5 扩展:360 加固保 + 腾讯乐固(ADR 0082-A/B)
+
+  it('检测到 360 加固 so(libjiagu.so)应返回 qihoo360', () => {
+    const result = detector.detect(['lib/arm64-v8a/libjiagu.so']);
+    expect(result.hardener).toBe('qihoo360');
+  });
+
+  it('检测到腾讯乐固 so(libshell.so)应返回 legu', () => {
+    const result = detector.detect(['lib/arm64-v8a/libshell.so']);
+    expect(result.hardener).toBe('legu');
+  });
+
+  it('检测到腾讯乐固 so(libshella.so)应返回 legu', () => {
+    const result = detector.detect(['lib/armeabi-v7a/libshella.so']);
+    expect(result.hardener).toBe('legu');
+  });
+
+  it('检测到 360 Application 类名(com.qihoo.*)应返回 qihoo360', () => {
+    const result = detector.detect([], 'com.qihoo.util.QihooApplication');
+    expect(result.hardener).toBe('qihoo360');
+  });
+
+  it('检测到腾讯 Application 类名(com.tencent.*)应返回 legu', () => {
+    const result = detector.detect([], 'com.tencent.tauth.TencentApplication');
+    expect(result.hardener).toBe('legu');
   });
 
   it('检测到爱加密 so 应抛 UNSUPPORTED_HARDENER', () => {
     expect(() => detector.detect(['lib/armeabi-v7a/libexec.so'])).toThrow(
-      ForbiddenException,
-    );
-  });
-
-  it('检测到腾讯乐固 so 应抛 UNSUPPORTED_HARDENER', () => {
-    expect(() => detector.detect(['lib/arm64-v8a/libshell.so'])).toThrow(
       ForbiddenException,
     );
   });
@@ -69,13 +85,12 @@ describe('HardenerDetector', () => {
     );
   });
 
-  it('同时有梆梆 + 360 so 应抛 UNSUPPORTED_HARDENER(锁 A 优先拒绝)', () => {
-    expect(() =>
-      detector.detect([
-        'lib/arm64-v8a/libSecShell.so',
-        'lib/arm64-v8a/libjiagu.so',
-      ]),
-    ).toThrow(ForbiddenException);
+  it('同时有梆梆 + 360 so 应返回 bangcle(梆梆优先)', () => {
+    const result = detector.detect([
+      'lib/arm64-v8a/libSecShell.so',
+      'lib/arm64-v8a/libjiagu.so',
+    ]);
+    expect(result.hardener).toBe('bangcle');
   });
 
   it('无加固特征应返回 null', () => {
@@ -94,8 +109,8 @@ describe('HardenerDetector', () => {
     expect(result.hardener).toBeNull();
   });
 
-  it('非梆梆 Application 类名(如 com.tencent.*)不应识别为 bangcle', () => {
-    const result = detector.detect([], 'com.tencent.tauth.TencentApplication');
+  it('非加固 Application 类名(如 com.example.*)应返回 null', () => {
+    const result = detector.detect([], 'com.example.myapp.Application');
     expect(result.hardener).toBeNull();
   });
 

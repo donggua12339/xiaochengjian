@@ -33,7 +33,7 @@ const isAdmin = computed(() => auth.developer?.role === 'ADMIN');
 const analyzeApkFile = ref<File | null>(null);
 const analyzing = ref(false);
 const analyzeReport = ref<AnalyzeReport | null>(null);
-const hardenerSelect = ref<'none' | 'bangcle'>('none');
+const hardenerSelect = ref<'none' | 'bangcle' | 'legu' | 'qihoo360'>('none');
 
 // 梆梆 EULA(锁 B 前置)
 const eulaInfo = ref<{ version: string; text: string; effectiveDate: string } | null>(null);
@@ -77,7 +77,7 @@ async function doAnalyze() {
     return;
   }
   // 梆梆自检:EULA 前置验证(锁 B)
-  if (hardenerSelect.value === 'bangcle') {
+  if (hardenerSelect.value !== 'none') {
     if (!eulaAccepted.value) {
       showEulaModal.value = true;
       return;
@@ -87,11 +87,11 @@ async function doAnalyze() {
   analyzing.value = true;
   analyzeReport.value = null;
   try {
-    const result = hardenerSelect.value === 'bangcle'
-      ? await auditApi.analyzeBangcle(analyzeApkFile.value)
+    const result = hardenerSelect.value !== 'none'
+      ? await auditApi.analyzeBangcle(analyzeApkFile.value, hardenerSelect.value as 'bangcle' | 'legu' | 'qihoo360')
       : await auditApi.analyze(analyzeApkFile.value);
     analyzeReport.value = result.report;
-    message.success(hardenerSelect.value === 'bangcle' ? '梆梆自检完成' : '诊断完成');
+    message.success(hardenerSelect.value !== 'none' ? '梆梆自检完成' : '诊断完成');
   } catch (error) {
     message.error(auth.handleError(error));
   } finally {
@@ -332,6 +332,8 @@ function formatTimestamp(ms: number): string {
                   :options="[
                     { label: '无加固(普通诊断)', value: 'none' },
                     { label: '梆梆加固自检(ADR 0078,需 EULA)', value: 'bangcle' },
+                    { label: '腾讯乐固自检(ADR 0082-B,需 EULA)', value: 'legu' },
+                    { label: '360 加固保自检(ADR 0082-A,需 EULA)', value: 'qihoo360' },
                   ]"
                   style="width: 320px;"
                 />

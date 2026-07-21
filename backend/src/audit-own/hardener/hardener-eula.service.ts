@@ -20,19 +20,23 @@ import { PrismaService } from '../../prisma/prisma.service';
 
 export const CURRENT_EULA_VERSION = '1.0.0';
 
+export type SupportedHardener = 'bangcle' | 'legu' | 'qihoo360';
+
 export interface EulaInfo {
+  hardener: string;
   version: string;
   text: string;
   effectiveDate: string;
 }
 
 /**
- * EULA 文本(摘要,完整版见 docs/compliance/audit-eula.md)
+ * 各厂商 EULA 摘要(V1.5,2026-07-21)
  *
- * 注:实际部署时从 docs/compliance/audit-eula.md 读取,这里硬编码摘要供 API 返回。
- * 版本号变化时需同步更新 CURRENT_EULA_VERSION + 此处文本。
+ * 核心条款统一:"本人为 APK 著作权人,本次自检系对自有资产的安全审计"
+ * 完整 EULA 见 docs/compliance/audit-eula-{hardener}.md
  */
-const EULA_SUMMARY = `自有 APK 诊断 EULA(梆梆加固自检场景)
+const HARDENER_EULA_TEXTS: Record<SupportedHardener, string> = {
+  bangcle: `自有 APK 诊断 EULA(梆梆加固自检场景)
 
 版本:${CURRENT_EULA_VERSION}
 生效日期:2026-07-20
@@ -49,7 +53,46 @@ const EULA_SUMMARY = `自有 APK 诊断 EULA(梆梆加固自检场景)
 审计日志记录所有操作(含 EULA 接受状态),保留 1 年。
 违反 EULA 可终止服务 + 披露违规行为。
 
-完整 EULA 见 docs/compliance/audit-eula.md`;
+完整 EULA 见 docs/compliance/audit-eula.md`,
+
+  legu: `自有 APK 诊断 EULA(腾讯乐固自检场景)
+
+版本:${CURRENT_EULA_VERSION}
+生效日期:2026-07-21
+
+本人声明:
+1. 待诊断 APK 是本人自有(合法著作权或授权)
+2. 不绕过腾讯乐固保护(仅完整性扫描,不脱壳不反编译)
+3. 不用于入侵他人系统
+4. 本次自检系对自有资产的安全审计
+
+工具能力:腾讯乐固 so 完整性报告 + API 扫描 + 签名验证(不输出源码)
+禁止:脱壳 / 反编译 / 运行 APK / 处理非腾讯乐固加固
+
+审计日志记录所有操作(含 EULA 接受状态),保留 1 年。
+违反 EULA 可终止服务 + 披露违规行为。
+
+完整 EULA 见 docs/compliance/audit-eula-legu.md`,
+
+  qihoo360: `自有 APK 诊断 EULA(360 加固保自检场景)
+
+版本:${CURRENT_EULA_VERSION}
+生效日期:2026-07-21
+
+本人声明:
+1. 待诊断 APK 是本人自有(合法著作权或授权)
+2. 不绕过 360 加固保保护(仅完整性扫描,不脱壳不反编译)
+3. 不用于入侵他人系统
+4. 本次自检系对自有资产的安全审计
+
+工具能力:360 加固保 so 完整性报告 + API 扫描 + 签名验证(不输出源码)
+禁止:脱壳 / 反编译 / 运行 APK / 处理非 360 加固保加固
+
+审计日志记录所有操作(含 EULA 接受状态),保留 1 年。
+违反 EULA 可终止服务 + 披露违规行为。
+
+完整 EULA 见 docs/compliance/audit-eula-360.md`,
+};
 
 @Injectable()
 export class HardenerEulaService {
@@ -58,30 +101,38 @@ export class HardenerEulaService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * 获取当前 EULA 文本 + 版本号
+   * 获取当前 EULA 文本 + 版本号(支持多厂商)
    */
-  getCurrentEula(): EulaInfo {
+  getCurrentEula(hardener: SupportedHardener = 'bangcle'): EulaInfo {
+    const text = HARDENER_EULA_TEXTS[hardener];
+    if (!text) {
+      throw new BadRequestException('UNSUPPORTED_HARDENER', {
+        cause: `unsupported hardener for EULA: ${hardener}`,
+      });
+    }
     return {
+      hardener,
       version: CURRENT_EULA_VERSION,
-      text: EULA_SUMMARY,
-      effectiveDate: '2026-07-20',
+      text,
+      effectiveDate: hardener === 'bangcle' ? '2026-07-20' : '2026-07-21',
     };
   }
 
   /**
-   * 验证开发者是否已接受当前版本 EULA
-   *
-   * 查询 audit_log_own 表,看该开发者是否有 eulaAccepted=true 且 eulaVersion=CURRENT 的记录
+   * 验证开发者是否已接受当前版本 EULA(支持多厂商)
    *
    * @throws ForbiddenException 未接受当前版本 EULA(EULA_REQUIRED)
    */
-  async validateAccepted(developerId: string): Promise<void> {
+  async validateAccepted(
+    developerId: string,
+    hardener: SupportedHardener = 'bangcle',
+  ): Promise<void> {
     const accepted = await this.prisma.auditLogOwn.findFirst({
       where: {
         developerId,
         eulaAccepted: true,
         eulaVersion: CURRENT_EULA_VERSION,
-        hardener: 'bangcle',
+        hardener,
       },
       select: { id: true, createdAt: true },
       orderBy: { createdAt: 'desc' },
@@ -89,27 +140,24 @@ export class HardenerEulaService {
 
     if (!accepted) {
       throw new ForbiddenException('EULA_REQUIRED', {
-        cause: `developer must accept EULA v${CURRENT_EULA_VERSION} before using bangcle hardener audit (ADR 0078 锁 B)`,
+        cause: `developer must accept ${hardener} EULA v${CURRENT_EULA_VERSION} before using ${hardener} hardener audit (锁 B)`,
       });
     }
   }
 
   /**
-   * 记录开发者接受 EULA
-   *
-   * 在 audit_log_own 表插入一条记录:
-   *  - operation = 'EULA_ACCEPT'(非 ANALYZE / RESIGN)
-   *  - hardener = 'bangcle'
-   *  - eulaVersion = CURRENT
-   *  - eulaAccepted = true
-   *
-   * 注:此记录不关联具体 APK,apkHash/packageName 等字段填占位值
+   * 记录开发者接受 EULA(支持多厂商)
    */
-  async recordAcceptance(developerId: string, ip: string, userAgent?: string): Promise<void> {
+  async recordAcceptance(
+    developerId: string,
+    ip: string,
+    userAgent?: string,
+    hardener: SupportedHardener = 'bangcle',
+  ): Promise<void> {
     await this.prisma.auditLogOwn.create({
       data: {
         developerId,
-        appId: 'eula-accept', // 占位,不关联具体应用
+        appId: 'eula-accept',
         apkHash: 'n/a',
         apkSize: 0,
         packageName: 'n/a',
@@ -119,7 +167,7 @@ export class HardenerEulaService {
         check3Passed: true,
         status: 'SUCCESS',
         operation: 'EULA_ACCEPT',
-        hardener: 'bangcle',
+        hardener,
         eulaVersion: CURRENT_EULA_VERSION,
         eulaAccepted: true,
         ip,
@@ -128,7 +176,7 @@ export class HardenerEulaService {
     });
 
     this.logger.log(
-      `EULA v${CURRENT_EULA_VERSION} 已接受: developerId=${developerId}`,
+      `${hardener} EULA v${CURRENT_EULA_VERSION} 已接受: developerId=${developerId}`,
     );
   }
 

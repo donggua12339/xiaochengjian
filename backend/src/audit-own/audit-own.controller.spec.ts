@@ -210,6 +210,7 @@ describe('AuditOwnController', () => {
         'dev-1',
         '1.2.3.4',
         'UA',
+        'bangcle',
       );
       expect(result.accepted).toBe(true);
       expect(result.version).toBe('1.0.0');
@@ -221,13 +222,14 @@ describe('AuditOwnController', () => {
         'dev-1',
         '5.6.7.8',
         undefined,
+        'bangcle',
       );
     });
   });
 
   describe('analyze - hardener=bangcle', () => {
-    it('hardener=bangcle 应先验证 EULA + 调 analyzeBangcle', async () => {
-      auditOwnService.analyzeBangcle = jest.fn().mockResolvedValue({
+    it('hardener=bangcle 应先验证 EULA + 调 analyzeHardener', async () => {
+      auditOwnService.analyzeHardener = jest.fn().mockResolvedValue({
         taskId: 't-bangcle',
         report: { hardener: 'bangcle' },
       }) as any;
@@ -239,8 +241,8 @@ describe('AuditOwnController', () => {
         'bangcle',
         file,
       );
-      expect(hardenerEulaService.validateAccepted).toHaveBeenCalledWith('dev-1');
-      expect(auditOwnService.analyzeBangcle).toHaveBeenCalled();
+      expect(hardenerEulaService.validateAccepted).toHaveBeenCalledWith('dev-1', 'bangcle');
+      expect(auditOwnService.analyzeHardener).toHaveBeenCalled();
       expect(auditOwnService.analyze).not.toHaveBeenCalled();
       expect(result.taskId).toBe('t-bangcle');
     });

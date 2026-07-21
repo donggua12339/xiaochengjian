@@ -79,7 +79,7 @@ class AuditAnalyzeCommand : CliktCommand(
         logger.info("APK: ${apk.toAbsolutePath()}")
         logger.info("appId: $appId")
         logger.info("服务器: $serverUrl")
-        if (hardener == "bangcle") {
+        if (hardener == "bangcle" || hardener == "legu" || hardener == "qihoo360") {
             logger.info("加固厂商: 梆梆(ADR 0078,需先接受 EULA)")
         }
 
@@ -95,8 +95,8 @@ class AuditAnalyzeCommand : CliktCommand(
         val multipartBody = buildMultipartBody(boundary, apkFile)
 
         // 梆梆自检走 ?hardener=bangcle,普通诊断走默认端点
-        val url = if (hardener == "bangcle") {
-            "$serverUrl/v1/audit/analyze?hardener=bangcle"
+        val url = if (hardener == "bangcle" || hardener == "legu" || hardener == "qihoo360") {
+            "$serverUrl/v1/audit/analyze?hardener=$hardener"
         } else {
             "$serverUrl/v1/audit/analyze"
         }

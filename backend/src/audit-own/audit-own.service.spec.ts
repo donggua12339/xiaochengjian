@@ -56,7 +56,6 @@ describe('AuditOwnService', () => {
 
     bangcleAdapter = {
       generateReport: jest.fn().mockResolvedValue({
-        hardener: 'bangcle',
         soFiles: [],
         entryClass: null,
         signatures: { v1: true, v2: true, v3: true },
@@ -530,11 +529,12 @@ describe('AuditOwnService', () => {
         evidence: ['so: lib/arm64-v8a/libSecShell.so'],
       });
 
-      const result = await service.analyzeBangcle({
+      const result = await service.analyzeHardener({
         developerId: 'dev-1',
         apkBuffer: Buffer.from('fake-apk'),
         originalName: 'test.apk',
         ip: '1.2.3.4',
+        hardener: 'bangcle',
       });
 
       expect(result.taskId).toMatch(/^audit-/);
@@ -590,11 +590,12 @@ describe('AuditOwnService', () => {
       });
 
       await expect(
-        service.analyzeBangcle({
+        service.analyzeHardener({
           developerId: 'dev-1',
           apkBuffer: Buffer.from('fake-apk'),
           originalName: 'test.apk',
           ip: '1.2.3.4',
+          hardener: 'bangcle',
         }),
       ).rejects.toThrow(ForbiddenException);
 
@@ -605,7 +606,7 @@ describe('AuditOwnService', () => {
       listSpy.mockRestore();
     });
 
-    it('APK 无梆梆加固特征应抛 BANGCLE_NOT_DETECTED', async () => {
+    it('APK 无梆梆加固特征应抛 HARDENER_NOT_DETECTED', async () => {
       validators.validatePackageName.mockResolvedValue({
         id: 'app-1',
         name: 'Test',
@@ -635,13 +636,14 @@ describe('AuditOwnService', () => {
       hardenerDetector.detect.mockReturnValue({ hardener: null });
 
       await expect(
-        service.analyzeBangcle({
+        service.analyzeHardener({
           developerId: 'dev-1',
           apkBuffer: Buffer.from('fake-apk'),
           originalName: 'test.apk',
           ip: '1.2.3.4',
+          hardener: 'bangcle',
         }),
-      ).rejects.toThrow('BANGCLE_NOT_DETECTED');
+      ).rejects.toThrow('HARDENER_NOT_DETECTED');
 
       expect(bangcleAdapter.generateReport).not.toHaveBeenCalled();
 
@@ -662,11 +664,12 @@ describe('AuditOwnService', () => {
       parseSpy.mockResolvedValue('com.evil.app');
 
       await expect(
-        service.analyzeBangcle({
+        service.analyzeHardener({
           developerId: 'dev-1',
           apkBuffer: Buffer.from('fake-apk'),
           originalName: 'test.apk',
           ip: '1.2.3.4',
+          hardener: 'bangcle',
         }),
       ).rejects.toThrow(ForbiddenException);
 
