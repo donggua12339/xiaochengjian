@@ -1,4 +1,5 @@
-import { request } from './client';
+import axios from 'axios';
+import { request, getAccessToken } from './client';
 
 /**
  * 自有 APK 诊断 API(ADR 0077)
@@ -58,10 +59,10 @@ export interface AnalyzeResponse {
 }
 
 export interface ResignResponse {
+  blob: Blob;
   taskId: string;
   oldHash: string;
   newHash: string;
-  resignedApkBase64: string;
   resignedApkSize: number;
 }
 
@@ -112,7 +113,7 @@ export const auditApi = {
    * @param keystoreFile keystore 文件(.jks/.keystore)
    * @param credentials keystore 密码 + key alias + key 密码
    */
-  resign: (
+  resign: async (
     apkFile: File,
     keystoreFile: File,
     credentials: {
@@ -120,7 +121,7 @@ export const auditApi = {
       keyAlias: string;
       keyPassword: string;
     },
-  ) => {
+  ): Promise<ResignResponse> => {
     const formData = new FormData();
     formData.append('apk', apkFile);
     formData.append('keystore', keystoreFile);
@@ -128,13 +129,26 @@ export const auditApi = {
     formData.append('keyAlias', credentials.keyAlias);
     formData.append('keyPassword', credentials.keyPassword);
     formData.append('originalName', apkFile.name);
-    return request<ResignResponse>({
-      method: 'POST',
-      url: '/audit/resign',
-      data: formData,
-      headers: { 'Content-Type': 'multipart/form-data' },
+
+    // M16:streaming 接收二进制 APK(responseType: 'blob'),元数据从 response header 读。
+    // 直接用 axios(绕过 client 的 response.data 解包 interceptor,以保留 header)。
+    const token = getAccessToken();
+    const response = await axios.post('/v1/audit/resign', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      responseType: 'blob',
       timeout: 300000, // 5 分钟
     });
+
+    return {
+      blob: response.data as Blob,
+      taskId: (response.headers['x-task-id'] as string) ?? '',
+      oldHash: (response.headers['x-old-hash'] as string) ?? '',
+      newHash: (response.headers['x-new-hash'] as string) ?? '',
+      resignedApkSize: Number(response.headers['x-apk-size'] ?? 0),
+    };
   },
 
   /**

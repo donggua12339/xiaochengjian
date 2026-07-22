@@ -5,6 +5,7 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
+import * as yauzl from 'yauzl';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditOwnValidators } from './audit-own-validators';
 import { AuditLogOwnService } from './audit-log-own.service';
@@ -316,6 +317,9 @@ export class AuditOwnService {
       // 4. 复制 APK 工作副本(apksigner 不能原地签)
       await fs.copyFile(prepared.apkPath, workCopyPath);
 
+      // M17:重签前计算非 META-INF 内容 hash(用于校验重签只改签名块)
+      const preResignContentHash = await this.computeNonMetaInfHash(workCopyPath);
+
       // 5. 调用 apksigner sign(V1+V2+V3,与 ADR 0030 一致)
       const apksignerPath = this.configService.get('apksignerPath', {
         infer: true,
@@ -348,6 +352,15 @@ export class AuditOwnService {
       // 6. 读取重签后 APK,计算新 hash
       const resignedApk = await fs.readFile(resignedPath);
       const newHash = crypto.createHash('sha256').update(resignedApk).digest('hex');
+
+      // M17:显式校验重签只改了 META-INF,dex/resource 内容未变
+      const postResignContentHash = await this.computeNonMetaInfHash(resignedPath);
+      if (preResignContentHash !== postResignContentHash) {
+        throw new BadRequestException('RESIGN_CONTENT_CHANGED', {
+          cause:
+            'resign modified non-META-INF content (dex/resource changed),违反仅 META-INF only 约束',
+        });
+      }
 
       // 7. 自动入白名单(更新 application.signHashAllowList)
       await this.prisma.application.update({
@@ -399,6 +412,43 @@ export class AuditOwnService {
   }
 
   /**
+   * 计算 APK 中除 META-INF/ 外所有 entry 内容的累加 SHA-256
+   *
+   * M17:用于校验重签只改了 META-INF(签名块),未动 dex/resource。
+   * 累加每个 entry 的"文件名 + 解压内容",META-INF/ 排除。
+   */
+  private computeNonMetaInfHash(apkPath: string): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const hash = crypto.createHash('sha256');
+      yauzl.open(apkPath, { lazyEntries: true }, (err, zipfile) => {
+        if (err) {
+          reject(err);
+          return;
+        }
+        zipfile.on('entry', (entry) => {
+          if (entry.fileName.startsWith('META-INF/')) {
+            zipfile.readEntry();
+            return;
+          }
+          hash.update(entry.fileName);
+          zipfile.openReadStream(entry, (readErr, readStream) => {
+            if (readErr) {
+              reject(readErr);
+              return;
+            }
+            readStream.on('data', (chunk) => hash.update(chunk));
+            readStream.on('end', () => zipfile.readEntry());
+            readStream.on('error', reject);
+          });
+        });
+        zipfile.on('end', () => resolve(hash.digest('hex')));
+        zipfile.on('error', reject);
+        zipfile.readEntry();
+      });
+    });
+  }
+
+  /**
    * execFile 的 Promise 包装(便于单元测试 mock)
    */
   private async execFileAsync(
@@ -412,13 +462,23 @@ export class AuditOwnService {
   /**
    * 清理隔离目录(校验 3)
    * rm -rf <workDir>
+   *
+   * L13 修复:失败时重试一次(文件句柄释放可能有延迟),
+   * 仍失败则记 error(隔离目录用 UUID,残留不影响后续 task,但需人工清理)
    */
   private async cleanupWorkDir(workDir: string): Promise<void> {
-    try {
-      await fs.rm(workDir, { recursive: true, force: true });
-      this.logger.log(`已清理隔离目录: ${workDir}`);
-    } catch (e) {
-      this.logger.error(`清理隔离目录失败: ${(e as Error).message}`);
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        await fs.rm(workDir, { recursive: true, force: true });
+        this.logger.log(`已清理隔离目录: ${workDir}`);
+        return;
+      } catch (e) {
+        if (attempt === 0) {
+          this.logger.warn(`清理隔离目录失败,重试: ${(e as Error).message}`);
+        } else {
+          this.logger.error(`清理隔离目录最终失败(需人工清理 ${workDir}): ${(e as Error).message}`);
+        }
+      }
     }
   }
 
@@ -527,6 +587,8 @@ export class AuditOwnService {
 
     // 解析 Manifest 权限(简化:从 AndroidManifest.xml 提取 uses-permission 字符串)
     const permissions = await this.extractPermissions(workDir);
+    // M18:提取安全标志(debuggable/allowBackup/usesCleartextTraffic)
+    const securityFindings = await this.extractSecurityFlags(workDir);
 
     return {
       taskId: path.basename(workDir),
@@ -540,14 +602,47 @@ export class AuditOwnService {
       manifest: {
         permissions,
       },
-      securityFindings: {
-        // MVP 简化标记,完整扫描在生产部署后补
-        cleartextTraffic: null,
-        debuggable: null,
-        backupEnabled: null,
-      },
-      note: 'MVP report: full JADX/AXMLPrinter2/aapt2/dexlib2 integration pending production deployment',
+      securityFindings,
+      note: 'securityFindings 为属性声明检测(declared=Manifest 中声明);完整 JADX/aapt2 扫描待生产部署',
     };
+  }
+
+  /**
+   * M18:从 AndroidManifest.xml 提取安全相关属性声明
+   *
+   * 检测 application 标签的 debuggable / allowBackup / usesCleartextTraffic 属性。
+   * 注:二进制 AXML 的属性值无法从 ASCII 字符串直接读取,此处检测属性是否声明,
+   * 返回 'declared'(已声明)/ null(未声明)。完整真值判断需 AXMLPrinter2(待生产部署)。
+   */
+  private async extractSecurityFlags(workDir: string): Promise<{
+    cleartextTraffic: string | null;
+    debuggable: string | null;
+    backupEnabled: string | null;
+  }> {
+    const manifestPath = path.join(workDir, 'AndroidManifest.xml');
+    try {
+      const manifestBuf = await fs.readFile(manifestPath);
+      const strings: string[] = [];
+      let current = '';
+      for (const byte of manifestBuf) {
+        if (byte >= 0x20 && byte < 0x7f) {
+          current += String.fromCharCode(byte);
+        } else {
+          if (current.length >= 3) strings.push(current);
+          current = '';
+        }
+      }
+      if (current.length >= 3) strings.push(current);
+      const text = strings.join(' ');
+
+      return {
+        cleartextTraffic: text.includes('usesCleartextTraffic') ? 'declared' : null,
+        debuggable: text.includes('debuggable') ? 'declared' : null,
+        backupEnabled: text.includes('allowBackup') ? 'declared' : null,
+      };
+    } catch {
+      return { cleartextTraffic: null, debuggable: null, backupEnabled: null };
+    }
   }
 
   /**
@@ -681,23 +776,31 @@ export class AuditOwnService {
 
   /**
    * 列出 APK zip 内的所有 entry 路径(用于加固厂商检测)
+   *
+   * L10 修复:用 yauzl 直接解析 zip,不依赖 `unzip -l` 的输出格式
+   * (不同 unzip 版本列格式可能不同,导致解析错误)
    */
-  private async listApkEntries(apkPath: string): Promise<string[]> {
-    try {
-      const { stdout } = await this.execFileAsync('unzip', ['-l', apkPath], {
-        timeout: 30_000,
-        maxBuffer: 1024 * 1024,
+  private listApkEntries(apkPath: string): Promise<string[]> {
+    return new Promise((resolve) => {
+      const entries: string[] = [];
+      yauzl.open(apkPath, { lazyEntries: true }, (err, zipfile) => {
+        if (err) {
+          this.logger.warn(`listApkEntries 失败: ${err.message}`);
+          resolve([]);
+          return;
+        }
+        zipfile.on('entry', (entry) => {
+          entries.push(entry.fileName);
+          zipfile.readEntry();
+        });
+        zipfile.on('end', () => resolve(entries));
+        zipfile.on('error', (e) => {
+          this.logger.warn(`listApkEntries 解析错误: ${e.message}`);
+          resolve(entries);
+        });
+        zipfile.readEntry();
       });
-      // unzip -l 输出格式:每行含 size/date/time/path
-      // 提取路径(最后一列)
-      const lines = stdout.split('\n').slice(3, -2); // 去头尾
-      return lines
-        .map((line) => line.trim().split(/\s+/).slice(3).join(' '))
-        .filter((s) => s.length > 0);
-    } catch (e) {
-      this.logger.warn(`listApkEntries 失败: ${(e as Error).message}`);
-      return [];
-    }
+    });
   }
 
   /**

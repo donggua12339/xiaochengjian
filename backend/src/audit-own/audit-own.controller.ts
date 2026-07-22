@@ -7,8 +7,10 @@ import {
   Body,
   Query,
   Req,
+  Res,
   BadRequestException,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import {
   ApiBearerAuth,
@@ -162,6 +164,7 @@ export class AuditOwnController {
   async resign(
     @CurrentDeveloper() developerId: string,
     @Req() req: AuthenticatedRequest,
+    @Res({ passthrough: true }) res: Response,
     @Body()
     body: {
       keystorePassword: string;
@@ -197,15 +200,18 @@ export class AuditOwnController {
       userAgent,
     });
 
-    // 返回重签后 APK(以 base64 形式,client 端解码保存)
-    // 注意:大文件场景应改用 streaming response,MVP 先用 base64
-    return {
-      taskId: result.taskId,
-      oldHash: result.oldHash,
-      newHash: result.newHash,
-      resignedApkBase64: result.resignedApk.toString('base64'),
-      resignedApkSize: result.resignedApk.length,
-    };
+    // M16 修复:streaming 返回二进制 APK(避免 base64 编码 +33% 导致大文件 OOM)。
+    // 元数据(taskId/hash/size)放 response header,客户端从 header 读取。
+    const baseName = (body.originalName || file.originalname).replace(/\.apk$/i, '');
+    res.set({
+      'Content-Type': 'application/vnd.android.package-archive',
+      'Content-Disposition': `attachment; filename="${encodeURIComponent(baseName + '-resigned.apk')}"`,
+      'X-Task-Id': result.taskId,
+      'X-Old-Hash': result.oldHash,
+      'X-New-Hash': result.newHash,
+      'X-Apk-Size': String(result.resignedApk.length),
+    });
+    return result.resignedApk;
   }
 
   /**

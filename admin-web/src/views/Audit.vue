@@ -155,14 +155,8 @@ async function doResign() {
 
 function downloadResignedApk() {
   if (!resignResult.value) return;
-  // base64 -> blob -> 下载
-  const byteChars = atob(resignResult.value.resignedApkBase64);
-  const byteNumbers = new Array(byteChars.length);
-  for (let i = 0; i < byteChars.length; i++) {
-    byteNumbers[i] = byteChars.charCodeAt(i);
-  }
-  const byteArray = new Uint8Array(byteNumbers);
-  const blob = new Blob([byteArray], { type: 'application/vnd.android.package-archive' });
+  // M16:后端 streaming 返回二进制 blob,直接下载(不再 base64 解码)
+  const blob = resignResult.value.blob;
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;

@@ -102,9 +102,8 @@ export class BangcleAdapter {
       }
     }
 
-    // 2. 可疑 API 调用扫描(静态规则,扫描 AndroidManifest 字符串)
-    // MVP:返回空数组,实际规则在 ADR 0078 §6 内部维护(不公开)
-    const suspiciousCalls: BangcleIntegrityReport['suspiciousCalls'] = [];
+    // 2. 可疑 API 调用扫描(M15:静态规则,扫描 AndroidManifest 高风险权限)
+    const suspiciousCalls = await this.scanSuspiciousManifest(apkBuffer);
 
     const report: BangcleIntegrityReport = {
       hardener: 'bangcle',
@@ -121,6 +120,63 @@ export class BangcleAdapter {
     );
 
     return report;
+  }
+
+  /**
+   * M15:可疑 API 调用静态扫描
+   *
+   * 从 AndroidManifest.xml 提取 ASCII 字符串,匹配高风险权限。
+   * 这些权限常被恶意 SDK 滥用(悬浮窗/无障碍/读短信等),
+   * 提示开发者注意自有 APK 是否被植入了可疑权限。
+   *
+   * 注:仅静态扫描 Manifest 权限声明,不反编译 dex(锁 C 约束)。
+   */
+  private async scanSuspiciousManifest(
+    apkBuffer: Buffer,
+  ): Promise<BangcleIntegrityReport['suspiciousCalls']> {
+    const suspicious: BangcleIntegrityReport['suspiciousCalls'] = [];
+
+    /* 高风险权限规则(常被恶意 SDK 滥用) */
+    const riskyPermissions = [
+      'android.permission.SYSTEM_ALERT_WINDOW',
+      'android.permission.BIND_ACCESSIBILITY_SERVICE',
+      'android.permission.READ_SMS',
+      'android.permission.RECEIVE_SMS',
+      'android.permission.SEND_SMS',
+      'android.permission.READ_CONTACTS',
+      'android.permission.RECORD_AUDIO',
+      'android.permission.CAMERA',
+      'android.permission.READ_PHONE_STATE',
+      'android.permission.REQUEST_INSTALL_PACKAGES',
+    ];
+
+    try {
+      const manifest = await this.extractFileFromZip(apkBuffer, 'AndroidManifest.xml');
+
+      /* 从二进制 AXML 提取 ASCII 字符串 */
+      const strings: string[] = [];
+      let current = '';
+      for (const byte of manifest) {
+        if (byte >= 0x20 && byte < 0x7f) {
+          current += String.fromCharCode(byte);
+        } else {
+          if (current.length >= 3) strings.push(current);
+          current = '';
+        }
+      }
+      if (current.length >= 3) strings.push(current);
+      const manifestText = strings.join(' ');
+
+      for (const perm of riskyPermissions) {
+        if (manifestText.includes(perm)) {
+          suspicious.push({ type: 'risky_permission', symbol: perm, count: 1 });
+        }
+      }
+    } catch (e) {
+      this.logger.warn(`扫描 AndroidManifest 失败: ${(e as Error).message}`);
+    }
+
+    return suspicious;
   }
 
   /**
