@@ -277,6 +277,20 @@ class DefenderInitProvider : ContentProvider() {
             }
         }
 
+        // KeyAttestation(硬件级 root 检测,2026 最强)
+        if (config.keyAttestation.enabled) {
+            Log.i(TAG, "[Batch 4] KeyAttestation 检测中...")
+            val attestationScore = KeyAttestationDetector().detect()
+            if (attestationScore >= config.keyAttestation.killThreshold) {
+                Log.e(TAG, "[Batch 4] KeyAttestation 高风险(分数 $attestationScore >= ${config.keyAttestation.killThreshold})")
+                applyResponse(ctx, config.keyAttestation.onViolation, config, "key_attestation_failed", "设备完整性校验失败")
+            } else if (attestationScore > 0) {
+                Log.w(TAG, "[Batch 4] KeyAttestation 可疑(分数 $attestationScore)")
+            } else {
+                Log.i(TAG, "[Batch 4] KeyAttestation 通过(硬件证明完整)")
+            }
+        }
+
         // WindowSecurer(全局 FLAG_SECURE,静默防护)
         if (config.secureScreen.enabled) {
             Log.i(TAG, "[Batch 4] WindowSecurer 启动...")

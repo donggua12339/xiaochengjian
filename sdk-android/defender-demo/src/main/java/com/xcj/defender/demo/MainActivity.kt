@@ -10,6 +10,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.xcj.defender.DefenderNative
 import com.xcj.defender.EmulatorDetector
+import com.xcj.defender.KeyAttestationDetector
 import com.xcj.defender.XposedDetector
 
 /**
@@ -84,6 +85,9 @@ class MainActivity : AppCompatActivity() {
             // 9. WindowSecurer(防截屏)
             val windowResult = checkWindowSecure()
             setResult("window", windowResult, "WindowSecurer")
+
+            // 10. KeyAttestation(硬件级 root 检测,只 log 不占 UI 槽位)
+            checkKeyAttestation()
 
             // 汇总
             handler.post {
@@ -226,6 +230,24 @@ class MainActivity : AppCompatActivity() {
         } catch (e: Exception) {
             log("[WindowSecurer] 异常: ${e.message}")
             false
+        }
+    }
+
+    /**
+     * 10. KeyAttestation:硬件级 root 检测(2026 最强)
+     * 返回置信度分数,只 log 展示(不占 UI 槽位)
+     */
+    private fun checkKeyAttestation() {
+        try {
+            val score = KeyAttestationDetector().detect()
+            val verdict = when {
+                score >= 60 -> "高风险(root/BL 解锁)"
+                score > 0 -> "可疑"
+                else -> "完整"
+            }
+            log("[KeyAttestation] 分数: $score ($verdict, >=60 高风险)")
+        } catch (e: Exception) {
+            log("[KeyAttestation] 异常: ${e.message}")
         }
     }
 
