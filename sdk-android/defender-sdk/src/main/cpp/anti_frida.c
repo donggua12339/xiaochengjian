@@ -139,6 +139,20 @@ static void obf_decode(char *dst, const unsigned char *src, size_t len) {
     dst[len] = '\0';
 }
 
+/**
+ * 即时 XOR 比较:逐字节解码 obf[i] 与 mem[i] 比较,关键词永不以明文存入内存。
+ * 避免解码到栈/堆后被自己的内存扫描检测到(自检测误报)。
+ *
+ * @return 0=匹配 / 非0=不匹配
+ */
+static int obf_memcmp(const void *mem, const unsigned char *obf, size_t len) {
+    const unsigned char *m = (const unsigned char *)mem;
+    for (size_t i = 0; i < len; i++) {
+        if (m[i] != (unsigned char)(obf[i] ^ OBF_KEY)) return 1;
+    }
+    return 0;
+}
+
 /* "frida" */
 static const unsigned char OBF_FRIDA[] = {0x3c, 0x28, 0x33, 0x3e, 0x3b};
 /* "gum-js-loop" */
@@ -321,20 +335,20 @@ static int check_thread_names(void) {
 
 /* ============= D:内存特征字符串扫描(后台异步) ============= */
 
-/* M2 修复:内存扫描 SIGSEGV 保护。
- * 扫描 r-xp 段时,段可能在扫描中被 unmap/改保护,直接读会 SIGSEGV。
- * 用 sigsetjmp/siglongjmp 在 SIGSEGV 时跳过该段,而非崩溃。 */
+/* M2 修复:内存扫描内存故障保护。
+ * 扫描数据段时,段可能在扫描中被 unmap/改保护,直接读会 SIGSEGV 或 SIGBUS
+ * (实测真机 rw-p 段触发 SIGBUS BUS_ADRERR)。
+ * 用 sigsetjmp/siglongjmp 在 SIGSEGV/SIGBUS 时跳过该段,而非崩溃。 */
 static sigjmp_buf scan_jmp;
 static volatile sig_atomic_t scan_jmp_set = 0;
 
-static void scan_sigsegv_handler(int sig) {
-    (void)sig;
+static void scan_fault_handler(int sig) {
     if (scan_jmp_set) {
         scan_jmp_set = 0;
         siglongjmp(scan_jmp, 1);
     }
     /* 未设置 jmp(非扫描期间),恢复默认处理 */
-    signal(SIGSEGV, SIG_DFL);
+    signal(sig, SIG_DFL);
 }
 
 /**
@@ -363,19 +377,16 @@ static void *frida_memory_scan_thread(void *arg) {
         return NULL;
     }
 
-    /* M2 修复:设置 SIGSEGV handler,扫描不可读段时跳过而非崩溃 */
-    struct sigaction sa, old_sa;
+    /* M2 修复:设置 SIGSEGV + SIGBUS handler,扫描不可读段时跳过而非崩溃 */
+    struct sigaction sa, old_sa_segv, old_sa_bus;
     memset(&sa, 0, sizeof(sa));
-    sa.sa_handler = scan_sigsegv_handler;
+    sa.sa_handler = scan_fault_handler;
     sigemptyset(&sa.sa_mask);
     sa.sa_flags = 0;
-    sigaction(SIGSEGV, &sa, &old_sa);
+    sigaction(SIGSEGV, &sa, &old_sa_segv);
+    sigaction(SIGBUS, &sa, &old_sa_bus);
 
-    /* M7:运行时解码内存特征关键词 */
-    char kw_libfrida[9], kw_rpc[10];
-    obf_decode(kw_libfrida, OBF_LIBFRIDA, 8);
-    obf_decode(kw_rpc, OBF_FRIDA_RPC, 9);
-
+    /* 关键词用 obf_memcmp 即时 XOR 比较,不解码到内存(避免自检测误报) */
     char line[512];
     int line_pos = 0;
     char buf[8192];
@@ -388,13 +399,14 @@ static void *frida_memory_scan_thread(void *arg) {
                 line[line_pos] = '\0';
 
                 /* 找数据段(可读非可执行:r--p / rw-p)。
-                 * 不搜代码段(r-xp):机器码偶然匹配 "frida:rpc" 字节序列会误报
-                 * (实测 Magisk 真机 r-xp 段误报 frida:rpc 触发 SIGABRT)。
-                 * Frida 字符串特征(LIBFRIDA/frida:rpc)在数据段。 */
+                 * 不搜代码段(r-xp):机器码偶然匹配字节序列会误报。
+                 * 排除 [stack]:kw_rpc/kw_libfrida 解码在栈上,扫到会自检测误报。
+                 * Frida 字符串特征(LIBFRIDA/frida:rpc)在 .so 数据段。 */
                 unsigned long start, end;
                 char perms[8];
                 if (sscanf(line, "%lx-%lx %7s", &start, &end, perms) == 3 &&
-                    perms[0] == 'r' && perms[2] != 'x') {
+                    perms[0] == 'r' && perms[2] != 'x' &&
+                    strstr(line, "[stack]") == NULL) {
                     {
                         /* 在 [start, end] 范围搜 "LIBFRIDA" / "frida:rpc" */
                         void *p = (void *)start;
@@ -404,20 +416,22 @@ static void *frida_memory_scan_thread(void *arg) {
                         if (sigsetjmp(scan_jmp, 1) == 0) {
                             scan_jmp_set = 1;
                             for (size_t off = 0; off + 8 < len; off++) {
-                                if (memcmp((char *)p + off, kw_libfrida, 8) == 0) {
+                                if (obf_memcmp((char *)p + off, OBF_LIBFRIDA, 8) == 0) {
                                     LOGE("内存扫描检测到 Frida 特征: LIBFRIDA");
                                     scan_jmp_set = 0;
                                     af_close(fd);
-                                    sigaction(SIGSEGV, &old_sa, NULL);
+                                    sigaction(SIGSEGV, &old_sa_segv, NULL);
+                                    sigaction(SIGBUS, &old_sa_bus, NULL);
                                     raise(SIGABRT);
                                     _exit(1);
                                 }
                                 if (off + 9 < len &&
-                                    memcmp((char *)p + off, kw_rpc, 9) == 0) {
+                                    obf_memcmp((char *)p + off, OBF_FRIDA_RPC, 9) == 0) {
                                     LOGE("内存扫描检测到 Frida 特征: frida:rpc");
                                     scan_jmp_set = 0;
                                     af_close(fd);
-                                    sigaction(SIGSEGV, &old_sa, NULL);
+                                    sigaction(SIGSEGV, &old_sa_segv, NULL);
+                                    sigaction(SIGBUS, &old_sa_bus, NULL);
                                     raise(SIGABRT);
                                     _exit(1);
                                 }
@@ -438,9 +452,10 @@ static void *frida_memory_scan_thread(void *arg) {
     }
 
     af_close(fd);
-    /* 恢复原 SIGSEGV handler */
+    /* 恢复原 SIGSEGV + SIGBUS handler */
     scan_jmp_set = 0;
-    sigaction(SIGSEGV, &old_sa, NULL);
+    sigaction(SIGSEGV, &old_sa_segv, NULL);
+    sigaction(SIGBUS, &old_sa_bus, NULL);
     LOGI("内存特征字符串扫描完成(未检测到 Frida)");
     return NULL;
 }
