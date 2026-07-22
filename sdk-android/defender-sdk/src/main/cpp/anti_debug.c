@@ -73,7 +73,10 @@ static int ad_close(int fd) {
 }
 
 #elif defined(__arm__)
-/* armeabi-v7a:R7 被保留为帧指针,用 syscall() 替代 inline asm */
+/* M1 说明:armeabi-v7a 的 inline syscall 需要 R7 存 syscall 号,但 R7 被 ABI 保留为
+ * 帧指针(frame pointer),直接用 inline asm 会破坏栈帧。此处用 libc syscall() 替代,
+ * 代价是可被 libc hook 绕过。权衡:armeabi-v7a 设备占比已很低,且核心检测在 arm64-v8a
+ * (inline asm 不可 hook),故 v7a 用 syscall() 是可接受的折中。 */
 #include <sys/syscall.h>
 static int ad_openat(const char *path, int flags) {
     return (int)syscall(__NR_openat, AT_FDCWD, path, flags, 0);

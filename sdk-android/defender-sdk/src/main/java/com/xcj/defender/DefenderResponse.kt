@@ -26,6 +26,18 @@ object DefenderResponse {
     private const val TAG = "DefenderResponse"
     private val mainHandler = Handler(Looper.getMainLooper())
 
+    /* L5:上报目标(由 DefenderInitProvider 初始化时从 config 注入) */
+    private var serverUrl: String = ""
+    private var appId: String = ""
+
+    /**
+     * 初始化上报配置(由 DefenderInitProvider 加载 config 后调用)
+     */
+    fun init(serverUrl: String, appId: String) {
+        this.serverUrl = serverUrl
+        this.appId = appId
+    }
+
     /**
      * kill 响应
      *
@@ -78,10 +90,43 @@ object DefenderResponse {
             Toast.makeText(context, message, Toast.LENGTH_LONG).show()
         }
 
-        // 3. HTTP 上报(待服务端接口实现)
+        // 3. HTTP 上报(L5:后台线程 POST 到 serverUrl,失败不影响主流程)
         if (reportConfig.enabled) {
-            Log.i(TAG, "warn 上报(待实现): key=$violationKey, msg=$message")
-            // TODO: HTTP POST 到 DefenderInit.config.serverUrl + appId
+            reportViolation(violationKey, message)
         }
+    }
+
+    /**
+     * L5:HTTP 上报违规事件到服务端
+     *
+     * 后台线程 POST {serverUrl}/v1/defender/report,失败仅记日志(上报不阻断 APP)。
+     * 服务端接口待实现时,此处会因 404/连接失败而静默跳过。
+     */
+    private fun reportViolation(violationKey: String, message: String) {
+        if (serverUrl.isEmpty()) {
+            Log.w(TAG, "warn 上报跳过: serverUrl 未配置")
+            return
+        }
+        Thread {
+            var conn: java.net.HttpURLConnection? = null
+            try {
+                val url = java.net.URL("$serverUrl/v1/defender/report")
+                conn = url.openConnection() as java.net.HttpURLConnection
+                conn.requestMethod = "POST"
+                conn.setRequestProperty("Content-Type", "application/json")
+                conn.doOutput = true
+                conn.connectTimeout = 5000
+                conn.readTimeout = 5000
+                val body =
+                    """{"appId":"$appId","violationKey":"$violationKey","message":"$message","timestamp":${System.currentTimeMillis()}}"""
+                conn.outputStream.use { it.write(body.toByteArray()) }
+                val code = conn.responseCode
+                Log.i(TAG, "warn 上报完成: code=$code key=$violationKey")
+            } catch (e: Exception) {
+                Log.w(TAG, "warn 上报失败: ${e.message}")
+            } finally {
+                conn?.disconnect()
+            }
+        }.start()
     }
 }

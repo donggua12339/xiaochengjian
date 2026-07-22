@@ -246,7 +246,12 @@ static int zip_foreach_entry(const char *apk_path, zip_entry_cb cb, void *ctx) {
  * 预期 CRC 表(编译时生成,写入 .rodata)
  *
  * 格式:每项 "entry名:CRC32十六进制"(如 "classes.dex:1a2b3c4d")
- * 占位:空表(开发阶段,Packer 封装时生成)
+ * 占位:空表(开发阶段)
+ *
+ * M6 说明:H5 已实现 ZIP 遍历 + CRC 比对框架,但预期表为空时层 2 跳过。
+ * 预期表的生成需 Packer 配合:Packer 封装时遍历 APK entry 计算 CRC32,
+ * 通过 post-build 脚本(类似 scripts/patch_text_hash.py)写入本表,
+ * 或改为运行时从 defender-config.json 读取(待后续 ADR 规划)。
  */
 static const char *EXPECTED_CRC_ENTRIES[] __attribute__((section(".rodata"))) = {
     NULL  /* 占位 */
@@ -356,7 +361,10 @@ static file_response_t classify_extra_file(const char *name) {
  * 预期文件列表(编译时生成,写入 .rodata)
  *
  * 格式:每项一个 entry 名(如 "classes.dex", "lib/arm64-v8a/libxxx.so")
- * 占位:空(开发阶段,Packer 封装时生成)
+ * 占位:空(开发阶段)
+ *
+ * M6 说明:同 EXPECTED_CRC_ENTRIES,预期文件列表需 Packer 封装时生成
+ * (遍历 APK entry 列表)并通过 post-build 写入,或运行时从 config 读取。
  */
 static const char *EXPECTED_FILE_LIST[] __attribute__((section(".rodata"))) = {
     NULL  /* 占位 */

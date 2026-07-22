@@ -139,6 +139,10 @@ export class PackerService {
       // 复制工作副本
       await fs.copyFile(apkPath, packedPath);
 
+      // L8:回滚机制说明 -- 所有注入操作(dex/.so/config/Manifest)都在隔离目录 workDir
+      // 的 packedPath 副本上进行。任一步抛异常时,finally 块 cleanupWorkDir 会删除整个
+      // workDir(含半注入的 APK),用户始终拿不到不一致的 APK,故无需逐步回滚。
+
       // dex 注入(锁 2 + 锁 3)
       const multidexInfo = await this.dexInjector.detectMultidex(packedPath);
       await this.dexInjector.injectDex(packedPath, xcjAuthSdkDex, multidexInfo.nextDexName);

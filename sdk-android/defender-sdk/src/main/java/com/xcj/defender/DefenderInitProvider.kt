@@ -63,6 +63,9 @@ class DefenderInitProvider : ContentProvider() {
             DefenderInit.context = ctx.applicationContext
             DefenderInit.initialized = true
 
+            // L5:初始化 warn 上报目标(serverUrl + appId)
+            DefenderResponse.init(config.serverUrl, config.appId)
+
             // 6. Batch 2:SignatureVerifier + AntiDebug + AntiFrida
             runBatch2Modules(ctx, config)
 

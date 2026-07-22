@@ -154,6 +154,9 @@ export class PackerController {
           cause: 'server DEFENDER_AAR_PATH not set, defender injection unavailable',
         });
       }
+      // L9:此处 fs.access 仅做快速失败校验。理论上存在 TOCTOU(检查后文件被删),
+      // 但 defenderAarPath 是服务器配置的固定路径(非用户上传),不会被并发删除,
+      // 风险极低;且 SoInjector.extractSoFromAar 读取时会再次捕获错误并抛 AAR_EXTRACT_FAILED。
       try {
         await fs.access(defenderAarPath);
       } catch {
