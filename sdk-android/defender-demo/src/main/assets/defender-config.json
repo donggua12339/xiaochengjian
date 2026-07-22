@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "serverUrl": "",
+  "appId": "defender-demo",
+  "signatureExpectedHash": "",
+  "signatureVerify": { "enabled": true, "onViolation": "none" },
+  "antiDebug": { "enabled": true, "onViolation": "none" },
+  "antiFrida": { "enabled": true, "onViolation": "none" },
+  "antiDump": { "enabled": true, "onViolation": "none" },
+  "rootDetect": { "enabled": true, "onViolation": "none" },
+  "xposedDetect": { "enabled": true, "onViolation": "none", "killThreshold": 70 },
+  "emulatorDetect": { "enabled": true, "onViolation": "none" },
+  "integrityCheck": { "enabled": true, "onViolation": "none" },
+  "secureScreen": { "enabled": false, "excludeActivities": [] },
+  "onViolationKill": {
+    "delayMinMs": 3000,
+    "delayMaxMs": 15000,
+    "method": "sigabrt",
+    "showToast": true,
+    "toastMessage": "检测到安全风险"
+  },
+  "report": { "enabled": false, "throttleMs": 300000 },
+  "integrityCrcTable": [],
+  "integrityFileList": []
+}

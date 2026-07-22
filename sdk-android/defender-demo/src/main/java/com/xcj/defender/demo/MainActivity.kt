@@ -8,15 +8,20 @@ import android.widget.Button
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
-import java.io.File
+import com.xcj.defender.DefenderNative
+import com.xcj.defender.EmulatorDetector
+import com.xcj.defender.XposedDetector
 
 /**
  * Defender Demo MainActivity
  *
  * 展示 xcj-defender-sdk 所有模块的检测结果(YES=检测到风险 / NO=安全)
  *
- * 注意:本 Demo 使用占位实现,真实实现在 xcj-defender-sdk 中。
- * 占位实现模拟真实检测逻辑,用于验证 UI 和集成。
+ * 接入真实 xcj-defender-sdk 模块(依赖 defender-sdk .aar):
+ *  - Native 模块:SignatureVerifier / AntiDebug / AntiFrida / AntiDump / RootDetector / IntegrityChecker
+ *  - Java 模块:XposedDetector / EmulatorDetector / WindowSecurer
+ *
+ * defender-config.json 配置所有模块 onViolation=none,检测只记日志不响应(避免 demo 被 kill)。
  */
 class MainActivity : AppCompatActivity() {
 
@@ -88,49 +93,34 @@ class MainActivity : AppCompatActivity() {
         }.start()
     }
 
-    // === 占位检测实现(真实实现在 xcj-defender-sdk) ===
+    // === 真实检测实现(调用 xcj-defender-sdk) ===
 
     /**
-     * 1. SignatureVerifier:检查 APK 签名证书 hash
-     * 占位实现:检查 APK 是否存在 + 签名证书 SHA-256
+     * 1. SignatureVerifier:调用 DefenderNative.verifySignature
+     * @return true=风险(校验失败) / false=安全
      */
     private fun checkSignature(): Boolean {
         return try {
             val apkPath = packageCodePath
-            val apkFile = File(apkPath)
-            if (!apkFile.exists()) {
-                log("[SignatureVerifier] APK 文件不存在: $apkPath")
-                return true  // 异常 = 风险
-            }
-
-            // 占位:检查 APK 文件是否可读
-            val canRead = apkFile.canRead()
-            log("[SignatureVerifier] APK 路径: $apkPath, 可读: $canRead")
-
-            // 占位:真实实现会解析 V2/V3 签名块,提取证书 SHA-256
-            // 这里只检查文件存在性
-            !canRead  // 不可读 = 风险
+            // demo 无预期 hash(传 null),D 层无 expected 时跳过
+            val result = DefenderNative.verifySignature(apkPath, null, null, null, null)
+            log("[SignatureVerifier] verifySignature 返回: $result (0=通过)")
+            result != 0
         } catch (e: Exception) {
             log("[SignatureVerifier] 异常: ${e.message}")
-            true
+            false
         }
     }
 
     /**
-     * 2. AntiDebug:检查是否被调试
-     * 占位实现:检查 /proc/self/status 的 TracerPid
+     * 2. AntiDebug:调用 DefenderNative.checkAntiDebug
+     * @return true=被调试 / false=未调试
      */
     private fun checkAntiDebug(): Boolean {
         return try {
-            val status = File("/proc/self/status").readText()
-            val tracerPid = status.lines()
-                .find { it.startsWith("TracerPid:") }
-                ?.substringAfter(":")
-                ?.trim()
-                ?.toIntOrNull() ?: 0
-
-            log("[AntiDebug] TracerPid: $tracerPid")
-            tracerPid != 0  // 非 0 = 被调试 = 风险
+            val result = DefenderNative.checkAntiDebug()
+            log("[AntiDebug] checkAntiDebug 返回: $result (1=被调试)")
+            result == 1
         } catch (e: Exception) {
             log("[AntiDebug] 异常: ${e.message}")
             false
@@ -138,30 +128,14 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * 3. AntiFrida:检查 Frida
-     * 占位实现:检查 /proc/self/maps 的 frida 特征 + 端口 27042
+     * 3. AntiFrida:调用 DefenderNative.checkAntiFrida(同步 A+B+C)
+     * @return true=检测到 Frida / false=未检测
      */
     private fun checkAntiFrida(): Boolean {
         return try {
-            // 检查 maps
-            val maps = File("/proc/self/maps").readText()
-            val fridaKeywords = listOf("frida", "gum-js-loop", "frida-agent", "gadget")
-            val mapsDetected = fridaKeywords.any { maps.contains(it, ignoreCase = true) }
-            log("[AntiFrida] maps 检测: $mapsDetected")
-
-            // 检查端口 27042
-            var portDetected = false
-            try {
-                val socket = java.net.Socket()
-                socket.connect(java.net.InetSocketAddress("127.0.0.1", 27042), 100)
-                portDetected = true
-                socket.close()
-            } catch (e: Exception) {
-                // 连接失败 = 无 Frida
-            }
-            log("[AntiFrida] 端口 27042 检测: $portDetected")
-
-            mapsDetected || portDetected
+            val result = DefenderNative.checkAntiFrida()
+            log("[AntiFrida] checkAntiFrida 返回: $result (1=检测到 Frida)")
+            result == 1
         } catch (e: Exception) {
             log("[AntiFrida] 异常: ${e.message}")
             false
@@ -169,54 +143,23 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * 4. AntiDump:检查内存 dump
-     * 占位实现:检查 /proc/self/mem 是否可读(占位,真实实现用 inotify)
+     * 4. AntiDump:后台 inotify 监控,无同步检测 API
+     * DefenderInitProvider 已启动后台监控(若 antiDump.enabled),此处仅说明
      */
     private fun checkAntiDump(): Boolean {
-        return try {
-            val memFile = File("/proc/self/mem")
-            val canRead = memFile.canRead()
-            log("[AntiDump] /proc/self/mem 可读: $canRead")
-            // 占位:真实实现用 inotify 监控 /proc/self/mem 的访问事件
-            false  // 占位:无法检测,返回安全
-        } catch (e: Exception) {
-            log("[AntiDump] 异常: ${e.message}")
-            false
-        }
+        log("[AntiDump] 后台 inotify 监控运行中(无同步检测,由 DefenderInitProvider 启动)")
+        return false  // 无法同步检测,始终返回安全
     }
 
     /**
-     * 5. RootDetector:检查 Root
-     * 占位实现:检查 su 路径 + Magisk 目录 + ro.secure
+     * 5. RootDetector:调用 DefenderNative.checkRoot
+     * @return true=检测到 root / false=未 root
      */
     private fun checkRoot(): Boolean {
         return try {
-            // 检查 su 路径
-            val suPaths = listOf(
-                "/system/xbin/su", "/system/bin/su", "/sbin/su",
-                "/data/local/xbin/su", "/data/local/bin/su",
-                "/data/adb/magisk/su"
-            )
-            val suDetected = suPaths.any { File(it).exists() }
-            log("[RootDetector] su 路径检测: $suDetected")
-
-            // 检查 Magisk 目录
-            val magiskPaths = listOf("/sbin/.magisk", "/data/adb/magisk", "/data/adb/modules")
-            val magiskDetected = magiskPaths.any { File(it).exists() }
-            log("[RootDetector] Magisk 目录检测: $magiskDetected")
-
-            // 检查 ro.secure
-            var roSecure = true
-            try {
-                val process = Runtime.getRuntime().exec("getprop ro.secure")
-                val result = process.inputStream.bufferedReader().readText().trim()
-                roSecure = result != "0"
-                log("[RootDetector] ro.secure: $result")
-            } catch (e: Exception) {
-                log("[RootDetector] getprop 异常: ${e.message}")
-            }
-
-            suDetected || magiskDetected || !roSecure
+            val result = DefenderNative.checkRoot()
+            log("[RootDetector] checkRoot 返回: $result (1=检测到 root)")
+            result == 1
         } catch (e: Exception) {
             log("[RootDetector] 异常: ${e.message}")
             false
@@ -224,39 +167,14 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * 6. XposedDetector:检查 Xposed/LSPosed
-     * 占位实现:ClassLoader 检查 + maps 扫描 + 模块目录
+     * 6. XposedDetector:调用 XposedDetector.detect
+     * @return true=检测到 Xposed(置信度 >=70) / false=未检测
      */
     private fun checkXposed(): Boolean {
         return try {
-            // ClassLoader 检查
-            var classLoaderDetected = false
-            try {
-                Class.forName("de.robv.android.xposed.XposedBridge")
-                classLoaderDetected = true
-            } catch (e: ClassNotFoundException) {
-                // 未找到
-            }
-            log("[XposedDetector] ClassLoader 检测: $classLoaderDetected")
-
-            // maps 扫描
-            val maps = File("/proc/self/maps").readText()
-            val xposedKeywords = listOf("XposedBridge", "edxposed", "lsposed", "lspatch", "riru", "zygisk")
-            val mapsDetected = xposedKeywords.any { maps.contains(it, ignoreCase = true) }
-            log("[XposedDetector] maps 检测: $mapsDetected")
-
-            // 模块目录
-            val modulesDir = File("/data/adb/modules/")
-            var modulesDetected = false
-            if (modulesDir.exists()) {
-                val xposedModules = listOf("lsposed", "edxposed", "lspatch", "zygisk_lsposed", "riru_lsposed")
-                modulesDetected = modulesDir.listFiles()?.any { file ->
-                    xposedModules.any { file.name.contains(it, ignoreCase = true) }
-                } ?: false
-            }
-            log("[XposedDetector] 模块目录检测: $modulesDetected")
-
-            classLoaderDetected || mapsDetected || modulesDetected
+            val score = XposedDetector(this).detect()
+            log("[XposedDetector] 置信度: $score (>=70 判定为 Xposed)")
+            score >= 70
         } catch (e: Exception) {
             log("[XposedDetector] 异常: ${e.message}")
             false
@@ -264,47 +182,14 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * 7. EmulatorDetector:检查模拟器
-     * 占位实现:Build 属性 + 传感器
+     * 7. EmulatorDetector:调用 EmulatorDetector.detect
+     * @return true=模拟器 / false=真机
      */
     private fun checkEmulator(): Boolean {
         return try {
-            // Build 属性
-            val buildProps = listOf(
-                android.os.Build.FINGERPRINT,
-                android.os.Build.MODEL,
-                android.os.Build.MANUFACTURER,
-                android.os.Build.BRAND,
-                android.os.Build.DEVICE,
-                android.os.Build.PRODUCT,
-                android.os.Build.HARDWARE
-            )
-            val emulatorKeywords = listOf(
-                "generic", "sdk", "google_sdk", "emulator", "virtual",
-                "goldfish", "ranchu", "vbox", "nox", "bluestacks", "mumu"
-            )
-            val buildDetected = buildProps.any { prop ->
-                emulatorKeywords.any { prop?.contains(it, ignoreCase = true) ?: false }
-            }
-            log("[EmulatorDetector] Build 属性检测: $buildDetected")
-
-            // 传感器检测(模拟器通常无传感器)
-            val sensorManager = getSystemService(SENSOR_SERVICE) as android.hardware.SensorManager
-            val sensors = sensorManager.getSensorList(android.hardware.Sensor.TYPE_ALL)
-            val noSensors = sensors.isEmpty()
-            log("[EmulatorDetector] 传感器数量: ${sensors.size}, 无传感器: $noSensors")
-
-            // 电话号码检测(模拟器通常无电话功能)
-            var noPhone = false
-            try {
-                val telephony = getSystemService(TELEPHONY_SERVICE) as android.telephony.TelephonyManager
-                noPhone = telephony.phoneType == android.telephony.TelephonyManager.PHONE_TYPE_NONE
-                log("[EmulatorDetector] 电话类型: ${telephony.phoneType}, 无电话: $noPhone")
-            } catch (e: Exception) {
-                log("[EmulatorDetector] TelephonyManager 异常: ${e.message}")
-            }
-
-            buildDetected || noSensors || noPhone
+            val isEmulator = EmulatorDetector(this).detect()
+            log("[EmulatorDetector] 检测结果: $isEmulator")
+            isEmulator
         } catch (e: Exception) {
             log("[EmulatorDetector] 异常: ${e.message}")
             false
@@ -312,44 +197,32 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * 8. IntegrityChecker:检查 APK 完整性
-     * 占位实现:检查 APK 文件 CRC(占位,真实实现逐文件 CRC)
+     * 8. IntegrityChecker:调用 DefenderNative.checkIntegrity
+     * demo 无预期表(传空 JSON),层 2/4 跳过
+     * @return true=篡改 / false=安全
      */
     private fun checkIntegrity(): Boolean {
         return try {
             val apkPath = packageCodePath
-            val apkFile = File(apkPath)
-            if (!apkFile.exists()) {
-                log("[IntegrityChecker] APK 文件不存在")
-                return true
-            }
-
-            // 占位:检查 APK 文件是否可读
-            val canRead = apkFile.canRead()
-            log("[IntegrityChecker] APK 可读: $canRead")
-
-            // 占位:真实实现会遍历所有 entry,算 CRC32,与预期比对
-            !canRead  // 不可读 = 风险
+            val result = DefenderNative.checkIntegrity(apkPath, "[]", "[]")
+            log("[IntegrityChecker] checkIntegrity 返回: $result (0=安全, demo 无预期表跳过)")
+            result != 0
         } catch (e: Exception) {
             log("[IntegrityChecker] 异常: ${e.message}")
-            true
+            false
         }
     }
 
     /**
-     * 9. WindowSecurer:检查防截屏
-     * 占位实现:检查当前窗口是否设置了 FLAG_SECURE
+     * 9. WindowSecurer:检查 FLAG_SECURE 是否设置
+     * @return true=有截屏风险(FLAG_SECURE 未设置) / false=防截屏生效
      */
     private fun checkWindowSecure(): Boolean {
         return try {
-            val window = window
             val flags = window.attributes.flags
             val isSecure = (flags and android.view.WindowManager.LayoutParams.FLAG_SECURE) != 0
-            log("[WindowSecurer] FLAG_SECURE 已设置: $isSecure")
-
-            // 占位:真实实现会在 DefenderInitProvider 中全局设置 FLAG_SECURE
-            // 这里检查当前窗口是否已设置
-            isSecure  // 已设置 = 安全(NO)
+            log("[WindowSecurer] FLAG_SECURE 已设置: $isSecure (demo secureScreen 未启用则为 false)")
+            !isSecure  // 未设置 FLAG_SECURE = 截屏风险
         } catch (e: Exception) {
             log("[WindowSecurer] 异常: ${e.message}")
             false
