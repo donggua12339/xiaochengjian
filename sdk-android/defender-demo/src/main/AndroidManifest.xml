@@ -11,6 +11,12 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Material3.Light.NoActionBar">
 
+        <!-- defender-sdk .so 名(demo 直接用 .aar 构建,.so 名为默认的 libxcj_defender.so;
+             Packer 封装时会注入 30 池随机名) -->
+        <meta-data
+            android:name="xcj.defender.lib"
+            android:value="libxcj_defender.so" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true">

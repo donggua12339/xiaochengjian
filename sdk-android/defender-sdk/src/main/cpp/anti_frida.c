@@ -368,10 +368,15 @@ static void *frida_memory_scan_thread(void *arg) {
             if (buf[i] == '\n' || line_pos >= (int)sizeof(line) - 1) {
                 line[line_pos] = '\0';
 
-                /* 找 r-xp 段(可执行) */
-                if (strstr(line, " r-xp ") != NULL) {
-                    unsigned long start, end;
-                    if (sscanf(line, "%lx-%lx", &start, &end) == 2) {
+                /* 找数据段(可读非可执行:r--p / rw-p)。
+                 * 不搜代码段(r-xp):机器码偶然匹配 "frida:rpc" 字节序列会误报
+                 * (实测 Magisk 真机 r-xp 段误报 frida:rpc 触发 SIGABRT)。
+                 * Frida 字符串特征(LIBFRIDA/frida:rpc)在数据段。 */
+                unsigned long start, end;
+                char perms[8];
+                if (sscanf(line, "%lx-%lx %7s", &start, &end, perms) == 3 &&
+                    perms[0] == 'r' && perms[2] != 'x') {
+                    {
                         /* 在 [start, end] 范围搜 "LIBFRIDA" / "frida:rpc" */
                         void *p = (void *)start;
                         size_t len = end - start;
