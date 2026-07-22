@@ -44,9 +44,11 @@ add_library(xcj_defender SHARED ${DEFENDER_SOURCES})
 # ============= 链接库 =============
 # log: Android 日志
 # android: Android NDK API
+# z: zlib(Integrity 模块解压 APK entry / MANIFEST.MF)
 target_link_libraries(xcj_defender
     log
     android
+    z
 )
 
 # ============= include 目录 =============

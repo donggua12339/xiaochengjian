@@ -423,6 +423,63 @@ static int compute_signing_block_hash(const char *apk_path, char *hash_out) {
 }
 
 /**
+ * 整改:从 /proc/self/maps 定位当前 APK 路径
+ *
+ * 绕过 Java 层 packageCodePath(可被 Frida hook 伪造)。
+ * maps 中 APK 的 .so 映射形如:
+ *   76e5000000-... r-xp ... /data/app/.../base.apk!/lib/arm64-v8a/libxxx.so
+ * 提取 "!" 前的 APK 路径(/data/app/.../base.apk)。
+ *
+ * @param apk_path_out 输出:APK 路径(至少 512 字节)
+ * @return 0=成功 / -1=失败
+ */
+static int find_apk_path_from_maps(char *apk_path_out, size_t out_size) {
+    int fd = sys_openat("/proc/self/maps", 0);
+    if (fd < 0) return -1;
+
+    char buf[8192];
+    char line[1024];
+    int line_pos = 0;
+    int found = 0;
+
+    ssize_t n;
+    while ((n = sys_read(fd, buf, sizeof(buf) - 1)) > 0 && !found) {
+        buf[n] = '\0';
+        for (int i = 0; i < n && !found; i++) {
+            if (buf[i] == '\n' || line_pos >= (int)sizeof(line) - 1) {
+                line[line_pos] = '\0';
+                /* 找包含 .apk! 的映射(APK 内 .so 的映射路径) */
+                char *apk_marker = strstr(line, ".apk!");
+                if (apk_marker != NULL) {
+                    /* 提取路径:从行中找最后一个空格后的路径,截取到 .apk */
+                    char *path_start = strrchr(line, ' ');
+                    if (path_start != NULL) {
+                        path_start++;  /* 跳过空格 */
+                        /* 计算 .apk 结尾位置 */
+                        size_t prefix_len = (size_t)(apk_marker - path_start) + 4;  /* 含 ".apk" */
+                        if (prefix_len < out_size) {
+                            strncpy(apk_path_out, path_start, prefix_len);
+                            apk_path_out[prefix_len] = '\0';
+                            found = 1;
+                        }
+                    }
+                }
+                line_pos = 0;
+            } else {
+                line[line_pos++] = buf[i];
+            }
+        }
+    }
+    sys_close(fd);
+
+    if (found) {
+        LOGI("从 maps 定位 APK 路径: %s", apk_path_out);
+        return 0;
+    }
+    return -1;
+}
+
+/**
  * D 层:签名证书 hash 校验
  *
  * H3 修复:优先用 APK Signing Block hash(与 B 层整个 APK hash 区分),
@@ -438,11 +495,21 @@ int sig_verify_check_d(const char *apk_path, const char *expected_hash) {
         return -1;
     }
 
+    /* 整改:优先从 /proc/self/maps 定位 APK 路径(绕过 Java 层 packageCodePath hook) */
+    char maps_apk_path[512];
+    const char *effective_path = apk_path;
+    if (find_apk_path_from_maps(maps_apk_path, sizeof(maps_apk_path)) == 0) {
+        effective_path = maps_apk_path;
+        LOGI("D 层使用 maps 定位的 APK 路径(防 hook)");
+    } else {
+        LOGW("maps 定位 APK 失败,回退传入路径: %s", apk_path);
+    }
+
     char actual_hash[65];
     /* D 层优先 APK Signing Block hash,无签名块时回退整个 APK hash */
-    if (compute_signing_block_hash(apk_path, actual_hash) != 0) {
+    if (compute_signing_block_hash(effective_path, actual_hash) != 0) {
         LOGW("无 APK Signing Block,D 层回退整个 APK hash");
-        if (compute_apk_signature_hash(apk_path, actual_hash) != 0) {
+        if (compute_apk_signature_hash(effective_path, actual_hash) != 0) {
             return -1;
         }
     }

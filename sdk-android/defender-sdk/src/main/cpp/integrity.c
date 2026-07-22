@@ -21,6 +21,7 @@
 #include <dirent.h>
 #include <sys/stat.h>
 #include <pthread.h>
+#include <zlib.h>
 #include <android/log.h>
 
 #define TAG "DefenderIntegrity"
@@ -240,10 +241,266 @@ static int zip_foreach_entry(const char *apk_path, zip_entry_cb cb, void *ctx) {
     return 0;
 }
 
-/* ============= 层 2:DEX CRC 逐文件校验 ============= */
+/* ============= 层 3:MANIFEST.MF SHA-1 校验 ============= */
 
 /* M6:预期 CRC 表 + 文件列表改为运行时从 defender-config.json 读取
  * (Packer 封装时生成),不再用 .rodata 编译时占位表。 */
+
+/* --- SHA-1 实现(校验 MANIFEST.MF 中的 SHA1-Digest) --- */
+typedef struct {
+    unsigned int state[5];
+    unsigned long long count;
+    unsigned char buffer[64];
+} sha1_ctx;
+
+#define SHA1_ROL(v, b) (((v) << (b)) | ((v) >> (32 - (b))))
+
+static void sha1_transform(unsigned int state[5], const unsigned char buffer[64]) {
+    unsigned int a, b, c, d, e, w[80];
+    for (int i = 0; i < 16; i++)
+        w[i] = (buffer[i * 4] << 24) | (buffer[i * 4 + 1] << 16) |
+               (buffer[i * 4 + 2] << 8) | buffer[i * 4 + 3];
+    for (int i = 16; i < 80; i++)
+        w[i] = SHA1_ROL(w[i - 3] ^ w[i - 8] ^ w[i - 14] ^ w[i - 16], 1);
+    a = state[0]; b = state[1]; c = state[2]; d = state[3]; e = state[4];
+    for (int i = 0; i < 80; i++) {
+        unsigned int f, k;
+        if (i < 20) { f = (b & c) | ((~b) & d); k = 0x5A827999; }
+        else if (i < 40) { f = b ^ c ^ d; k = 0x6ED9EBA1; }
+        else if (i < 60) { f = (b & c) | (b & d) | (c & d); k = 0x8F1BBCDC; }
+        else { f = b ^ c ^ d; k = 0xCA62C1D6; }
+        unsigned int t = SHA1_ROL(a, 5) + f + e + k + w[i];
+        e = d; d = c; c = SHA1_ROL(b, 30); b = a; a = t;
+    }
+    state[0] += a; state[1] += b; state[2] += c; state[3] += d; state[4] += e;
+}
+
+static void sha1_init(sha1_ctx *ctx) {
+    ctx->state[0] = 0x67452301; ctx->state[1] = 0xEFCDAB89;
+    ctx->state[2] = 0x98BADCFE; ctx->state[3] = 0x10325476;
+    ctx->state[4] = 0xC3D2E1F0;
+    ctx->count = 0;
+}
+
+static void sha1_update(sha1_ctx *ctx, const unsigned char *data, size_t len) {
+    for (size_t i = 0; i < len; i++) {
+        ctx->buffer[ctx->count % 64] = data[i];
+        ctx->count++;
+        if (ctx->count % 64 == 0) sha1_transform(ctx->state, ctx->buffer);
+    }
+}
+
+static void sha1_final(sha1_ctx *ctx, unsigned char digest[20]) {
+    unsigned long long bits = ctx->count * 8;
+    unsigned char pad = 0x80;
+    sha1_update(ctx, &pad, 1);
+    pad = 0x00;
+    while (ctx->count % 64 != 56) sha1_update(ctx, &pad, 1);
+    unsigned char lenbuf[8];
+    for (int i = 0; i < 8; i++) lenbuf[i] = (unsigned char)(bits >> (56 - i * 8));
+    sha1_update(ctx, lenbuf, 8);
+    for (int i = 0; i < 5; i++) {
+        digest[i * 4] = (unsigned char)(ctx->state[i] >> 24);
+        digest[i * 4 + 1] = (unsigned char)(ctx->state[i] >> 16);
+        digest[i * 4 + 2] = (unsigned char)(ctx->state[i] >> 8);
+        digest[i * 4 + 3] = (unsigned char)(ctx->state[i]);
+    }
+}
+
+/* --- base64 解码(MANIFEST.MF 的 SHA1-Digest 是 base64) --- */
+static int base64_decode(const char *in, unsigned char *out, size_t *out_len) {
+    static const int table[256] = {
+        ['A']=0,['B']=1,['C']=2,['D']=3,['E']=4,['F']=5,['G']=6,['H']=7,
+        ['I']=8,['J']=9,['K']=10,['L']=11,['M']=12,['N']=13,['O']=14,['P']=15,
+        ['Q']=16,['R']=17,['S']=18,['T']=19,['U']=20,['V']=21,['W']=22,['X']=23,
+        ['Y']=24,['Z']=25,['a']=26,['b']=27,['c']=28,['d']=29,['e']=30,['f']=31,
+        ['g']=32,['h']=33,['i']=34,['j']=35,['k']=36,['l']=37,['m']=38,['n']=39,
+        ['o']=40,['p']=41,['q']=42,['r']=43,['s']=44,['t']=45,['u']=46,['v']=47,
+        ['w']=48,['x']=49,['y']=50,['z']=51,['0']=52,['1']=53,['2']=54,['3']=55,
+        ['4']=56,['5']=57,['6']=58,['7']=59,['8']=60,['9']=61,['+']=62,['/']=63,
+    };
+    size_t in_len = strlen(in);
+    size_t o = 0;
+    for (size_t i = 0; i + 3 < in_len + 1 && in[i] != '='; ) {
+        if (in[i] == '\n' || in[i] == '\r') { i++; continue; }
+        unsigned int n = (table[(unsigned char)in[i]] << 18) |
+                         (table[(unsigned char)in[i + 1]] << 12) |
+                         (i + 2 < in_len && in[i + 2] != '=' ? table[(unsigned char)in[i + 2]] << 6 : 0) |
+                         (i + 3 < in_len && in[i + 3] != '=' ? table[(unsigned char)in[i + 3]] : 0);
+        out[o++] = (unsigned char)(n >> 16);
+        if (i + 2 < in_len && in[i + 2] != '=') out[o++] = (unsigned char)(n >> 8);
+        if (i + 3 < in_len && in[i + 3] != '=') out[o++] = (unsigned char)n;
+        i += 4;
+    }
+    *out_len = o;
+    return 0;
+}
+
+/**
+ * 读取 APK 中指定 entry 的内容(自动解压 deflated)
+ *
+ * 扫描 local file header(signature 0x04034b50)匹配 entry 名,
+ * compression method 8(deflated)用 zlib inflate 解压。
+ *
+ * @return 0=成功(需 free *data_out)/ -1=失败
+ */
+static int read_apk_entry(const char *apk_path, const char *entry_name,
+                          unsigned char **data_out, size_t *size_out) {
+    int fd = ic_openat(apk_path, 0);
+    if (fd < 0) return -1;
+
+    unsigned char hdr[30];
+    off_t pos = 0;
+    int found = 0;
+    unsigned int comp_method = 0, comp_size = 0, uncomp_size = 0;
+
+    /* 扫描 local file header */
+    while (1) {
+        if (ic_lseek(fd, pos, SEEK_SET) < 0) break;
+        if (ic_read(fd, hdr, 30) != 30) break;
+        /* signature 0x04034b50(little-endian: 50 4b 03 04) */
+        if (hdr[0] != 0x50 || hdr[1] != 0x4b || hdr[2] != 0x03 || hdr[3] != 0x04) break;
+
+        unsigned int name_len = hdr[26] | (hdr[27] << 8);
+        unsigned int extra_len = hdr[28] | (hdr[29] << 8);
+        char name[512];
+        if (name_len >= sizeof(name)) name_len = sizeof(name) - 1;
+        if (ic_read(fd, name, name_len) != (ssize_t)name_len) break;
+        name[name_len] = '\0';
+
+        comp_method = hdr[8] | (hdr[9] << 8);
+        comp_size = hdr[18] | (hdr[19] << 8) | (hdr[20] << 16) | (hdr[21] << 24);
+        uncomp_size = hdr[22] | (hdr[23] << 8) | (hdr[24] << 16) | (hdr[25] << 24);
+
+        if (strcmp(name, entry_name) == 0) {
+            /* 跳过 extra field,定位 data */
+            off_t data_pos = pos + 30 + name_len + extra_len;
+            ic_lseek(fd, data_pos, SEEK_SET);
+            unsigned char *comp_data = (unsigned char *)malloc(comp_size);
+            if (!comp_data) break;
+            if (ic_read(fd, comp_data, comp_size) != (ssize_t)comp_size) {
+                free(comp_data);
+                break;
+            }
+            if (comp_method == 0) {
+                /* stored */
+                *data_out = comp_data;
+                *size_out = comp_size;
+            } else if (comp_method == 8) {
+                /* deflated:zlib inflate(raw deflate,windowBits=-15) */
+                unsigned char *uncomp = (unsigned char *)malloc(uncomp_size);
+                if (!uncomp) { free(comp_data); break; }
+                z_stream strm;
+                memset(&strm, 0, sizeof(strm));
+                strm.next_in = comp_data;
+                strm.avail_in = comp_size;
+                strm.next_out = uncomp;
+                strm.avail_out = uncomp_size;
+                if (inflateInit2(&strm, -15) != Z_OK) { free(comp_data); free(uncomp); break; }
+                int ret = inflate(&strm, Z_FINISH);
+                inflateEnd(&strm);
+                free(comp_data);
+                if (ret != Z_STREAM_END && ret != Z_OK) { free(uncomp); break; }
+                *data_out = uncomp;
+                *size_out = uncomp_size;
+            } else {
+                free(comp_data);
+                break;
+            }
+            found = 1;
+            break;
+        }
+        /* 跳到下一个 local header */
+        pos = pos + 30 + name_len + extra_len + comp_size;
+    }
+    ic_close(fd);
+    return found ? 0 : -1;
+}
+
+/**
+ * 层 3:MANIFEST.MF 中 classes.dex 的 SHA-1 校验
+ *
+ * 读取 META-INF/MANIFEST.MF,解析 classes.dex 的 SHA1-Digest(base64),
+ * 读取 classes.dex 计算实际 SHA-1,比对。
+ * DEX 被修改但未更新 MANIFEST.MF 时,SHA-1 不符 → 检测到篡改。
+ *
+ * @return 0=校验通过 / 1=校验失败 / -1=内部错误(如 V2 only 无 MANIFEST.MF)
+ */
+static int integrity_check_manifest(const char *apk_path) {
+    LOGI("=== 层 3:MANIFEST.MF SHA-1 校验 ===");
+
+    unsigned char *manifest_data = NULL;
+    size_t manifest_size = 0;
+    if (read_apk_entry(apk_path, "META-INF/MANIFEST.MF", &manifest_data, &manifest_size) != 0) {
+        LOGW("无 META-INF/MANIFEST.MF(可能 V2/V3 only 签名),层 3 跳过");
+        return -1;
+    }
+
+    /* 在 MANIFEST.MF 中找 classes.dex 的 SHA1-Digest */
+    char *manifest_str = (char *)malloc(manifest_size + 1);
+    memcpy(manifest_str, manifest_data, manifest_size);
+    manifest_str[manifest_size] = '\0';
+    free(manifest_data);
+
+    /* 定位 "Name: classes.dex" 段落 */
+    char *dex_section = strstr(manifest_str, "Name: classes.dex");
+    if (!dex_section) {
+        LOGW("MANIFEST.MF 无 classes.dex 条目,层 3 跳过");
+        free(manifest_str);
+        return -1;
+    }
+
+    /* 找该段落的 SHA1-Digest */
+    char *sha1_line = strstr(dex_section, "SHA1-Digest:");
+    if (!sha1_line) {
+        LOGW("classes.dex 无 SHA1-Digest,层 3 跳过");
+        free(manifest_str);
+        return -1;
+    }
+    sha1_line += strlen("SHA1-Digest:");
+    while (*sha1_line == ' ') sha1_line++;
+    char expected_b64[64] = {0};
+    int ei = 0;
+    while (sha1_line[ei] && sha1_line[ei] != '\n' && sha1_line[ei] != '\r' && ei < 63) {
+        expected_b64[ei] = sha1_line[ei];
+        ei++;
+    }
+    expected_b64[ei] = '\0';
+    free(manifest_str);
+
+    /* base64 解码预期 SHA-1 */
+    unsigned char expected_sha1[20];
+    size_t expected_len = 0;
+    base64_decode(expected_b64, expected_sha1, &expected_len);
+    if (expected_len != 20) {
+        LOGW("SHA1-Digest 解码失败(len=%zu),层 3 跳过", expected_len);
+        return -1;
+    }
+
+    /* 读取 classes.dex,计算实际 SHA-1 */
+    unsigned char *dex_data = NULL;
+    size_t dex_size = 0;
+    if (read_apk_entry(apk_path, "classes.dex", &dex_data, &dex_size) != 0) {
+        LOGW("读取 classes.dex 失败,层 3 跳过");
+        return -1;
+    }
+
+    sha1_ctx ctx;
+    sha1_init(&ctx);
+    sha1_update(&ctx, dex_data, dex_size);
+    unsigned char actual_sha1[20];
+    sha1_final(&ctx, actual_sha1);
+    free(dex_data);
+
+    if (memcmp(expected_sha1, actual_sha1, 20) == 0) {
+        LOGI("层 3 校验通过(classes.dex SHA-1 匹配)");
+        return 0;
+    }
+    LOGE("层 3 校验失败: classes.dex SHA-1 不匹配(DEX 被篡改)");
+    return 1;
+}
+
+/* ============= 层 2:DEX CRC 逐文件校验 ============= */
 
 /* ============= M6:JSON 字符串数组解析(从 config 读预期表) ============= */
 
@@ -499,12 +756,19 @@ static int integrity_check_file_list(const char *apk_path, const char *file_list
  * @return 0=安全 / 1=kill / 2=warn / -1=内部错误
  */
 int integrity_check(const char *apk_path, const char *crc_table_json, const char *file_list_json) {
-    LOGI("=== IntegrityChecker(层 2 + 层 4)===");
+    LOGI("=== IntegrityChecker(层 2 + 层 3 + 层 4)===");
 
     /* 层 2:CRC */
     int crc_result = integrity_check_crc(apk_path, crc_table_json);
     if (crc_result == 1) {
         LOGE("层 2 CRC 校验失败");
+        return 1;  /* kill */
+    }
+
+    /* 层 3:MANIFEST.MF SHA-1(V1 签名时存在 MANIFEST.MF,V2/V3 only 时跳过) */
+    int manifest_result = integrity_check_manifest(apk_path);
+    if (manifest_result == 1) {
+        LOGE("层 3 MANIFEST.MF SHA-1 校验失败(DEX 被篡改)");
         return 1;  /* kill */
     }
 
@@ -519,6 +783,6 @@ int integrity_check(const char *apk_path, const char *crc_table_json, const char
         return 2;  /* warn */
     }
 
-    LOGI("IntegrityChecker 通过(层 2 + 层 4)");
+    LOGI("IntegrityChecker 通过(层 2 + 层 3 + 层 4)");
     return 0;
 }

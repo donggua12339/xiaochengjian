@@ -147,14 +147,34 @@ static int check_su_paths(void) {
 }
 
 /**
- * 检查 Magisk 目录
+ * 整改:检查 busybox(root 设备常安装)
+ */
+static int check_busybox(void) {
+    const char *paths[] = {
+        "/system/xbin/busybox", "/system/bin/busybox",
+        "/sbin/busybox", "/data/local/xbin/busybox",
+        "/data/local/bin/busybox", "/vendor/bin/busybox",
+    };
+    for (int i = 0; i < 6; i++) {
+        if (rc_access(paths[i], 0) == 0) {
+            LOGE("检测到 busybox: %s", paths[i]);
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/**
+ * 检查 Magisk 目录(整改:增加残留项)
  */
 static int check_magisk_paths(void) {
     const char *paths[] = {
         "/sbin/.magisk", "/data/adb/magisk",
         "/data/adb/modules", "/cache/.disable_magisk",
+        "/data/adb/magisk.img", "/data/adb/magisk.db",
+        "/cache/.magisk", "/persist/magisk",
     };
-    for (int i = 0; i < 4; i++) {
+    for (int i = 0; i < 8; i++) {
         if (rc_access(paths[i], 0) == 0) {
             LOGE("检测到 Magisk: %s", paths[i]);
             return 1;
@@ -177,6 +197,22 @@ static int check_ro_secure(void) {
 }
 
 /**
+ * 整改:检查 test-keys(测试签名,破坏系统原厂完整性)
+ *
+ * 正常设备 ro.build.tags = "release-keys",
+ * root/自定义 ROM 常为 "test-keys"。
+ */
+static int check_test_keys(void) {
+    char value[64] = {0};
+    __system_property_get("ro.build.tags", value);
+    if (strstr(value, "test-keys") != NULL) {
+        LOGE("检测到 test-keys(ro.build.tags=%s)", value);
+        return 1;
+    }
+    return 0;
+}
+
+/**
  * 检查 SELinux 状态(Permissive = 可能 root)
  */
 static int check_selinux(void) {
@@ -193,22 +229,28 @@ static int check_selinux(void) {
 
 /**
  * 检查系统分区是否可写(root 常 remount)
+ *
+ * 整改:同时检测 /system 和 /vendor 的异常 rw 挂载(正常应为 ro)
  */
 static int check_mounts(void) {
     char buf[16384] = {0};
     if (read_file("/proc/self/mounts", buf, sizeof(buf)) != 0) {
         return 0;
     }
-    /* 找 /system 或 /system_root 的 rw 挂载(正常应为 ro)
-     * 部分设备 /system 是符号链接到 /system_root,两种都检测 */
-    char *p = strstr(buf, " /system ");
-    if (!p) p = strstr(buf, " /system_root ");
-    if (p) {
-        char *end = strchr(p, '\n');
-        if (end) *end = '\0';
-        if (strstr(p, " rw,") != NULL || strstr(p, " rw ") != NULL) {
-            LOGE("/system 可写(root remount)");
-            return 1;
+    /* 检测 /system、/system_root、/vendor 的 rw 挂载 */
+    const char *mount_points[] = { " /system ", " /system_root ", " /vendor " };
+    for (int i = 0; i < 3; i++) {
+        char *p = strstr(buf, mount_points[i]);
+        if (p) {
+            char *end = strchr(p, '\n');
+            char saved = 0;
+            if (end) { saved = *end; *end = '\0'; }
+            int writable = (strstr(p, " rw,") != NULL || strstr(p, " rw ") != NULL);
+            if (end) *end = saved;
+            if (writable) {
+                LOGE("系统分区可写(root remount):%s", mount_points[i]);
+                return 1;
+            }
         }
     }
     return 0;
@@ -414,8 +456,10 @@ int root_check(void) {
 
     /* 用户态 */
     if (check_su_paths()) return 1;
+    if (check_busybox()) return 1;
     if (check_magisk_paths()) return 1;
     if (check_ro_secure()) return 1;
+    if (check_test_keys()) return 1;
     if (check_selinux()) return 1;
     if (check_mounts()) return 1;
 

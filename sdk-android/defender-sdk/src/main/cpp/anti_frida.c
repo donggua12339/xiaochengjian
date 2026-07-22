@@ -82,6 +82,21 @@ static int af_close(int fd) {
     );
     return ret;
 }
+static int af_access(const char *path, int mode) {
+    int ret;
+    __asm__ volatile(
+        "mov x8, #48\n"      /* __NR_faccessat */
+        "mov x0, #-100\n"    /* AT_FDCWD */
+        "mov x1, %1\n"
+        "mov x2, %2\n"
+        "svc #0\n"
+        "mov %0, x0\n"
+        : "=r"(ret)
+        : "r"(path), "r"(mode)
+        : "x0", "x1", "x2", "x8", "memory"
+    );
+    return ret;
+}
 
 #elif defined(__arm__)
 /* M1 说明:armeabi-v7a 的 inline syscall 需要 R7 存 syscall 号,但 R7 被 ABI 保留为
@@ -97,11 +112,15 @@ static ssize_t af_read(int fd, void *buf, size_t count) {
 static int af_close(int fd) {
     return (int)syscall(__NR_close, fd);
 }
+static int af_access(const char *path, int mode) {
+    return (int)syscall(__NR_faccessat, AT_FDCWD, path, mode, 0);
+}
 
 #else
 static int af_openat(const char *path, int flags) { return open(path, flags); }
 static ssize_t af_read(int fd, void *buf, size_t count) { return read(fd, buf, count); }
 static int af_close(int fd) { return close(fd); }
+static int af_access(const char *path, int mode) { return access(path, mode); }
 #endif
 
 /* ============= M7 修复:XOR 字符串混淆 ============= */
@@ -439,15 +458,43 @@ void anti_frida_start_memory_scan(void) {
     }
 }
 
-/* ============= 组合检测(同步:A+B+C) ============= */
+/* ============= E:文件路径检测 ============= */
 
 /**
- * AntiFrida 检测(同步:A+B+C,不含 D 后台扫描)
+ * 检测 Frida 默认文件路径
+ *
+ * Frida server 通常推送到 /data/local/tmp/,检查常见路径。
+ * 用 inline syscall 的 faccessat(避免 libc hook)。
+ *
+ * @return 0=未检测到 / 1=检测到 Frida 文件
+ */
+static int check_frida_files(void) {
+    const char *paths[] = {
+        "/data/local/tmp/frida-server",
+        "/data/local/tmp/re.frida.server",
+        "/data/local/tmp/frida-server-64",
+        "/data/local/tmp/frida-server-32",
+        "/data/local/tmp/frida-gadget.so",
+        "/data/local/tmp/re.frida.server.so",
+    };
+    for (int i = 0; i < 6; i++) {
+        if (af_access(paths[i], 0) == 0) {  /* F_OK=0 */
+            LOGE("文件路径检测到 Frida: %s", paths[i]);
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* ============= 组合检测(同步:A+B+C+E) ============= */
+
+/**
+ * AntiFrida 检测(同步:A maps + B 端口 + C 线程名 + E 文件路径,不含 D 后台扫描)
  *
  * @return 0=未检测到 / 1=检测到 Frida
  */
 int anti_frida_check(void) {
-    LOGI("=== AntiFrida 检测(A+B+C) ===");
+    LOGI("=== AntiFrida 检测(A+B+C+E) ===");
 
     /* A:maps 扫描 */
     if (check_maps_frida()) {
@@ -464,6 +511,12 @@ int anti_frida_check(void) {
     /* C:线程名 */
     if (check_thread_names()) {
         LOGE("C 层检测到 Frida(线程名)");
+        return 1;
+    }
+
+    /* E:文件路径 */
+    if (check_frida_files()) {
+        LOGE("E 层检测到 Frida(文件路径)");
         return 1;
     }
 
