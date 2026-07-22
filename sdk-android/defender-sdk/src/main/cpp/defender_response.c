@@ -141,11 +141,19 @@ int defender_warn_throttle(const char *violation_key, int throttle_ms) {
         return 1;
     }
 
-    /* 表满,覆盖 entry 0(简化 LRU) */
-    strncpy(throttle_table[0].key, violation_key, THROTTLE_KEY_MAX_LEN - 1);
-    throttle_table[0].key[THROTTLE_KEY_MAX_LEN - 1] = '\0';
-    throttle_table[0].last_report_ts = now;
+    /* 表满,找最旧的 entry 覆盖(真 LRU,而非固定覆盖 entry 0) */
+    int oldest = 0;
+    time_t oldest_ts = throttle_table[0].last_report_ts;
+    for (int i = 1; i < THROTTLE_TABLE_SIZE; i++) {
+        if (throttle_table[i].last_report_ts < oldest_ts) {
+            oldest_ts = throttle_table[i].last_report_ts;
+            oldest = i;
+        }
+    }
+    strncpy(throttle_table[oldest].key, violation_key, THROTTLE_KEY_MAX_LEN - 1);
+    throttle_table[oldest].key[THROTTLE_KEY_MAX_LEN - 1] = '\0';
+    throttle_table[oldest].last_report_ts = now;
     pthread_mutex_unlock(&throttle_mutex);
-    LOGW("warn 限流表满,覆盖 entry 0(key=%s)", violation_key);
+    LOGW("warn 限流表满,覆盖最旧 entry %d(key=%s)", oldest, violation_key);
     return 1;
 }

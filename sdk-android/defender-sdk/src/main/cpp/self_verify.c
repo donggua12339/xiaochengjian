@@ -293,21 +293,24 @@ int defender_self_verify(void) {
         return 0;
     }
 
-    /* 4. 不匹配 -> .text 被篡改 */
+    /* 4. 不匹配 -> 判断是占位还是真篡改 */
     LOGE(".text hash 校验失败!");
     LOGE("预期: %s", EXPECTED_TEXT_HASH);
     LOGE("实际: %s", actual_hash);
 
-    /* 注:占位 hash(全 0)不触发 abort,正式编译后 post-build 写入真实 hash 才触发 */
-    if (EXPECTED_TEXT_HASH[0] != '0' || EXPECTED_TEXT_HASH[1] != '0') {
-        /* hash 不是占位值(全 0),说明已 post-build 写入真实 hash,触发 abort */
+    /* H1 修复:用完整字符串比对检测占位(而非只看前 2 字符,
+     * 避免真实 hash 恰好以 "00" 开头时被误判为占位而跳过校验) */
+    static const char PLACEHOLDER_HASH[65] =
+        "0000000000000000000000000000000000000000000000000000000000000000";
+    if (strcmp(EXPECTED_TEXT_HASH, PLACEHOLDER_HASH) != 0) {
+        /* 已 post-build 写入真实 hash,但与实际不符 -> .text 被篡改 */
         LOGE(".text 被篡改,触发 abort()");
         raise(SIGABRT);
         _exit(1);
         return -1;  /* 不会走到这里 */
     }
 
-    /* 占位 hash(全 0),跳过校验(开发阶段) */
-    LOGW("占位 hash(全 0),跳过校验(开发阶段,正式编译后 post-build 写入真实 hash)");
+    /* 占位 hash,跳过校验(开发阶段,正式编译后 post-build 写入真实 hash) */
+    LOGW("占位 hash,跳过校验(开发阶段,运行 scripts/patch_text_hash.py 写入真实 hash)");
     return 0;
 }

@@ -26,6 +26,7 @@
 #include <arpa/inet.h>
 #include <pthread.h>
 #include <signal.h>
+#include <setjmp.h>
 #include <android/log.h>
 
 #define TAG "DefenderAntiFrida"
@@ -101,12 +102,43 @@ static ssize_t af_read(int fd, void *buf, size_t count) { return read(fd, buf, c
 static int af_close(int fd) { return close(fd); }
 #endif
 
+/* ============= M7 修复:XOR 字符串混淆 ============= */
+
+/*
+ * 检测关键词用 XOR 0x5A 编码存储,运行时解码。
+ * 静态分析(strings/IDA)看到的是编码字节,无法直接定位检测逻辑。
+ * 编码值由 scripts/obf_encode.py 生成(key=0x5A)。
+ */
+#define OBF_KEY 0x5A
+
+static void obf_decode(char *dst, const unsigned char *src, size_t len) {
+    for (size_t i = 0; i < len; i++) {
+        dst[i] = (char)(src[i] ^ OBF_KEY);
+    }
+    dst[len] = '\0';
+}
+
+/* "frida" */
+static const unsigned char OBF_FRIDA[] = {0x3c, 0x28, 0x33, 0x3e, 0x3b};
+/* "gum-js-loop" */
+static const unsigned char OBF_GUM_JS_LOOP[] = {0x3d, 0x2f, 0x37, 0x77, 0x30, 0x29, 0x77, 0x36, 0x35, 0x35, 0x2a};
+/* "frida-agent" */
+static const unsigned char OBF_FRIDA_AGENT[] = {0x3c, 0x28, 0x33, 0x3e, 0x3b, 0x77, 0x3b, 0x3d, 0x3f, 0x34, 0x2e};
+/* "gadget" */
+static const unsigned char OBF_GADGET[] = {0x3d, 0x3b, 0x3e, 0x3d, 0x3f, 0x2e};
+/* "gmain"(线程名) */
+static const unsigned char OBF_GMAIN[] = {0x3d, 0x37, 0x28, 0x33, 0x34};
+/* "LIBFRIDA"(内存特征) */
+static const unsigned char OBF_LIBFRIDA[] = {0x16, 0x13, 0x18, 0x1c, 0x08, 0x13, 0x1e, 0x1b};
+/* "frida:rpc"(内存特征) */
+static const unsigned char OBF_FRIDA_RPC[] = {0x3c, 0x28, 0x33, 0x3e, 0x3b, 0x60, 0x28, 0x2a, 0x39};
+
 /* ============= A:扫 /proc/self/maps ============= */
 
 /**
  * 扫 /proc/self/maps,找 Frida 特征
  *
- * 关键词:frida, gum-js-loop, frida-agent, gadget
+ * 关键词:frida, gum-js-loop, frida-agent, gadget(M7:XOR 混淆存储)
  *
  * @return 0=未检测到 / 1=检测到 Frida
  */
@@ -118,20 +150,55 @@ static int check_maps_frida(void) {
     }
 
     char buf[8192];
-    const char *keywords[] = { "frida", "gum-js-loop", "frida-agent", "gadget" };
+    /* M7:运行时解码关键词(栈缓冲区,静态分析不可见) */
+    char kw_frida[6], kw_gum[12], kw_agent[12], kw_gadget[7];
+    obf_decode(kw_frida, OBF_FRIDA, 5);
+    obf_decode(kw_gum, OBF_GUM_JS_LOOP, 11);
+    obf_decode(kw_agent, OBF_FRIDA_AGENT, 11);
+    obf_decode(kw_gadget, OBF_GADGET, 6);
+    const char *keywords[] = { kw_frida, kw_gum, kw_agent, kw_gadget };
     int detected = 0;
+
+    /* L1 修复:跨 buffer 边界检测。最长关键词 "frida-agent"/"gum-js-loop" 为 11 字节,
+     * 保留上一块尾部 16 字节,与当前块开头拼接后检测,防止关键词被 buffer 边界切断漏检 */
+    char tail[16];
+    int tail_len = 0;
 
     ssize_t n;
     while ((n = af_read(fd, buf, sizeof(buf) - 1)) > 0) {
         buf[n] = '\0';
-        for (int i = 0; i < 4; i++) {
-            if (strstr(buf, keywords[i]) != NULL) {
-                LOGE("maps 检测到 Frida 特征: %s", keywords[i]);
-                detected = 1;
-                break;
+
+        /* 拼接上一块尾部 + 当前块开头,检测跨边界关键词 */
+        if (tail_len > 0) {
+            char overlap[48];
+            int head_len = n < 16 ? (int)n : 16;
+            memcpy(overlap, tail, tail_len);
+            memcpy(overlap + tail_len, buf, head_len);
+            overlap[tail_len + head_len] = '\0';
+            for (int i = 0; i < 4; i++) {
+                if (strstr(overlap, keywords[i]) != NULL) {
+                    LOGE("maps 检测到 Frida 特征(跨边界): %s", keywords[i]);
+                    detected = 1;
+                    break;
+                }
+            }
+        }
+
+        /* 检测当前块内部 */
+        if (!detected) {
+            for (int i = 0; i < 4; i++) {
+                if (strstr(buf, keywords[i]) != NULL) {
+                    LOGE("maps 检测到 Frida 特征: %s", keywords[i]);
+                    detected = 1;
+                    break;
+                }
             }
         }
         if (detected) break;
+
+        /* 保存当前块尾部供下次拼接 */
+        tail_len = n < 16 ? (int)n : 16;
+        memcpy(tail, buf + n - tail_len, tail_len);
     }
 
     af_close(fd);
@@ -196,6 +263,11 @@ static int check_thread_names(void) {
     char comm_path[256];
     char comm[256];
 
+    /* M7:运行时解码线程名关键词 */
+    char kw_gum[12], kw_gmain[6];
+    obf_decode(kw_gum, OBF_GUM_JS_LOOP, 11);
+    obf_decode(kw_gmain, OBF_GMAIN, 5);
+
     while ((ent = readdir(d)) != NULL) {
         if (ent->d_name[0] == '.') continue;
 
@@ -214,8 +286,8 @@ static int check_thread_names(void) {
         char *nl = strchr(comm, '\n');
         if (nl) *nl = '\0';
 
-        if (strstr(comm, "gum-js-loop") != NULL ||
-            strstr(comm, "gmain") != NULL) {
+        if (strstr(comm, kw_gum) != NULL ||
+            strstr(comm, kw_gmain) != NULL) {
             LOGE("线程名检测到 Frida: %s (tid=%s)", comm, ent->d_name);
             detected = 1;
             break;
@@ -227,6 +299,22 @@ static int check_thread_names(void) {
 }
 
 /* ============= D:内存特征字符串扫描(后台异步) ============= */
+
+/* M2 修复:内存扫描 SIGSEGV 保护。
+ * 扫描 r-xp 段时,段可能在扫描中被 unmap/改保护,直接读会 SIGSEGV。
+ * 用 sigsetjmp/siglongjmp 在 SIGSEGV 时跳过该段,而非崩溃。 */
+static sigjmp_buf scan_jmp;
+static volatile sig_atomic_t scan_jmp_set = 0;
+
+static void scan_sigsegv_handler(int sig) {
+    (void)sig;
+    if (scan_jmp_set) {
+        scan_jmp_set = 0;
+        siglongjmp(scan_jmp, 1);
+    }
+    /* 未设置 jmp(非扫描期间),恢复默认处理 */
+    signal(SIGSEGV, SIG_DFL);
+}
 
 /**
  * 后台线程:扫描内存中的 Frida 特征字符串
@@ -254,6 +342,19 @@ static void *frida_memory_scan_thread(void *arg) {
         return NULL;
     }
 
+    /* M2 修复:设置 SIGSEGV handler,扫描不可读段时跳过而非崩溃 */
+    struct sigaction sa, old_sa;
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_handler = scan_sigsegv_handler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+    sigaction(SIGSEGV, &sa, &old_sa);
+
+    /* M7:运行时解码内存特征关键词 */
+    char kw_libfrida[9], kw_rpc[10];
+    obf_decode(kw_libfrida, OBF_LIBFRIDA, 8);
+    obf_decode(kw_rpc, OBF_FRIDA_RPC, 9);
+
     char line[512];
     int line_pos = 0;
     char buf[8192];
@@ -273,22 +374,32 @@ static void *frida_memory_scan_thread(void *arg) {
                         void *p = (void *)start;
                         size_t len = end - start;
 
-                        /* 用 memmem 搜索(如果可用)或手动搜 */
-                        for (size_t off = 0; off + 8 < len; off++) {
-                            if (memcmp((char *)p + off, "LIBFRIDA", 8) == 0) {
-                                LOGE("内存扫描检测到 Frida 特征: LIBFRIDA");
-                                af_close(fd);
-                                /* 触发 kill(由 defender_kill 处理) */
-                                raise(SIGABRT);
-                                _exit(1);
+                        /* M2 修复:sigsetjmp 保护,段被 unmap/改保护时 SIGSEGV 跳过该段 */
+                        if (sigsetjmp(scan_jmp, 1) == 0) {
+                            scan_jmp_set = 1;
+                            for (size_t off = 0; off + 8 < len; off++) {
+                                if (memcmp((char *)p + off, kw_libfrida, 8) == 0) {
+                                    LOGE("内存扫描检测到 Frida 特征: LIBFRIDA");
+                                    scan_jmp_set = 0;
+                                    af_close(fd);
+                                    sigaction(SIGSEGV, &old_sa, NULL);
+                                    raise(SIGABRT);
+                                    _exit(1);
+                                }
+                                if (off + 9 < len &&
+                                    memcmp((char *)p + off, kw_rpc, 9) == 0) {
+                                    LOGE("内存扫描检测到 Frida 特征: frida:rpc");
+                                    scan_jmp_set = 0;
+                                    af_close(fd);
+                                    sigaction(SIGSEGV, &old_sa, NULL);
+                                    raise(SIGABRT);
+                                    _exit(1);
+                                }
                             }
-                            if (off + 9 < len &&
-                                memcmp((char *)p + off, "frida:rpc", 9) == 0) {
-                                LOGE("内存扫描检测到 Frida 特征: frida:rpc");
-                                af_close(fd);
-                                raise(SIGABRT);
-                                _exit(1);
-                            }
+                            scan_jmp_set = 0;
+                        } else {
+                            /* SIGSEGV 发生,该段不可读,跳过 */
+                            LOGW("内存扫描:段 [0x%lx-0x%lx] 不可读,跳过", start, end);
                         }
                     }
                 }
@@ -301,6 +412,9 @@ static void *frida_memory_scan_thread(void *arg) {
     }
 
     af_close(fd);
+    /* 恢复原 SIGSEGV handler */
+    scan_jmp_set = 0;
+    sigaction(SIGSEGV, &old_sa, NULL);
     LOGI("内存特征字符串扫描完成(未检测到 Frida)");
     return NULL;
 }
