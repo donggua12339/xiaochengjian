@@ -53,7 +53,12 @@ export class AuditOwnController {
   @Post('analyze')
   @ApiOperation({ summary: '自有 APK 诊断(只读:JADX/签名/SDK 后门扫描)' })
   @ApiConsumes('multipart/form-data')
-  @ApiQuery({ name: 'hardener', required: false, type: String, description: '加固厂商(bangcle/legu/qihoo360,ADR 0078+0082-A/B)' })
+  @ApiQuery({
+    name: 'hardener',
+    required: false,
+    type: String,
+    description: '加固厂商(bangcle/legu/qihoo360,ADR 0078+0082-A/B)',
+  })
   @ApiBody({
     schema: {
       type: 'object',
@@ -84,7 +89,12 @@ export class AuditOwnController {
     // 加固自检(ADR 0078 + 0082-A/B):hardener 参数触发对应厂商路径
     const supportedHardeners = ['bangcle', 'legu', 'qihoo360'];
 
-    if (hardener && supportedHardeners.includes(hardener)) {
+    if (hardener) {
+      if (!supportedHardeners.includes(hardener)) {
+        throw new BadRequestException('UNSUPPORTED_HARDENER', {
+          cause: `unsupported hardener: ${hardener}, supported: ${supportedHardeners.join('/')}`,
+        });
+      }
       // 锁 B:验证 EULA 已接受(对应厂商)
       await this.hardenerEulaService.validateAccepted(
         developerId,
@@ -152,7 +162,8 @@ export class AuditOwnController {
   async resign(
     @CurrentDeveloper() developerId: string,
     @Req() req: AuthenticatedRequest,
-    @Body() body: {
+    @Body()
+    body: {
       keystorePassword: string;
       keyAlias: string;
       keyPassword: string;
@@ -257,9 +268,14 @@ export class AuditOwnController {
    */
   @Get('eula')
   @ApiOperation({ summary: '获取加固自检 EULA(锁 B 前置,支持 bangcle/legu/qihoo360)' })
-  @ApiQuery({ name: 'hardener', required: false, type: String, description: '加固厂商(默认 bangcle)' })
+  @ApiQuery({
+    name: 'hardener',
+    required: false,
+    type: String,
+    description: '加固厂商(默认 bangcle)',
+  })
   async getEula(@Query('hardener') hardener?: string) {
-    const h = (hardener === 'legu' || hardener === 'qihoo360') ? hardener : 'bangcle';
+    const h = hardener === 'legu' || hardener === 'qihoo360' ? hardener : 'bangcle';
     return this.hardenerEulaService.getCurrentEula(h);
   }
 
@@ -288,7 +304,7 @@ export class AuditOwnController {
       throw new BadRequestException('EULA_VERSION_REQUIRED');
     }
     this.hardenerEulaService.validateVersion(body.version);
-    const h = (body.hardener === 'legu' || body.hardener === 'qihoo360') ? body.hardener : 'bangcle';
+    const h = body.hardener === 'legu' || body.hardener === 'qihoo360' ? body.hardener : 'bangcle';
     const ip = (req.headers['x-forwarded-for'] as string) || req.ip || 'unknown';
     const userAgent = req.headers['user-agent'];
     await this.hardenerEulaService.recordAcceptance(developerId, ip, userAgent, h);

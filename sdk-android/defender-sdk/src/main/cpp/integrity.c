@@ -20,6 +20,7 @@
 #include <fcntl.h>
 #include <dirent.h>
 #include <sys/stat.h>
+#include <pthread.h>
 #include <android/log.h>
 
 #define TAG "DefenderIntegrity"
@@ -93,7 +94,7 @@ static int ic_close(int fd) { return close(fd); }
 /* ============= CRC32 实现 ============= */
 
 static unsigned int crc32_table[256];
-static int crc32_table_init = 0;
+static pthread_once_t crc32_table_once = PTHREAD_ONCE_INIT;
 
 static void init_crc32_table(void) {
     for (unsigned int i = 0; i < 256; i++) {
@@ -107,11 +108,10 @@ static void init_crc32_table(void) {
         }
         crc32_table[i] = crc;
     }
-    crc32_table_init = 1;
 }
 
 static unsigned int compute_crc32(const unsigned char *data, size_t len) {
-    if (!crc32_table_init) init_crc32_table();
+    pthread_once(&crc32_table_once, init_crc32_table);
     unsigned int crc = 0xFFFFFFFF;
     for (size_t i = 0; i < len; i++) {
         crc = (crc >> 8) ^ crc32_table[(crc ^ data[i]) & 0xFF];
@@ -155,7 +155,7 @@ int integrity_check_crc(const char *apk_path) {
     unsigned char buf[8192];
     unsigned int crc = 0xFFFFFFFF;
     ssize_t n;
-    if (!crc32_table_init) init_crc32_table();
+    pthread_once(&crc32_table_once, init_crc32_table);
 
     while ((n = ic_read(fd, buf, sizeof(buf))) > 0) {
         for (ssize_t i = 0; i < n; i++) {

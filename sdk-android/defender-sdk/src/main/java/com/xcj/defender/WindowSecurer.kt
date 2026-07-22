@@ -70,6 +70,11 @@ class WindowSecurer(private val application: Application) {
         }
 
         try {
+            // 已设置则跳过(避免 onActivityResumed 重复设置)
+            val currentFlags = activity.window.attributes.flags
+            if ((currentFlags and WindowManager.LayoutParams.FLAG_SECURE) != 0) {
+                return
+            }
             activity.window.setFlags(
                 WindowManager.LayoutParams.FLAG_SECURE,
                 WindowManager.LayoutParams.FLAG_SECURE

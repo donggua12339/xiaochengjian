@@ -123,6 +123,12 @@ class EmulatorDetector(private val context: Context) {
      */
     private fun checkPhoneType(): Boolean {
         return try {
+            // 平板设备(smallestScreenWidthDp >= 600)无电话功能是正常的,排除误报
+            val isTablet = context.resources.configuration.smallestScreenWidthDp >= 600
+            if (isTablet) {
+                return false
+            }
+
             val telephony = context.getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager
             val phoneType = telephony.phoneType
 
