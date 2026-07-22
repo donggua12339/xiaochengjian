@@ -35,6 +35,10 @@ data class DefenderConfig(
     ),
 
     val report: ReportConfig = ReportConfig(enabled = false, throttleMs = 300000),
+
+    /* M6:integrity 预期表(Packer 封装时生成,供 Native 层完整性校验) */
+    val integrityCrcTable: List<String> = emptyList(), // 每项 "entry名:crc32hex"
+    val integrityFileList: List<String> = emptyList(), // 每项一个 entry 名
 ) {
 
     data class ModuleConfig(
@@ -142,6 +146,8 @@ data class DefenderConfig(
                         enabled = reportObj?.optBoolean("enabled", false) ?: false,
                         throttleMs = reportObj?.optInt("throttleMs", 300000) ?: 300000,
                     ),
+                    integrityCrcTable = parseStringList(obj.optJSONArray("integrityCrcTable")),
+                    integrityFileList = parseStringList(obj.optJSONArray("integrityFileList")),
                 )
             } catch (e: Exception) {
                 // JSON 解析失败,返回全默认配置(仅 signature + integrity 开)

@@ -242,36 +242,90 @@ static int zip_foreach_entry(const char *apk_path, zip_entry_cb cb, void *ctx) {
 
 /* ============= 层 2:DEX CRC 逐文件校验 ============= */
 
-/**
- * 预期 CRC 表(编译时生成,写入 .rodata)
- *
- * 格式:每项 "entry名:CRC32十六进制"(如 "classes.dex:1a2b3c4d")
- * 占位:空表(开发阶段)
- *
- * M6 说明:H5 已实现 ZIP 遍历 + CRC 比对框架,但预期表为空时层 2 跳过。
- * 预期表的生成需 Packer 配合:Packer 封装时遍历 APK entry 计算 CRC32,
- * 通过 post-build 脚本(类似 scripts/patch_text_hash.py)写入本表,
- * 或改为运行时从 defender-config.json 读取(待后续 ADR 规划)。
- */
-static const char *EXPECTED_CRC_ENTRIES[] __attribute__((section(".rodata"))) = {
-    NULL  /* 占位 */
-};
+/* M6:预期 CRC 表 + 文件列表改为运行时从 defender-config.json 读取
+ * (Packer 封装时生成),不再用 .rodata 编译时占位表。 */
 
-/* 层 2 回调上下文 */
+/* ============= M6:JSON 字符串数组解析(从 config 读预期表) ============= */
+
+/**
+ * 解析 JSON 字符串数组(如 ["a:b","c"])为动态分配的 C 字符串数组
+ * @return 数组(需 free_json_array 释放),空数组返回 NULL
+ */
+static char **parse_json_array(const char *json, int *count_out) {
+    *count_out = 0;
+    if (!json) return NULL;
+
+    /* 第一遍:数元素个数 */
+    int count = 0;
+    const char *p = json;
+    while (*p) {
+        if (*p == '"') {
+            count++;
+            p++;
+            while (*p && *p != '"') {
+                if (*p == '\\') p++;
+                p++;
+            }
+            if (*p == '"') p++;
+        } else {
+            p++;
+        }
+    }
+    if (count == 0) return NULL;
+
+    char **arr = (char **)malloc(sizeof(char *) * (size_t)count);
+    if (!arr) return NULL;
+
+    /* 第二遍:提取每个元素 */
+    int idx = 0;
+    p = json;
+    while (*p && idx < count) {
+        if (*p == '"') {
+            p++;
+            const char *start = p;
+            while (*p && *p != '"') {
+                if (*p == '\\') p++;
+                p++;
+            }
+            size_t len = (size_t)(p - start);
+            arr[idx] = (char *)malloc(len + 1);
+            if (!arr[idx]) break;
+            memcpy(arr[idx], start, len);
+            arr[idx][len] = '\0';
+            idx++;
+            if (*p == '"') p++;
+        } else {
+            p++;
+        }
+    }
+
+    *count_out = idx;
+    return arr;
+}
+
+static void free_json_array(char **arr, int count) {
+    if (!arr) return;
+    for (int i = 0; i < count; i++) free(arr[i]);
+    free(arr);
+}
+
+/* 层 2 回调上下文(M6:预期表从 config 传入) */
 typedef struct {
-    int checked;     /* 已校验的 .dex 数 */
-    int mismatch;    /* 不匹配数 */
+    char **crc_table;  /* 每项 "entry名:crc32hex" */
+    int crc_count;
+    int checked;       /* 已校验的 .dex 数 */
+    int mismatch;      /* 不匹配数 */
 } crc_ctx_t;
 
 /* 在预期表中查 entry 的 CRC,返回 1=找到且匹配 / 0=找到但不匹配 / -1=未找到 */
-static int lookup_expected_crc(const char *name, unsigned int crc) {
+static int lookup_expected_crc(crc_ctx_t *c, const char *name, unsigned int crc) {
     char crc_str[9];
     snprintf(crc_str, sizeof(crc_str), "%08x", crc);
-    for (int i = 0; EXPECTED_CRC_ENTRIES[i] != NULL; i++) {
-        const char *colon = strchr(EXPECTED_CRC_ENTRIES[i], ':');
+    for (int i = 0; i < c->crc_count; i++) {
+        const char *colon = strchr(c->crc_table[i], ':');
         if (!colon) continue;
-        size_t name_len = (size_t)(colon - EXPECTED_CRC_ENTRIES[i]);
-        if (strlen(name) == name_len && strncmp(name, EXPECTED_CRC_ENTRIES[i], name_len) == 0) {
+        size_t name_len = (size_t)(colon - c->crc_table[i]);
+        if (strlen(name) == name_len && strncmp(name, c->crc_table[i], name_len) == 0) {
             return strcasecmp(colon + 1, crc_str) == 0 ? 1 : 0;
         }
     }
@@ -283,7 +337,7 @@ static int crc_check_cb(const zip_entry_t *entry, void *ctx) {
     size_t len = strlen(entry->name);
     /* 只校验 .dex 文件 */
     if (len >= 4 && strcasecmp(entry->name + len - 4, ".dex") == 0) {
-        int r = lookup_expected_crc(entry->name, entry->crc32);
+        int r = lookup_expected_crc(c, entry->name, entry->crc32);
         if (r == 0) {
             LOGE("层 2 CRC 不匹配: %s", entry->name);
             c->mismatch++;
@@ -298,21 +352,27 @@ static int crc_check_cb(const zip_entry_t *entry, void *ctx) {
 /**
  * 层 2:DEX CRC 逐文件校验
  *
- * H5 修复:遍历 APK Central Directory,对每个 .dex 用 ZIP 记录的 CRC32
- * 与 .rodata 预期 CRC 表比对。预期表为空时跳过(开发阶段)。
+ * M6:预期 CRC 表从 config 传入(JSON 数组),遍历 APK 每个 .dex 比对 ZIP CRC32。
+ * 预期表为空时跳过。
  *
  * @return 0=校验通过 / 1=校验失败 / -1=内部错误
  */
-int integrity_check_crc(const char *apk_path) {
+static int integrity_check_crc(const char *apk_path, const char *crc_table_json) {
     LOGI("=== 层 2:DEX CRC 校验 ===");
 
-    if (EXPECTED_CRC_ENTRIES[0] == NULL) {
-        LOGW("层 2 预期 CRC 表为空,跳过(开发阶段,Packer 封装时生成)");
+    crc_ctx_t ctx;
+    ctx.crc_table = parse_json_array(crc_table_json, &ctx.crc_count);
+    ctx.checked = 0;
+    ctx.mismatch = 0;
+
+    if (ctx.crc_count == 0) {
+        LOGW("层 2 预期 CRC 表为空,跳过");
+        free_json_array(ctx.crc_table, ctx.crc_count);
         return 0;
     }
 
-    crc_ctx_t ctx = {0, 0};
     int r = zip_foreach_entry(apk_path, crc_check_cb, &ctx);
+    free_json_array(ctx.crc_table, ctx.crc_count);
     if (r < 0) {
         LOGE("层 2 ZIP 解析失败");
         return -1;
@@ -357,35 +417,24 @@ static file_response_t classify_extra_file(const char *name) {
     return FILE_TYPE_WARN;
 }
 
-/**
- * 预期文件列表(编译时生成,写入 .rodata)
- *
- * 格式:每项一个 entry 名(如 "classes.dex", "lib/arm64-v8a/libxxx.so")
- * 占位:空(开发阶段)
- *
- * M6 说明:同 EXPECTED_CRC_ENTRIES,预期文件列表需 Packer 封装时生成
- * (遍历 APK entry 列表)并通过 post-build 写入,或运行时从 config 读取。
- */
-static const char *EXPECTED_FILE_LIST[] __attribute__((section(".rodata"))) = {
-    NULL  /* 占位 */
-};
-
-static int in_expected_file_list(const char *name) {
-    for (int i = 0; EXPECTED_FILE_LIST[i] != NULL; i++) {
-        if (strcmp(EXPECTED_FILE_LIST[i], name) == 0) return 1;
-    }
-    return 0;
-}
-
-/* 层 4 回调上下文 */
+/* 层 4 回调上下文(M6:预期文件列表从 config 传入) */
 typedef struct {
+    char **file_list;  /* 每项一个 entry 名 */
+    int file_count;
     int has_kill;
     int has_warn;
 } filelist_ctx_t;
 
+static int in_expected_file_list(filelist_ctx_t *c, const char *name) {
+    for (int i = 0; i < c->file_count; i++) {
+        if (strcmp(c->file_list[i], name) == 0) return 1;
+    }
+    return 0;
+}
+
 static int filelist_check_cb(const zip_entry_t *entry, void *ctx) {
     filelist_ctx_t *c = (filelist_ctx_t *)ctx;
-    if (in_expected_file_list(entry->name)) return 0;  /* 在预期列表,OK */
+    if (in_expected_file_list(c, entry->name)) return 0;  /* 在预期列表,OK */
 
     /* 额外文件,按类型分类 */
     file_response_t resp = classify_extra_file(entry->name);
@@ -403,22 +452,28 @@ static int filelist_check_cb(const zip_entry_t *entry, void *ctx) {
 /**
  * 层 4:文件列表完整性
  *
- * H5 修复:遍历 APK Central Directory,检测不在预期列表的额外文件,
+ * M6:预期文件列表从 config 传入(JSON 数组),遍历 APK entry 检测额外文件,
  * 按类型分类(.so/.dex -> kill,.jar/其他 -> warn,META-INF -> 忽略)。
- * 预期列表为空时跳过(开发阶段)。
+ * 预期列表为空时跳过。
  *
  * @return 0=安全 / 1=kill(额外 .so/.dex)/ 2=warn(额外资源)/ -1=内部错误
  */
-int integrity_check_file_list(const char *apk_path) {
+static int integrity_check_file_list(const char *apk_path, const char *file_list_json) {
     LOGI("=== 层 4:文件列表完整性 ===");
 
-    if (EXPECTED_FILE_LIST[0] == NULL) {
-        LOGW("层 4 预期文件列表为空,跳过(开发阶段,Packer 封装时生成)");
+    filelist_ctx_t ctx;
+    ctx.file_list = parse_json_array(file_list_json, &ctx.file_count);
+    ctx.has_kill = 0;
+    ctx.has_warn = 0;
+
+    if (ctx.file_count == 0) {
+        LOGW("层 4 预期文件列表为空,跳过");
+        free_json_array(ctx.file_list, ctx.file_count);
         return 0;
     }
 
-    filelist_ctx_t ctx = {0, 0};
     int r = zip_foreach_entry(apk_path, filelist_check_cb, &ctx);
+    free_json_array(ctx.file_list, ctx.file_count);
     if (r < 0) {
         LOGE("层 4 ZIP 解析失败");
         return -1;
@@ -436,21 +491,25 @@ int integrity_check_file_list(const char *apk_path) {
  *
  * 层 1(签名证书 hash)+ 层 3(.so self-verify)+ 层 5(服务端)由其他模块处理
  *
- * @param apk_path APK 文件路径
+ * M6:预期表从 config 传入(Packer 封装时生成)
+ *
+ * @param apk_path        APK 文件路径
+ * @param crc_table_json  预期 CRC 表 JSON 数组
+ * @param file_list_json  预期文件列表 JSON 数组
  * @return 0=安全 / 1=kill / 2=warn / -1=内部错误
  */
-int integrity_check(const char *apk_path) {
+int integrity_check(const char *apk_path, const char *crc_table_json, const char *file_list_json) {
     LOGI("=== IntegrityChecker(层 2 + 层 4)===");
 
     /* 层 2:CRC */
-    int crc_result = integrity_check_crc(apk_path);
+    int crc_result = integrity_check_crc(apk_path, crc_table_json);
     if (crc_result == 1) {
         LOGE("层 2 CRC 校验失败");
         return 1;  /* kill */
     }
 
     /* 层 4:文件列表 */
-    int list_result = integrity_check_file_list(apk_path);
+    int list_result = integrity_check_file_list(apk_path, file_list_json);
     if (list_result == 1) {
         LOGE("层 4 检测到额外 .so/.dex");
         return 1;  /* kill */

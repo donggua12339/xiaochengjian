@@ -177,8 +177,8 @@ defender_warn_throttle_jni(JNIEnv *env, jobject thiz,
 /* 声明 root_check.c 的函数 */
 extern int root_check(void);
 
-/* 声明 integrity.c 的函数 */
-extern int integrity_check(const char *apk_path);
+/* 声明 integrity.c 的函数(M6:预期表从参数传入) */
+extern int integrity_check(const char *apk_path, const char *crc_table_json, const char *file_list_json);
 
 /* 声明 anti_dump.c 的函数 */
 extern void anti_dump_start_monitor(void);
@@ -196,16 +196,23 @@ defender_check_root_jni(JNIEnv *env, jobject thiz) {
 }
 
 /**
- * Java: DefenderNative.checkIntegrity(apkPath) -> int
+ * Java: DefenderNative.checkIntegrity(apkPath, crcTableJson, fileListJson) -> int
+ *
+ * M6:预期 CRC 表 + 文件列表从 config 传入(JSON 数组字符串)
  *
  * @return 0=安全 / 1=kill / 2=warn / -1=内部错误
  */
 JNIEXPORT jint JNICALL
-defender_check_integrity_jni(JNIEnv *env, jobject thiz, jstring apk_path_j) {
+defender_check_integrity_jni(JNIEnv *env, jobject thiz, jstring apk_path_j,
+                             jstring crc_table_j, jstring file_list_j) {
     (void)thiz;
     const char *apk_path = (*env)->GetStringUTFChars(env, apk_path_j, NULL);
-    int result = integrity_check(apk_path);
+    const char *crc_table = crc_table_j ? (*env)->GetStringUTFChars(env, crc_table_j, NULL) : "[]";
+    const char *file_list = file_list_j ? (*env)->GetStringUTFChars(env, file_list_j, NULL) : "[]";
+    int result = integrity_check(apk_path, crc_table, file_list);
     (*env)->ReleaseStringUTFChars(env, apk_path_j, apk_path);
+    if (crc_table_j) (*env)->ReleaseStringUTFChars(env, crc_table_j, crc_table);
+    if (file_list_j) (*env)->ReleaseStringUTFChars(env, file_list_j, file_list);
     return (jint)result;
 }
 
@@ -254,7 +261,7 @@ JNI_OnLoad(JavaVM *vm, void *reserved) {
         {"checkAntiFrida",        "()I",                                                    (void *)defender_check_anti_frida_jni},
         {"startFridaMemoryScan",  "()V",                                                    (void *)defender_start_frida_memory_scan_jni},
         {"checkRoot",             "()I",                                                    (void *)defender_check_root_jni},
-        {"checkIntegrity",        "(Ljava/lang/String;)I",                                  (void *)defender_check_integrity_jni},
+        {"checkIntegrity",        "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)I", (void *)defender_check_integrity_jni},
         {"startAntiDumpMonitor",  "()V",                                                    (void *)defender_start_anti_dump_jni},
         {"defenderKill",          "(IILjava/lang/String;)V",                                (void *)defender_kill_jni},
         {"defenderWarn",          "(Ljava/lang/String;I)I",                                 (void *)defender_warn_throttle_jni},

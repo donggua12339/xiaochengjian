@@ -116,10 +116,14 @@ object DefenderNative {
     /**
      * APK 完整性校验(层 2 CRC + 层 4 文件列表)
      *
-     * @param apkPath APK 文件路径
+     * M6:预期表从 config 传入(Packer 封装时生成),而非 .rodata 占位。
+     *
+     * @param apkPath       APK 文件路径
+     * @param crcTableJson  预期 CRC 表 JSON 数组(每项 "entry名:crc32hex")
+     * @param fileListJson  预期文件列表 JSON 数组(每项 entry 名)
      * @return 0=安全 / 1=kill / 2=warn / -1=内部错误
      */
-    external fun checkIntegrity(apkPath: String): Int
+    external fun checkIntegrity(apkPath: String, crcTableJson: String, fileListJson: String): Int
 
     /**
      * 启动 AntiDump inotify 监控(后台常驻,事件驱动零开销)

@@ -42,6 +42,9 @@ export interface DefenderConfigInput {
     toastMessage?: string;
   };
   report?: { enabled?: boolean; throttleMs?: number };
+  /* M6:integrity 预期表(Packer 封装时遍历 APK entry 生成) */
+  integrityCrcTable?: string[]; // 每项 "entry名:crc32hex"(如 "classes.dex:1a2b3c4d")
+  integrityFileList?: string[]; // 每项一个 entry 名
 }
 
 /**
@@ -118,6 +121,9 @@ export class DefenderConfigGenerator {
         ...this.defaults.report,
         ...input.report,
       },
+      /* M6:integrity 预期表(Packer 封装时生成,Native 层运行时读取校验) */
+      integrityCrcTable: input.integrityCrcTable ?? [],
+      integrityFileList: input.integrityFileList ?? [],
     };
 
     return JSON.stringify(config, null, 2);

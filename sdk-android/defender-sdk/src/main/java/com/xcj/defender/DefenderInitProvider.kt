@@ -189,7 +189,10 @@ class DefenderInitProvider : ContentProvider() {
         if (config.integrityCheck.enabled) {
             Log.i(TAG, "[Batch 3] IntegrityChecker 检测中...")
             val apkPath = ctx.packageCodePath
-            val integrityResult = DefenderNative.checkIntegrity(apkPath)
+            // M6:预期表从 config 传入(Packer 封装时生成)
+            val crcTableJson = org.json.JSONArray(config.integrityCrcTable).toString()
+            val fileListJson = org.json.JSONArray(config.integrityFileList).toString()
+            val integrityResult = DefenderNative.checkIntegrity(apkPath, crcTableJson, fileListJson)
             when (integrityResult) {
                 0 -> Log.i(TAG, "[Batch 3] IntegrityChecker 通过")
                 1 -> {

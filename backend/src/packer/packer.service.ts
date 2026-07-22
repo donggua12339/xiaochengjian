@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import * as yauzl from 'yauzl';
 import { PrismaService } from '../prisma/prisma.service';
 import { PackerValidators, XCJ_DEFENDER_SDK_AAR_WHITELIST } from './packer-validators';
 import { DexInjector } from './dex-injector';
@@ -186,9 +187,19 @@ export class PackerService {
           this.logger.log(`defender .so 注入完成:${defenderSoName}`);
         }
 
-        // defender-config.json 注入(写入签名 hash 供 SignatureVerifier D 层校验)
+        // defender-config.json 注入(写入签名 hash + integrity 预期表)
         if (defenderConfig) {
           defenderConfig.signatureExpectedHash = signatureHash;
+
+          // M6:遍历当前 APK entry 生成 integrity 预期表(CRC + 文件列表)。
+          // 在 config 注入前生成,排除 META-INF/(重签后变)和 assets/defender-config.json(本步注入)。
+          const tables = await this.generateIntegrityTables(packedPath);
+          defenderConfig.integrityCrcTable = tables.crcTable;
+          defenderConfig.integrityFileList = tables.fileList;
+          this.logger.log(
+            `integrity 预期表生成: crc=${tables.crcTable.length} files=${tables.fileList.length}`,
+          );
+
           const configJson = this.defenderConfigGenerator.generate(defenderConfig);
           await this.defenderConfigGenerator.injectConfig(packedPath, configJson, workDir);
         }
@@ -389,6 +400,49 @@ export class PackerService {
     } catch (e) {
       throw new Error(`resignApk failed: ${(e as Error).message}`);
     }
+  }
+
+  /**
+   * M6:遍历 APK entry 生成 integrity 预期表
+   *
+   * 用于 Native 层完整性校验(H5 框架):
+   *  - crcTable:每个 .dex 的 "entry名:crc32hex"(ZIP 记录的未压缩 CRC32)
+   *  - fileList:所有 entry 名(检测额外/缺失文件)
+   *
+   * 排除 META-INF/(签名文件,重签后会变)和 assets/defender-config.json(本步注入)。
+   */
+  private generateIntegrityTables(apkPath: string): Promise<{
+    crcTable: string[];
+    fileList: string[];
+  }> {
+    return new Promise((resolve, reject) => {
+      const crcTable: string[] = [];
+      const fileList: string[] = [];
+
+      yauzl.open(apkPath, { lazyEntries: true }, (err, zipfile) => {
+        if (err) {
+          reject(err);
+          return;
+        }
+        zipfile.on('entry', (entry) => {
+          const name = entry.fileName;
+          // 排除签名文件(重签后变)和 config(本步注入)
+          const excluded =
+            name.startsWith('META-INF/') || name === 'assets/defender-config.json';
+          if (!excluded) {
+            fileList.push(name);
+            // .dex 收集 CRC32(ZIP entry 的未压缩 CRC,十六进制小写)
+            if (name.toLowerCase().endsWith('.dex')) {
+              crcTable.push(`${name}:${(entry.crc32 >>> 0).toString(16).padStart(8, '0')}`);
+            }
+          }
+          zipfile.readEntry();
+        });
+        zipfile.on('end', () => resolve({ crcTable, fileList }));
+        zipfile.on('error', reject);
+        zipfile.readEntry();
+      });
+    });
   }
 
   /**
