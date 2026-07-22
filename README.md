@@ -1,12 +1,19 @@
-# 小城笺 · Xiaochengjian
+# 小城笺（XiaoChengJian）
 
-> **独立开发者的私有应用攻防与遗产维护工具**(ADR 0076,2026-07-19)
-> 开源 + SaaS 双模式,蓝方(防:卡密验证/加固/防二次打包)+ 红方(攻:自有 APK 诊断,仅限开发者拥有合法著作权的自有 APK)
+![Defender-Only](https://img.shields.io/badge/Project%20Type-Defender--Only-007EC6?logo=shield&logoColor=white)
+
+**独立开发者的数字城墙——只守不攻,合规为盾**
+
+小城笺是纯防守向的 APK 安全工具,面向独立开发者提供合规的资产防护能力:
+- 🛡️ 自有 APK 加固层巡检:对梆梆/360/腾讯乐固加固包做只读完整性校验
+- 🔒 合规 SDK 封装:为未加固自有 APK 注入身份认证模块,支持上游串联厂商加固
+- 🔍 深度安全审计:隐私合规扫描、供应链投毒检测、攻击面枚举(仅用于自有资产排查)
+- 📏 明确防御边界:已固化「加固后 APK 不可注入」的物理死锁结论,绝不触碰灰色地带
+
+本项目严格遵守「守城军规」,所有能力仅用于自有资产的防护,不涉及任何脱壳、篡改、绕过签名等进攻性操作。
 
 > ✅ **v2 已上线(2026-07-17)**
-> 小城笺 v2 重构完成,SaaS 服务已恢复。
 > 访问地址:https://xcj.winmelon.cn
-> v2 改动:HTTPS + 域名 / 后端补齐 change-password/profile + /metrics 端点 / SDK 模块测试覆盖率 98% / injector-android (引导开发者主动集成 SDK)。
 > 旧版本代码保留在 `v1-final` tag。
 
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)

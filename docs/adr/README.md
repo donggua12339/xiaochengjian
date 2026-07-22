@@ -126,7 +126,7 @@
 ### 项目定位修订评估(2026-07-19)
 
 - [ADR 0076 · 项目定位修订评估:攻防工作台](0076-project-positioning-revision-assessment.md) - **accepted**(方案 B,自有 APK 诊断),取代 ADR 0001
-- [ADR 0077 · 自有 APK 诊断功能(含技术兜底)](0077-self-apk-audit.md) - accepted(2026-07-20 修订加例外 A 签名回填 + 例外 B 梆梆适配器),功能级 ADR,三重校验(包名白名单 + 签名比对 + 目录隔离)
+- [ADR 0077 · 自有 APK 诊断功能(含技术兜底)](0077-self-apk-audit.md) - **守城军规基础**:明确禁止通用脱壳/重打包等进攻性能力,三重校验(包名白名单 + 签名比对 + 目录隔离)
 - [ADR 0078 · 梆梆加固自检适配器(自有 APK 诊断例外 B 的实现)](0078-bangcle-hardener-self-audit-adapter.md) - **accepted**(律师意见已落地,2026-07-20),3 把锁(仅梆梆 / EULA / 仅完整性报告),Supersedes ADR 0067 partial
 - [ADR 0079 · 部分取代 ADR 0067(仅"自动脱壳推 v3"条款,梆梆自检场景)](0079-partial-supersede-0067-bangcle-only.md) - **accepted**(律师意见已落地,2026-07-20),最小取代范围,3 个限定(仅梆梆 / 仅 integrity / 不解未知)
 - [ADR 0080 · SDK 源码级集成(零字节码修改,ADR 0081 回退方案)](0080-sdk-source-integration.md) - **accepted**,默认推荐集成方式,无源码场景需 ADR 0081 补充
@@ -134,8 +134,8 @@
 - [ADR 0082-A · 360 加固保自检适配器(V1.5b)](0082-a-360-jiagu-self-audit-adapter.md) - **proposed**(合规核查已通过,2026-07-21),libjiagu.so 检测,360 EULA 第 4.1 条"本软件"指加固助手本身不指 APK
 - [ADR 0082-B · 腾讯乐固自检适配器(V1.5a,优先实现)](0082-b-tencent-legu-self-audit-adapter.md) - **proposed**(合规核查已通过,2026-07-21),libshell.so 检测,协议环境宽松
 - [ADR 0082-C · 爱加密自检适配器(V2 评估)](0082-c-ijiami-self-audit-adapter.md) - **draft**(暂不开发),V2 评估
-- [ADR 0085 · 加固 APK 与 xcj-auth-sdk 的兼容性边界分析](0085-hardened-apk-sdk-compatibility-boundary.md) - **accepted**(边界分析,无代码实现),技术死锁形式化证明 + 4 条合规替代路径
-- [ADR 0087 · 深度安全审计与漏洞赏金赋能计划](0087-deep-security-audit-and-bug-bounty.md) - **proposed**(设计阶段),模块一:隐私合规+供应链审计/模块二:漏洞赏金辅助研究,全程只读
+- [ADR 0085 · 加固 APK 与 xcj-auth-sdk 的兼容性边界分析](0085-hardened-apk-sdk-compatibility-boundary.md) - **防御边界固化**:明确「加固后 APK 不可注入」的物理死锁结论,提供 4 条合规替代路径
+- [ADR 0087 · 深度安全审计与漏洞赏金赋能计划](0087-deep-security-audit-and-bug-bounty.md) - **防御工事升级**:通过逆向分析研究攻击路径,优化自有资产防护能力,全程只读,不改字节码
 
 ## 模板
 
