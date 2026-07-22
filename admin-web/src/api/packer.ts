@@ -39,9 +39,49 @@ export interface PackResponse {
   taskId: string;
   packedApkHash: string;
   injectedDexHash: string;
+  injectedDefenderDexHash: string | null;
+  injectedSoHash: string | null;
+  defenderSoName: string | null;
   keystoreFingerprint: string;
   packedApkBase64: string;
   packedApkSize: number;
+}
+
+/**
+ * defender 模块配置(单个模块)
+ *
+ * 与 backend DefenderModuleConfigInput 对齐
+ */
+export interface DefenderModuleConfig {
+  enabled: boolean;
+  onViolation: 'kill' | 'warn' | 'none';
+}
+
+/**
+ * defender 完整配置(ADR 0088)
+ *
+ * 与 backend DefenderConfigInput 对齐,缺失字段用 SDK 默认值
+ */
+export interface DefenderConfig {
+  appId: string;
+  serverUrl: string;
+  signatureVerify?: DefenderModuleConfig;
+  antiDebug?: DefenderModuleConfig;
+  antiFrida?: DefenderModuleConfig;
+  antiDump?: DefenderModuleConfig;
+  rootDetect?: DefenderModuleConfig;
+  xposedDetect?: DefenderModuleConfig & { killThreshold?: number };
+  emulatorDetect?: DefenderModuleConfig;
+  integrityCheck?: DefenderModuleConfig;
+  secureScreen?: { enabled: boolean; excludeActivities?: string[] };
+  onViolationKill?: {
+    delayMinMs?: number;
+    delayMaxMs?: number;
+    method?: 'sigabrt' | 'exit';
+    showToast?: boolean;
+    toastMessage?: string;
+  };
+  report?: { enabled?: boolean; throttleMs?: number };
 }
 
 export const packerApi = {
@@ -52,6 +92,8 @@ export const packerApi = {
    * @param xcjAuthSdkDexFile classes-xcj.dex(xcj-auth-sdk 编译产物)
    * @param credentials Keystore 凭证
    * @param sdkConfig SDK 配置(appId/serverUrl 等)
+   * @param defenderEnabled 是否启用 defender-sdk 注入(ADR 0088)
+   * @param defenderConfig defender 模块配置(defenderEnabled=true 时必填)
    */
   pack: (
     apkFile: File,
@@ -63,6 +105,8 @@ export const packerApi = {
       keyPassword: string;
     },
     sdkConfig: Record<string, unknown>,
+    defenderEnabled: boolean,
+    defenderConfig: DefenderConfig,
   ) => {
     const formData = new FormData();
     formData.append('apk', apkFile);
@@ -73,6 +117,10 @@ export const packerApi = {
     formData.append('keyPassword', credentials.keyPassword);
     formData.append('sdkConfig', JSON.stringify(sdkConfig));
     formData.append('originalName', apkFile.name);
+    formData.append('defenderEnabled', defenderEnabled ? 'true' : 'false');
+    if (defenderEnabled) {
+      formData.append('defenderConfig', JSON.stringify(defenderConfig));
+    }
     return request<PackResponse>({
       method: 'POST',
       url: '/packer/pack',
