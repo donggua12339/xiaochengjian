@@ -206,8 +206,8 @@ export class PackerService {
       // 锁 3:入口锁定校验
       this.validators.validateEntryLock(manifestChanges);
 
-      // 重打包
-      await this.dexInjector.repackApk(packedPath);
+      // 重打包(apktool b,smali -> dex + 文本 XML -> 二进制 AXML)
+      await this.dexInjector.repackApk(packedPath, workDir);
 
       // 锁 4:签名锁定(V1+V2+V3 重签)
       await this.resignApk({

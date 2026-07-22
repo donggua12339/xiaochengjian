@@ -39,6 +39,13 @@ RUN mkdir -p /opt/android-sdk/build-tools && \
     mv /tmp/bt/android-14 /opt/android-sdk/build-tools/34.0.0 && \
     rm -rf /tmp/build-tools.zip /tmp/bt
 
+# 安装 apktool(ADR 0088 Packer Manifest 修改用,H9 修复)
+# apktool 用于反编译 APK -> 修改 AndroidManifest.xml -> 重打包
+RUN mkdir -p /opt/apktool && \
+    wget -qO /opt/apktool/apktool.jar https://bitbucket.org/iBotPeaches/apktool/downloads/apktool_2.9.3.jar && \
+    printf '#!/bin/sh\nexec java -jar /opt/apktool/apktool.jar "$@"\n' > /usr/local/bin/apktool && \
+    chmod +x /usr/local/bin/apktool
+
 # 用淘宝 npm 镜像(海外服务器访问官方源慢)
 RUN pnpm config set registry https://registry.npmmirror.com
 

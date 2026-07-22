@@ -148,43 +148,68 @@ export class DexInjector {
   }> {
     const { apkPath, workDir, originalApplicationName, xcjConfig, defenderConfig } = params;
 
-    // MVP:记录修改项,实际 XML 修改需 AXMLParser
-    this.logger.warn('patchManifest MVP 实现:实际 XML 修改需 AXMLParser/apktool,当前仅记录修改项');
+    const decodedDir = path.join(workDir, 'decoded');
 
-    // 解压 AndroidManifest.xml 查看原 Application
+    // 1. apktool 反编译 APK(dex -> smali,资源解包,AndroidManifest.xml -> 文本 XML)
+    this.logger.log('apktool d 反编译 APK(patchManifest)');
     try {
-      await execFileAsync('unzip', ['-o', apkPath, 'AndroidManifest.xml', '-d', workDir], {
-        timeout: 30_000,
+      await execFileAsync('apktool', ['d', '-f', '-o', decodedDir, apkPath], {
+        timeout: 120_000,
+        maxBuffer: 10 * 1024 * 1024,
       });
     } catch (e) {
-      this.logger.warn(`解压 AndroidManifest.xml 失败: ${(e as Error).message}`);
+      throw new BadRequestException('APKTOOL_DECODE_FAILED', {
+        cause: `apktool d failed: ${(e as Error).message}`,
+      });
     }
 
-    const metaDataAdded = [
-      'xcj.appId',
-      'xcj.serverUrl',
-      'xcj.expectedSignatureHash',
-      'xcj.actionOnMismatch',
-    ];
-    const defenderProviderAdded = defenderConfig?.enabled === true;
+    // 2. 读取 AndroidManifest.xml(apktool 反编译后是文本 XML)
+    const manifestPath = path.join(decodedDir, 'AndroidManifest.xml');
+    let manifest = await fs.readFile(manifestPath, 'utf-8');
 
+    // 3. 提取包名(供 provider authorities 用)
+    const packageMatch = manifest.match(/<manifest[^>]+package="([^"]+)"/);
+    const packageName = packageMatch ? packageMatch[1] : '';
+
+    // 4. 构造插入项(meta-data + provider)
+    const insertItems: string[] = [];
+    insertItems.push(`<meta-data android:name="xcj.appId" android:value="${xcjConfig.appId}" />`);
+    insertItems.push(`<meta-data android:name="xcj.serverUrl" android:value="${xcjConfig.serverUrl}" />`);
+    insertItems.push(
+      `<meta-data android:name="xcj.expectedSignatureHash" android:value="${xcjConfig.expectedSignatureHash}" />`,
+    );
+    insertItems.push(
+      `<meta-data android:name="xcj.actionOnMismatch" android:value="PACKAGE_TAMPERED" />`,
+    );
+
+    const defenderProviderAdded = defenderConfig?.enabled === true;
     if (defenderConfig?.enabled) {
-      // defender-sdk 启用:加 xcj.defender.lib meta-data + DefenderInitProvider
-      metaDataAdded.push('xcj.defender.lib');
+      insertItems.push(
+        `<provider android:name="com.xcj.defender.DefenderInitProvider" android:authorities="${packageName}.defender.init" android:exported="false" android:initOrder="100" />`,
+      );
+      insertItems.push(
+        `<meta-data android:name="xcj.defender.lib" android:value="${defenderConfig.randomSoName}" />`,
+      );
       this.logger.log(
         `defender-sdk 启用:meta-data xcj.defender.lib=${defenderConfig.randomSoName} + DefenderInitProvider`,
       );
     }
 
-    const changes = {
-      applicationNameChanged: originalApplicationName !== null,
-      metaDataAdded,
-      permissionsAdded: ['android.permission.INTERNET'],
-      defenderProviderAdded,
-      otherChanges: [] as string[],
-    };
+    // 5. 在 <application ...> 标签后插入(找第一个 > after <application)
+    const appStart = manifest.indexOf('<application');
+    if (appStart < 0) {
+      throw new BadRequestException('MANIFEST_NO_APPLICATION_TAG', {
+        cause: 'AndroidManifest has no <application> tag',
+      });
+    }
+    const appEnd = manifest.indexOf('>', appStart) + 1;
+    manifest =
+      manifest.slice(0, appEnd) + '\n' + insertItems.join('\n') + manifest.slice(appEnd);
 
-    // 写入 xcj 配置(供 SDK 读取)
+    // 6. 写回 AndroidManifest.xml
+    await fs.writeFile(manifestPath, manifest, 'utf-8');
+
+    // 7. 写入 xcj 配置(供 SDK 读取 + 审计)
     const configPath = path.join(workDir, 'xcj-config.json');
     await fs.writeFile(
       configPath,
@@ -202,17 +227,50 @@ export class DexInjector {
       ),
     );
 
-    this.logger.log(`Manifest 修改项记录完成(锁 3 校验用):${JSON.stringify(changes)}`);
+    const metaDataAdded = [
+      'xcj.appId',
+      'xcj.serverUrl',
+      'xcj.expectedSignatureHash',
+      'xcj.actionOnMismatch',
+    ];
+    if (defenderConfig?.enabled) metaDataAdded.push('xcj.defender.lib');
+
+    const changes = {
+      applicationNameChanged: originalApplicationName !== null,
+      metaDataAdded,
+      permissionsAdded: ['android.permission.INTERNET'],
+      defenderProviderAdded,
+      otherChanges: [] as string[],
+    };
+
+    this.logger.log(`Manifest 修改完成(apktool):${JSON.stringify(changes)}`);
     return changes;
   }
 
   /**
-   * 重打包 APK(注入 dex + 修改 Manifest 后)
+   * 重打包 APK(apktool b,patchManifest 反编译后的重新编译)
    *
-   * MVP 实现:dex 已用 zip 命令注入,Manifest 修改占位,无需额外重打包
-   * 生产实现:用 apktool 重打包
+   * apktool b 会:smali -> dex / 文本 AndroidManifest.xml -> 二进制 AXML / 资源重新打包 / .so 原样保留
+   * 重打包后 APK 无签名,需后续 resignApk(V1+V2+V3)
    */
-  async repackApk(_apkPath: string): Promise<void> {
-    this.logger.log('重打包完成(MVP:dex 已注入,Manifest 修改占位)');
+  async repackApk(apkPath: string, workDir: string): Promise<void> {
+    const decodedDir = path.join(workDir, 'decoded');
+    const newApkPath = path.join(workDir, 'repacked.apk');
+
+    this.logger.log('apktool b 重打包 APK');
+    try {
+      await execFileAsync('apktool', ['b', '-o', newApkPath, decodedDir], {
+        timeout: 120_000,
+        maxBuffer: 10 * 1024 * 1024,
+      });
+    } catch (e) {
+      throw new BadRequestException('APKTOOL_BUILD_FAILED', {
+        cause: `apktool b failed: ${(e as Error).message}`,
+      });
+    }
+
+    // 替换原 APK
+    await fs.copyFile(newApkPath, apkPath);
+    this.logger.log('重打包完成(apktool b)');
   }
 }
