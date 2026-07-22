@@ -133,6 +133,45 @@ defender_start_frida_memory_scan_jni(JNIEnv *env, jobject thiz) {
     anti_frida_start_memory_scan();
 }
 
+/* ============= Batch 4:响应策略(defender_response.c)============= */
+
+/* 声明 defender_response.c 的函数 */
+extern void defender_kill(int delay_min_ms, int delay_max_ms, const char *method);
+extern int  defender_warn_throttle(const char *violation_key, int throttle_ms);
+
+/**
+ * Java: DefenderNative.defenderKill(delayMinMs, delayMaxMs, method) -> void
+ *
+ * 随机延迟后 kill(SIGABRT / _exit)
+ */
+JNIEXPORT void JNICALL
+defender_kill_jni(JNIEnv *env, jobject thiz,
+    jint delay_min_ms, jint delay_max_ms, jstring method_j
+) {
+    (void)thiz;
+    const char *method = method_j ? (*env)->GetStringUTFChars(env, method_j, NULL) : NULL;
+    defender_kill((int)delay_min_ms, (int)delay_max_ms, method);
+    if (method_j) (*env)->ReleaseStringUTFChars(env, method_j, method);
+}
+
+/**
+ * Java: DefenderNative.defenderWarn(violationKey, throttleMs) -> int
+ *
+ * warn 限流检查
+ *
+ * @return 1=应该上报(首次或已过限流期)/ 0=限流中跳过
+ */
+JNIEXPORT jint JNICALL
+defender_warn_throttle_jni(JNIEnv *env, jobject thiz,
+    jstring violation_key_j, jint throttle_ms
+) {
+    (void)thiz;
+    const char *key = violation_key_j ? (*env)->GetStringUTFChars(env, violation_key_j, NULL) : NULL;
+    int result = defender_warn_throttle(key, (int)throttle_ms);
+    if (violation_key_j) (*env)->ReleaseStringUTFChars(env, violation_key_j, key);
+    return (jint)result;
+}
+
 /* ============= Batch 3:RootDetector + IntegrityChecker + AntiDump ============= */
 
 /* 声明 root_check.c 的函数 */
@@ -217,6 +256,8 @@ JNI_OnLoad(JavaVM *vm, void *reserved) {
         {"checkRoot",             "()I",                                                    (void *)defender_check_root_jni},
         {"checkIntegrity",        "(Ljava/lang/String;)I",                                  (void *)defender_check_integrity_jni},
         {"startAntiDumpMonitor",  "()V",                                                    (void *)defender_start_anti_dump_jni},
+        {"defenderKill",          "(IILjava/lang/String;)V",                                (void *)defender_kill_jni},
+        {"defenderWarn",          "(Ljava/lang/String;I)I",                                 (void *)defender_warn_throttle_jni},
     };
 
     jint rc = (*env)->RegisterNatives(env, clazz, methods, sizeof(methods) / sizeof(methods[0]));

@@ -69,7 +69,8 @@ class DefenderInitProvider : ContentProvider() {
             // 7. Batch 3:RootDetector + IntegrityChecker + AntiDump
             runBatch3Modules(ctx, config)
 
-            // TODO: Batch 4 - XposedDetector + EmulatorDetector + WindowSecurer
+            // 8. Batch 4:XposedDetector + EmulatorDetector + WindowSecurer + 响应策略
+            runBatch4Modules(ctx, config)
 
             Log.i(TAG, "Defender 初始化完成(版本: ${DefenderNative.getVersion()})")
         } catch (e: Exception) {
@@ -200,6 +201,61 @@ class DefenderInitProvider : ContentProvider() {
         if (config.antiDump.enabled) {
             Log.i(TAG, "[Batch 3] AntiDump 启动监控...")
             DefenderNative.startAntiDumpMonitor()
+        }
+    }
+
+    /**
+     * Batch 4 模块:XposedDetector + EmulatorDetector + WindowSecurer + 响应策略
+     *
+     * Java 层检测模块 + Native 响应策略(kill/warn)
+     */
+    private fun runBatch4Modules(ctx: Context, config: DefenderConfig) {
+        // XposedDetector(置信度评分,≥ killThreshold 触发响应)
+        if (config.xposedDetect.enabled) {
+            Log.i(TAG, "[Batch 4] XposedDetector 检测中...")
+            val xposedScore = XposedDetector(ctx).detect()
+            if (xposedScore >= config.xposedDetect.killThreshold) {
+                Log.e(TAG, "[Batch 4] XposedDetector 红色(置信度 $xposedScore >= ${config.xposedDetect.killThreshold})")
+                when (config.xposedDetect.onViolation) {
+                    "kill" -> DefenderResponse.kill(ctx, config.onViolationKill)
+                    "warn" -> DefenderResponse.warn(ctx, "xposed_detected", "检测到 Xposed 框架", config.report)
+                    else -> Log.w(TAG, "[Batch 4] XposedDetector onViolation=none, 跳过响应")
+                }
+            } else if (xposedScore > 0) {
+                Log.w(TAG, "[Batch 4] XposedDetector 黄色(置信度 $xposedScore < ${config.xposedDetect.killThreshold})")
+                if (config.xposedDetect.onViolation == "warn") {
+                    DefenderResponse.warn(ctx, "xposed_suspected", "疑似 Xposed 框架", config.report)
+                }
+            } else {
+                Log.i(TAG, "[Batch 4] XposedDetector 通过")
+            }
+        }
+
+        // EmulatorDetector(布尔检测,warn 为主)
+        if (config.emulatorDetect.enabled) {
+            Log.i(TAG, "[Batch 4] EmulatorDetector 检测中...")
+            val isEmulator = EmulatorDetector(ctx).detect()
+            if (isEmulator) {
+                Log.e(TAG, "[Batch 4] EmulatorDetector 检测到模拟器")
+                when (config.emulatorDetect.onViolation) {
+                    "warn" -> DefenderResponse.warn(ctx, "emulator_detected", "检测到模拟器环境", config.report)
+                    "kill" -> DefenderResponse.kill(ctx, config.onViolationKill)
+                    else -> Log.w(TAG, "[Batch 4] EmulatorDetector onViolation=none, 跳过响应")
+                }
+            } else {
+                Log.i(TAG, "[Batch 4] EmulatorDetector 通过")
+            }
+        }
+
+        // WindowSecurer(全局 FLAG_SECURE,静默防护)
+        if (config.secureScreen.enabled) {
+            Log.i(TAG, "[Batch 4] WindowSecurer 启动...")
+            try {
+                val app = ctx.applicationContext as android.app.Application
+                WindowSecurer(app).start(config.secureScreen.excludeActivities)
+            } catch (e: Exception) {
+                Log.w(TAG, "[Batch 4] WindowSecurer 启动失败: ${e.message}")
+            }
         }
     }
 

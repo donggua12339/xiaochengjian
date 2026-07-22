@@ -129,6 +129,23 @@ object DefenderNative {
      */
     external fun startAntiDumpMonitor()
 
-    // ============= 响应策略(待实现) =============
-    // external fun defenderKill(delayMinMs: Int, delayMaxMs: Int, method: String)
+    // ============= Batch 4:响应策略 =============
+
+    /**
+     * kill 响应:随机延迟后 SIGABRT / _exit
+     *
+     * @param delayMinMs 最小延迟(毫秒)
+     * @param delayMaxMs 最大延迟(毫秒)
+     * @param method     "sigabrt" / "exit"
+     */
+    external fun defenderKill(delayMinMs: Int, delayMaxMs: Int, method: String)
+
+    /**
+     * warn 限流检查
+     *
+     * @param violationKey 违规类型 key(如 "frida_detected")
+     * @param throttleMs   限流周期(毫秒,0 = 不限流)
+     * @return 1=应该上报(首次或已过限流期)/ 0=限流中跳过
+     */
+    external fun defenderWarn(violationKey: String, throttleMs: Int): Int
 }

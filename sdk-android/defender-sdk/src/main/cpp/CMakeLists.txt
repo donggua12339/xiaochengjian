@@ -35,6 +35,7 @@ set(DEFENDER_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/root_check.c
     ${CMAKE_CURRENT_SOURCE_DIR}/integrity.c
     ${CMAKE_CURRENT_SOURCE_DIR}/anti_dump.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/defender_response.c
 )
 
 # ============= 构建共享库 =============
