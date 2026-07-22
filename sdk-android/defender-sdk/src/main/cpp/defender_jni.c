@@ -133,6 +133,55 @@ defender_start_frida_memory_scan_jni(JNIEnv *env, jobject thiz) {
     anti_frida_start_memory_scan();
 }
 
+/* ============= Batch 3:RootDetector + IntegrityChecker + AntiDump ============= */
+
+/* 声明 root_check.c 的函数 */
+extern int root_check(void);
+
+/* 声明 integrity.c 的函数 */
+extern int integrity_check(const char *apk_path);
+
+/* 声明 anti_dump.c 的函数 */
+extern void anti_dump_start_monitor(void);
+
+/**
+ * Java: DefenderNative.checkRoot() -> int
+ *
+ * @return 0=未检测到 root / 1=检测到 root
+ */
+JNIEXPORT jint JNICALL
+defender_check_root_jni(JNIEnv *env, jobject thiz) {
+    (void)env;
+    (void)thiz;
+    return (jint)root_check();
+}
+
+/**
+ * Java: DefenderNative.checkIntegrity(apkPath) -> int
+ *
+ * @return 0=安全 / 1=kill / 2=warn / -1=内部错误
+ */
+JNIEXPORT jint JNICALL
+defender_check_integrity_jni(JNIEnv *env, jobject thiz, jstring apk_path_j) {
+    (void)thiz;
+    const char *apk_path = (*env)->GetStringUTFChars(env, apk_path_j, NULL);
+    int result = integrity_check(apk_path);
+    (*env)->ReleaseStringUTFChars(env, apk_path_j, apk_path);
+    return (jint)result;
+}
+
+/**
+ * Java: DefenderNative.startAntiDumpMonitor() -> void
+ *
+ * 启动 AntiDump inotify 监控(后台常驻)
+ */
+JNIEXPORT void JNICALL
+defender_start_anti_dump_jni(JNIEnv *env, jobject thiz) {
+    (void)env;
+    (void)thiz;
+    anti_dump_start_monitor();
+}
+
 /* ============= JNI_OnLoad ============= */
 
 /**
@@ -165,6 +214,9 @@ JNI_OnLoad(JavaVM *vm, void *reserved) {
         {"checkAntiDebug",        "()I",                                                    (void *)defender_check_anti_debug_jni},
         {"checkAntiFrida",        "()I",                                                    (void *)defender_check_anti_frida_jni},
         {"startFridaMemoryScan",  "()V",                                                    (void *)defender_start_frida_memory_scan_jni},
+        {"checkRoot",             "()I",                                                    (void *)defender_check_root_jni},
+        {"checkIntegrity",        "(Ljava/lang/String;)I",                                  (void *)defender_check_integrity_jni},
+        {"startAntiDumpMonitor",  "()V",                                                    (void *)defender_start_anti_dump_jni},
     };
 
     jint rc = (*env)->RegisterNatives(env, clazz, methods, sizeof(methods) / sizeof(methods[0]));

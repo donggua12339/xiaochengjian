@@ -66,7 +66,9 @@ class DefenderInitProvider : ContentProvider() {
             // 6. Batch 2:SignatureVerifier + AntiDebug + AntiFrida
             runBatch2Modules(ctx, config)
 
-            // TODO: Batch 3 - RootDetector + IntegrityChecker + AntiDump
+            // 7. Batch 3:RootDetector + IntegrityChecker + AntiDump
+            runBatch3Modules(ctx, config)
+
             // TODO: Batch 4 - XposedDetector + EmulatorDetector + WindowSecurer
 
             Log.i(TAG, "Defender 初始化完成(版本: ${DefenderNative.getVersion()})")
@@ -162,6 +164,42 @@ class DefenderInitProvider : ContentProvider() {
             } else {
                 Log.i(TAG, "[Batch 2] SignatureVerifier 通过(占位,待服务端 hash 接入)")
             }
+        }
+    }
+
+    /**
+     * Batch 3 模块:RootDetector + IntegrityChecker + AntiDump
+     */
+    private fun runBatch3Modules(ctx: Context, config: DefenderConfig) {
+        // RootDetector(启动时 1 次)
+        if (config.rootDetect.enabled) {
+            Log.i(TAG, "[Batch 3] RootDetector 检测中...")
+            val rootResult = DefenderNative.checkRoot()
+            if (rootResult == 1) {
+                Log.e(TAG, "[Batch 3] RootDetector 检测到 Root!")
+                // TODO: 按 config.rootDetect.onViolation 响应(warn)
+            } else {
+                Log.i(TAG, "[Batch 3] RootDetector 通过")
+            }
+        }
+
+        // IntegrityChecker(启动时 1 次)
+        if (config.integrityCheck.enabled) {
+            Log.i(TAG, "[Batch 3] IntegrityChecker 检测中...")
+            val apkPath = ctx.packageCodePath
+            val integrityResult = DefenderNative.checkIntegrity(apkPath)
+            when (integrityResult) {
+                0 -> Log.i(TAG, "[Batch 3] IntegrityChecker 通过")
+                1 -> Log.e(TAG, "[Batch 3] IntegrityChecker 检测到篡改(kill)!")
+                2 -> Log.w(TAG, "[Batch 3] IntegrityChecker 检测到额外文件(warn)")
+                else -> Log.w(TAG, "[Batch 3] IntegrityChecker 内部错误")
+            }
+        }
+
+        // AntiDump(启动后台监控)
+        if (config.antiDump.enabled) {
+            Log.i(TAG, "[Batch 3] AntiDump 启动监控...")
+            DefenderNative.startAntiDumpMonitor()
         }
     }
 

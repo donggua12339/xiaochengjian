@@ -32,6 +32,9 @@ set(DEFENDER_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/sig_verify.c
     ${CMAKE_CURRENT_SOURCE_DIR}/anti_debug.c
     ${CMAKE_CURRENT_SOURCE_DIR}/anti_frida.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/root_check.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/integrity.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/anti_dump.c
 )
 
 # ============= 构建共享库 =============
