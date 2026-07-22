@@ -89,9 +89,7 @@ export class AuditLogOwnService {
       });
     } catch (e) {
       // 审计日志写入失败不影响主流程,但记录错误
-      this.logger.error(
-        `audit_log_own 写入失败: ${(e as Error).message}`,
-      );
+      this.logger.error(`audit_log_own 写入失败: ${(e as Error).message}`);
     }
   }
 
@@ -124,10 +122,12 @@ export class AuditLogOwnService {
     options: { limit?: number } = {},
   ): Promise<string> {
     const { limit = 10000 } = options;
+    // 上限 5 万行,防止滥用。注意:大量日志(接近 5 万行)时可能 OOM,
+    // 生产环境建议改用流式导出或分页
     const logs = await this.prisma.auditLogOwn.findMany({
       where: { developerId },
       orderBy: { createdAt: 'desc' },
-      take: Math.min(limit, 50000), // 上限 5 万行,防止滥用
+      take: Math.min(limit, 50000),
     });
 
     const headers = [

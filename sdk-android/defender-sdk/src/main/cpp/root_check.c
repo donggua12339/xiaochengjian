@@ -199,8 +199,10 @@ static int check_mounts(void) {
     if (read_file("/proc/self/mounts", buf, sizeof(buf)) != 0) {
         return 0;
     }
-    /* 找 /system 的 rw 挂载(正常应为 ro) */
+    /* 找 /system 或 /system_root 的 rw 挂载(正常应为 ro)
+     * 部分设备 /system 是符号链接到 /system_root,两种都检测 */
     char *p = strstr(buf, " /system ");
+    if (!p) p = strstr(buf, " /system_root ");
     if (p) {
         char *end = strchr(p, '\n');
         if (end) *end = '\0';
