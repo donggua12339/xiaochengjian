@@ -153,6 +153,10 @@ export class PackerService {
 
         // defender dex 注入(预编译 classes-defender.dex)
         if (defenderDex) {
+          // 锁 2 扩展:defender dex 白名单校验(注入前校验,失败则 APK 未被修改)
+          const preCheckHash = crypto.createHash('sha256').update(defenderDex).digest('hex');
+          this.validators.validateDefenderContentLock(preCheckHash);
+
           // 计算下一个 dex 名(auth dex 已占一个)
           const authDexNum = this.parseDexNumber(multidexInfo.nextDexName);
           const defenderDexName = `classes${authDexNum + 1}.dex`;
@@ -162,8 +166,6 @@ export class PackerService {
             defenderDexName,
           );
           injectedDefenderDexHash = defenderResult.injectedDexHash;
-          // 锁 2 扩展:defender dex 白名单校验
-          this.validators.validateDefenderContentLock(injectedDefenderDexHash);
           this.logger.log(`defender dex 注入完成:${defenderDexName}`);
         }
 

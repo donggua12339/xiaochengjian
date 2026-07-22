@@ -167,12 +167,6 @@ static int check_magisk_paths(void) {
  * 检查 ro.secure 属性
  */
 static int check_ro_secure(void) {
-    char buf[32] = {0};
-    if (read_file("/system/build.prop", buf, sizeof(buf)) != 0) {
-        /* build.prop 读不到不算 root */
-        return 0;
-    }
-    /* 简化:用 __system_property_get */
     char value[32] = {0};
     __system_property_get("ro.secure", value);
     if (strcmp(value, "0") == 0) {

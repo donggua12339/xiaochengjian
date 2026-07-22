@@ -146,29 +146,32 @@ static int check_maps_frida(void) {
  * @return 0=未检测到 / 1=检测到 Frida
  */
 static int check_frida_port(void) {
-    int sock = socket(AF_INET, SOCK_STREAM, 0);
-    if (sock < 0) {
-        return 0;
-    }
+    /* Frida 默认端口 + 常见备选端口(防止 -l 0.0.0.0:27043 改端口绕过) */
+    const int frida_ports[] = {27042, 27043, 27044, 27045};
 
-    /* 设置超时(100ms) */
-    struct timeval tv;
-    tv.tv_sec = 0;
-    tv.tv_usec = 100000;
-    setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+    for (int i = 0; i < 4; i++) {
+        int sock = socket(AF_INET, SOCK_STREAM, 0);
+        if (sock < 0) continue;
 
-    struct sockaddr_in addr;
-    memset(&addr, 0, sizeof(addr));
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons(27042);
-    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        /* 设置超时(100ms) */
+        struct timeval tv;
+        tv.tv_sec = 0;
+        tv.tv_usec = 100000;
+        setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
 
-    int ret = connect(sock, (struct sockaddr *)&addr, sizeof(addr));
-    close(sock);
+        struct sockaddr_in addr;
+        memset(&addr, 0, sizeof(addr));
+        addr.sin_family = AF_INET;
+        addr.sin_port = htons(frida_ports[i]);
+        addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
 
-    if (ret == 0) {
-        LOGE("端口 27042 可连接(Frida 在监听)");
-        return 1;
+        int ret = connect(sock, (struct sockaddr *)&addr, sizeof(addr));
+        close(sock);
+
+        if (ret == 0) {
+            LOGE("端口 %d 可连接(Frida 在监听)", frida_ports[i]);
+            return 1;
+        }
     }
 
     return 0;

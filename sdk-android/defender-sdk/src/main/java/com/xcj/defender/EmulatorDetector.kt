@@ -97,9 +97,9 @@ class EmulatorDetector(private val context: Context) {
             val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
             val sensors = sensorManager.getSensorList(Sensor.TYPE_ALL)
 
-            // 模拟器通常传感器数量 < 5
-            if (sensors.isEmpty()) {
-                Log.e(TAG, "无传感器(模拟器特征)")
+            // 模拟器通常传感器数量 < 5(注释与代码一致;用 < 3 减少低端真机误报)
+            if (sensors.size < 3) {
+                Log.e(TAG, "传感器数量过少(${sensors.size} 个,模拟器特征)")
                 return true
             }
 
