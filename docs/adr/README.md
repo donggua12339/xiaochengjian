@@ -134,6 +134,7 @@
 - [ADR 0082-A · 360 加固保自检适配器(V1.5b)](0082-a-360-jiagu-self-audit-adapter.md) - **proposed**(合规核查已通过,2026-07-21),libjiagu.so 检测,360 EULA 第 4.1 条"本软件"指加固助手本身不指 APK
 - [ADR 0082-B · 腾讯乐固自检适配器(V1.5a,优先实现)](0082-b-tencent-legu-self-audit-adapter.md) - **proposed**(合规核查已通过,2026-07-21),libshell.so 检测,协议环境宽松
 - [ADR 0082-C · 爱加密自检适配器(V2 评估)](0082-c-ijiami-self-audit-adapter.md) - **draft**(暂不开发),V2 评估
+- [ADR 0085 · 加固 APK 与 xcj-auth-sdk 的兼容性边界分析](0085-hardened-apk-sdk-compatibility-boundary.md) - **accepted**(边界分析,无代码实现),技术死锁形式化证明 + 4 条合规替代路径
 
 ## 模板
 
