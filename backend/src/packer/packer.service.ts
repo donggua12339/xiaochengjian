@@ -180,8 +180,9 @@ export class PackerService {
           this.logger.log(`defender .so 注入完成:${defenderSoName}`);
         }
 
-        // defender-config.json 注入
+        // defender-config.json 注入(写入签名 hash 供 SignatureVerifier D 层校验)
         if (defenderConfig) {
+          defenderConfig.signatureExpectedHash = signatureHash;
           const configJson = this.defenderConfigGenerator.generate(defenderConfig);
           await this.defenderConfigGenerator.injectConfig(packedPath, configJson, workDir);
         }

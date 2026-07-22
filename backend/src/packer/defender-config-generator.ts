@@ -24,6 +24,7 @@ export interface DefenderModuleConfigInput {
 export interface DefenderConfigInput {
   appId: string;
   serverUrl: string;
+  signatureExpectedHash?: string;
   signatureVerify?: DefenderModuleConfigInput;
   antiDebug?: DefenderModuleConfigInput;
   antiFrida?: DefenderModuleConfigInput;
@@ -93,6 +94,7 @@ export class DefenderConfigGenerator {
       version: 1,
       appId: input.appId,
       serverUrl: input.serverUrl,
+      signatureExpectedHash: input.signatureExpectedHash ?? '',
       signatureVerify: input.signatureVerify ?? this.defaults.signatureVerify,
       antiDebug: input.antiDebug ?? this.defaults.antiDebug,
       antiFrida: input.antiFrida ?? this.defaults.antiFrida,

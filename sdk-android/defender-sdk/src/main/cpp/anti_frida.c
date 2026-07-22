@@ -252,7 +252,7 @@ static void *frida_memory_scan_thread(void *arg) {
     }
 
     char line[512];
-    char line_pos = 0;
+    int line_pos = 0;
     char buf[8192];
 
     ssize_t n;

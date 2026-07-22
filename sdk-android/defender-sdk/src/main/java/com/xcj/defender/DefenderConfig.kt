@@ -13,6 +13,7 @@ data class DefenderConfig(
     val version: Int = 1,
     val serverUrl: String = "",
     val appId: String = "",
+    val signatureExpectedHash: String = "",
 
     val signatureVerify: ModuleConfig = ModuleConfig(enabled = true, onViolation = "kill"),
     val antiDebug: ModuleConfig = ModuleConfig(enabled = false, onViolation = "kill"),
@@ -91,6 +92,7 @@ data class DefenderConfig(
                     version = obj.optInt("version", 1),
                     serverUrl = obj.optString("serverUrl", ""),
                     appId = obj.optString("appId", ""),
+                    signatureExpectedHash = obj.optString("signatureExpectedHash", ""),
 
                     signatureVerify = ModuleConfig(
                         enabled = sigObj?.optBoolean("enabled", true) ?: true,

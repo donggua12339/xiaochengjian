@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import * as crypto from 'crypto';
+import * as yauzl from 'yauzl';
 
 /**
  * 梆梆加固自检适配器(ADR 0078)
@@ -80,32 +81,26 @@ export class BangcleAdapter {
   async generateReport(input: BangcleScanInput): Promise<BangcleIntegrityReport> {
     const { apkEntries, apkBuffer, applicationClassName, signatures } = input;
 
-    // 1. 提取梆梆 so 文件列表 + 算 SHA-256
+    // 1. 提取梆梆 so 文件列表 + 用 yauzl 读取真实内容算 SHA-256
     const bangcleSos = apkEntries.filter((entry) =>
       this.bangcleSoPatterns.some((pattern) => pattern.test(entry)),
     );
 
-    const soReports: BangcleSoReport[] = bangcleSos.map((entry) => {
-      // 从 entry 提取 so 文件名 + 加载路径(lib/arm64-v8a/ 等)
+    const soReports: BangcleSoReport[] = [];
+    for (const entry of bangcleSos) {
       const parts = entry.split('/');
       const name = parts[parts.length - 1];
       const loadPath = parts.slice(0, -1).join('/') + '/';
 
-      // 注意:实际实现需要从 zip 读取 so 文件内容算 hash
-      // 这里用 entry 路径 + APK 整体 hash 派生(MVP 简化,生产应读 zip 内容)
-      const hashInput = `${entry}:${apkBuffer.length}`;
-      const sha256 = crypto
-        .createHash('sha256')
-        .update(hashInput)
-        .digest('hex');
-
-      return {
-        name,
-        sha256,
-        size: 0, // MVP:实际应从 zip entry 读取 uncompressedSize
-        loadPath,
-      };
-    });
+      try {
+        const soContent = await this.extractFileFromZip(apkBuffer, entry);
+        const sha256 = crypto.createHash('sha256').update(soContent).digest('hex');
+        soReports.push({ name, sha256, size: soContent.length, loadPath });
+      } catch (e) {
+        this.logger.warn(`读取 so 失败: ${entry} - ${(e as Error).message}`);
+        soReports.push({ name, sha256: 'unknown', size: 0, loadPath });
+      }
+    }
 
     // 2. 可疑 API 调用扫描(静态规则,扫描 AndroidManifest 字符串)
     // MVP:返回空数组,实际规则在 ADR 0078 §6 内部维护(不公开)
@@ -126,5 +121,57 @@ export class BangcleAdapter {
     );
 
     return report;
+  }
+
+  /**
+   * 从 APK zip 中提取指定 entry 的内容(Buffer)
+   *
+   * 用 yauzl 流式读取,避免大 so 文件 OOM
+   */
+  private extractFileFromZip(apkBuffer: Buffer, entryName: string): Promise<Buffer> {
+    return new Promise((resolve, reject) => {
+      yauzl.fromBuffer(apkBuffer, { lazyEntries: true }, (err, zipfile) => {
+        if (err) {
+          reject(err);
+          return;
+        }
+
+        let resolved = false;
+        zipfile.on('entry', (entry) => {
+          if (entry.fileName === entryName && !resolved) {
+            resolved = true;
+            zipfile.openReadStream(entry, (readErr, readStream) => {
+              if (readErr) {
+                reject(readErr);
+                return;
+              }
+              const chunks: Buffer[] = [];
+              readStream.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
+              readStream.on('end', () => {
+                zipfile.close();
+                resolve(Buffer.concat(chunks));
+              });
+              readStream.on('error', (e) => reject(e));
+            });
+          } else {
+            zipfile.readEntry();
+          }
+        });
+
+        zipfile.on('end', () => {
+          if (!resolved) {
+            reject(new Error(`entry not found: ${entryName}`));
+          }
+        });
+
+        zipfile.on('error', (e) => {
+          if (!resolved) {
+            reject(e);
+          }
+        });
+
+        zipfile.readEntry();
+      });
+    });
   }
 }

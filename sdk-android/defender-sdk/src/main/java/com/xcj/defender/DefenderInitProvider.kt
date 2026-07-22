@@ -125,8 +125,7 @@ class DefenderInitProvider : ContentProvider() {
             val antiDebugResult = DefenderNative.checkAntiDebug()
             if (antiDebugResult == 1) {
                 Log.e(TAG, "[Batch 2] AntiDebug 检测到调试器!")
-                // TODO: 按 config.antiDebug.onViolation 响应(kill/warn)
-                // 由 Batch 4 的 DefenderResponse 统一处理
+                applyResponse(ctx, config.antiDebug.onViolation, config, "anti_debug_detected", "检测到调试器")
             } else {
                 Log.i(TAG, "[Batch 2] AntiDebug 通过")
             }
@@ -138,7 +137,7 @@ class DefenderInitProvider : ContentProvider() {
             val antiFridaResult = DefenderNative.checkAntiFrida()
             if (antiFridaResult == 1) {
                 Log.e(TAG, "[Batch 2] AntiFrida 检测到 Frida!")
-                // TODO: 按 config.antiFrida.onViolation 响应
+                applyResponse(ctx, config.antiFrida.onViolation, config, "frida_detected", "检测到 Frida 注入")
             } else {
                 Log.i(TAG, "[Batch 2] AntiFrida 通过(同步)")
                 // 启动 D 层后台内存扫描
@@ -150,20 +149,19 @@ class DefenderInitProvider : ContentProvider() {
         if (config.signatureVerify.enabled) {
             Log.i(TAG, "[Batch 2] SignatureVerifier 检测中...")
             val apkPath = ctx.packageCodePath
-            // TODO: 从服务端拉 expectedSignatureHash(C 层)
-            // 目前用 config 里的(可能为空,跳过 D 层)
+            val expectedSigHash = config.signatureExpectedHash.ifEmpty { null }
             val sigResult = DefenderNative.verifySignature(
                 apkPath,
-                null,  // D 层:从服务端拉(待实现)
-                null,  // B 层:从 config 读(待实现)
-                null,  // C 层:服务端 hash(待实现)
-                null,  // C 层:服务端 apk hash(待实现)
+                expectedSigHash,  // D 层:从 config 读(Packer 封装时写入)
+                null,             // B 层:APK 内容 hash(待服务端接口)
+                null,             // C 层:服务端签名 hash(待实现)
+                null,             // C 层:服务端 apk hash(待实现)
             )
             if (sigResult != 0) {
                 Log.e(TAG, "[Batch 2] SignatureVerifier 校验失败!")
-                // TODO: 按 config.signatureVerify.onViolation 响应
+                applyResponse(ctx, config.signatureVerify.onViolation, config, "signature_mismatch", "签名校验失败")
             } else {
-                Log.i(TAG, "[Batch 2] SignatureVerifier 通过(占位,待服务端 hash 接入)")
+                Log.i(TAG, "[Batch 2] SignatureVerifier 通过")
             }
         }
     }
@@ -178,7 +176,7 @@ class DefenderInitProvider : ContentProvider() {
             val rootResult = DefenderNative.checkRoot()
             if (rootResult == 1) {
                 Log.e(TAG, "[Batch 3] RootDetector 检测到 Root!")
-                // TODO: 按 config.rootDetect.onViolation 响应(warn)
+                applyResponse(ctx, config.rootDetect.onViolation, config, "root_detected", "检测到 Root 环境")
             } else {
                 Log.i(TAG, "[Batch 3] RootDetector 通过")
             }
@@ -191,8 +189,14 @@ class DefenderInitProvider : ContentProvider() {
             val integrityResult = DefenderNative.checkIntegrity(apkPath)
             when (integrityResult) {
                 0 -> Log.i(TAG, "[Batch 3] IntegrityChecker 通过")
-                1 -> Log.e(TAG, "[Batch 3] IntegrityChecker 检测到篡改(kill)!")
-                2 -> Log.w(TAG, "[Batch 3] IntegrityChecker 检测到额外文件(warn)")
+                1 -> {
+                    Log.e(TAG, "[Batch 3] IntegrityChecker 检测到篡改(kill)!")
+                    applyResponse(ctx, config.integrityCheck.onViolation, config, "integrity_tampered", "检测到 APK 篡改")
+                }
+                2 -> {
+                    Log.w(TAG, "[Batch 3] IntegrityChecker 检测到额外文件(warn)")
+                    applyResponse(ctx, "warn", config, "integrity_extra_files", "检测到额外文件")
+                }
                 else -> Log.w(TAG, "[Batch 3] IntegrityChecker 内部错误")
             }
         }
@@ -201,6 +205,26 @@ class DefenderInitProvider : ContentProvider() {
         if (config.antiDump.enabled) {
             Log.i(TAG, "[Batch 3] AntiDump 启动监控...")
             DefenderNative.startAntiDumpMonitor()
+        }
+    }
+
+    /**
+     * 按配置响应(kill/warn/none)
+     *
+     * 统一响应入口:Batch 2/3/4 检测到风险后调用此方法
+     */
+    private fun applyResponse(
+        ctx: Context,
+        onViolation: String,
+        config: DefenderConfig,
+        violationKey: String,
+        warnMessage: String,
+    ) {
+        when (onViolation) {
+            "kill" -> DefenderResponse.kill(ctx, config.onViolationKill)
+            "warn" -> DefenderResponse.warn(ctx, violationKey, warnMessage, config.report)
+            "none" -> Log.w(TAG, "onViolation=none, 跳过响应: $violationKey")
+            else -> Log.w(TAG, "未知 onViolation=$onViolation, 跳过响应: $violationKey")
         }
     }
 
