@@ -65,4 +65,6 @@ dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("org.jetbrains.kotlin:kotlin-stdlib:2.0.21")
+    /* Play Integrity API(2026 服务端信任验证,需 Google Play 服务) */
+    implementation("com.google.android.play:integrity:1.4.0")
 }

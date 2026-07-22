@@ -24,6 +24,7 @@ data class DefenderConfig(
     val emulatorDetect: ModuleConfig = ModuleConfig(enabled = false, onViolation = "warn"),
     val integrityCheck: ModuleConfig = ModuleConfig(enabled = true, onViolation = "kill"),
     val keyAttestation: XposedConfig = XposedConfig(enabled = false, onViolation = "warn", killThreshold = 60),
+    val playIntegrity: ModuleConfig = ModuleConfig(enabled = false, onViolation = "warn"),
 
     val secureScreen: SecureScreenConfig = SecureScreenConfig(enabled = false, excludeActivities = emptyList()),
 
@@ -90,6 +91,7 @@ data class DefenderConfig(
                 val emulatorObj = obj.optJSONObject("emulatorDetect")
                 val integrityObj = obj.optJSONObject("integrityCheck")
                 val keyAttestationObj = obj.optJSONObject("keyAttestation")
+                val playIntegrityObj = obj.optJSONObject("playIntegrity")
                 val secureScreenObj = obj.optJSONObject("secureScreen")
                 val killObj = obj.optJSONObject("onViolationKill")
                 val reportObj = obj.optJSONObject("report")
@@ -137,6 +139,10 @@ data class DefenderConfig(
                         enabled = keyAttestationObj?.optBoolean("enabled", false) ?: false,
                         onViolation = keyAttestationObj?.optString("onViolation", "warn") ?: "warn",
                         killThreshold = keyAttestationObj?.optInt("killThreshold", 60) ?: 60,
+                    ),
+                    playIntegrity = ModuleConfig(
+                        enabled = playIntegrityObj?.optBoolean("enabled", false) ?: false,
+                        onViolation = playIntegrityObj?.optString("onViolation", "warn") ?: "warn",
                     ),
                     secureScreen = SecureScreenConfig(
                         enabled = secureScreenObj?.optBoolean("enabled", false) ?: false,

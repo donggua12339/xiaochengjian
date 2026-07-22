@@ -291,6 +291,24 @@ class DefenderInitProvider : ContentProvider() {
             }
         }
 
+        // PlayIntegrity(Google 服务端信任验证,2026)
+        if (config.playIntegrity.enabled) {
+            Log.i(TAG, "[Batch 4] PlayIntegrity 检测中...")
+            try {
+                val nonce = java.util.UUID.randomUUID().toString()
+                when (val result = PlayIntegrityDetector(ctx).requestToken(nonce)) {
+                    is PlayIntegrityDetector.PlayIntegrityResult.Success ->
+                        Log.i(TAG, "[Batch 4] PlayIntegrity token 已获取(待后端验证 verdict)")
+                    is PlayIntegrityDetector.PlayIntegrityResult.Failure -> {
+                        Log.e(TAG, "[Batch 4] PlayIntegrity 失败: ${result.reason}")
+                        applyResponse(ctx, config.playIntegrity.onViolation, config, "play_integrity_failed", "Play Integrity 校验失败")
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "[Batch 4] PlayIntegrity 异常: ${e.message}")
+            }
+        }
+
         // WindowSecurer(全局 FLAG_SECURE,静默防护)
         if (config.secureScreen.enabled) {
             Log.i(TAG, "[Batch 4] WindowSecurer 启动...")
