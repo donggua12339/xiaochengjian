@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <application>
+        <!--
+        DefenderInitProvider:最早的初始化点(先于 Application.onCreate)
+        android:initOrder="1":确保最先初始化
+        android:exported="false":不对外暴露
+        -->
+        <provider
+            android:name=".DefenderInitProvider"
+            android:authorities="${applicationId}.defender"
+            android:initOrder="1"
+            android:exported="false" />
+    </application>
+
+</manifest>

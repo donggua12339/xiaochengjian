@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:padding="16dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="xcj-defender-sdk 测试 Demo"
+            android:textSize="24sp"
+            android:textStyle="bold"
+            android:gravity="center"
+            android:layout_marginBottom="8dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="所有模块检测结果(YES=检测到风险 / NO=安全)"
+            android:textSize="14sp"
+            android:gravity="center"
+            android:layout_marginBottom="16dp" />
+
+        <!-- 签名校验 -->
+        <LinearLayout style="@style/ModuleRow">
+            <TextView style="@style/ModuleName" android:text="1. SignatureVerifier(签名校验)" />
+            <TextView android:id="@+id/result_signature" style="@style/ModuleResult" android:text="--" />
+        </LinearLayout>
+
+        <!-- 反调试 -->
+        <LinearLayout style="@style/ModuleRow">
+            <TextView style="@style/ModuleName" android:text="2. AntiDebug(反调试)" />
+            <TextView android:id="@+id/result_anti_debug" style="@style/ModuleResult" android:text="--" />
+        </LinearLayout>
+
+        <!-- 防 Frida -->
+        <LinearLayout style="@style/ModuleRow">
+            <TextView style="@style/ModuleName" android:text="3. AntiFrida(防 Frida)" />
+            <TextView android:id="@+id/result_anti_frida" style="@style/ModuleResult" android:text="--" />
+        </LinearLayout>
+
+        <!-- 防内存 Dump -->
+        <LinearLayout style="@style/ModuleRow">
+            <TextView style="@style/ModuleName" android:text="4. AntiDump(防内存 Dump)" />
+            <TextView android:id="@+id/result_anti_dump" style="@style/ModuleResult" android:text="--" />
+        </LinearLayout>
+
+        <!-- Root 检测 -->
+        <LinearLayout style="@style/ModuleRow">
+            <TextView style="@style/ModuleName" android:text="5. RootDetector(Root 检测)" />
+            <TextView android:id="@+id/result_root" style="@style/ModuleResult" android:text="--" />
+        </LinearLayout>
+
+        <!-- Xposed 检测 -->
+        <LinearLayout style="@style/ModuleRow">
+            <TextView style="@style/ModuleName" android:text="6. XposedDetector(Xposed 检测)" />
+            <TextView android:id="@+id/result_xposed" style="@style/ModuleResult" android:text="--" />
+        </LinearLayout>
+
+        <!-- 模拟器检测 -->
+        <LinearLayout style="@style/ModuleRow">
+            <TextView style="@style/ModuleName" android:text="7. EmulatorDetector(模拟器检测)" />
+            <TextView android:id="@+id/result_emulator" style="@style/ModuleResult" android:text="--" />
+        </LinearLayout>
+
+        <!-- APK 完整性 -->
+        <LinearLayout style="@style/ModuleRow">
+            <TextView style="@style/ModuleName" android:text="8. IntegrityChecker(APK 完整性)" />
+            <TextView android:id="@+id/result_integrity" style="@style/ModuleResult" android:text="--" />
+        </LinearLayout>
+
+        <!-- 防截屏 -->
+        <LinearLayout style="@style/ModuleRow">
+            <TextView style="@style/ModuleName" android:text="9. WindowSecurer(防截屏)" />
+            <TextView android:id="@+id/result_window" style="@style/ModuleResult" android:text="--" />
+        </LinearLayout>
+
+        <!-- 分隔线 -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="#CCCCCC"
+            android:layout_marginTop="16dp"
+            android:layout_marginBottom="16dp" />
+
+        <!-- 汇总 -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="汇总"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="8dp" />
+
+        <TextView
+            android:id="@+id/result_summary"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="16sp"
+            android:layout_marginBottom="16dp" />
+
+        <!-- 重新检测按钮 -->
+        <Button
+            android:id="@+id/btn_rescan"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="重新检测" />
+
+        <!-- 日志 -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="检测日志"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:layout_marginTop="16dp"
+            android:layout_marginBottom="8dp" />
+
+        <TextView
+            android:id="@+id/tv_log"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="12sp"
+            android:fontFamily="monospace"
+            android:background="#F5F5F5"
+            android:padding="8dp" />
+
+    </LinearLayout>
+
+</ScrollView>

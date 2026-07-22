@@ -61,3 +61,8 @@ playwright-report/
 .turbo/
 .eslintcache
 *.png
+
+# defender-sdk build cache
+sdk-android/defender-sdk/.cxx/
+sdk-android/defender-sdk/build/
+sdk-android/defender-sdk/local.properties
