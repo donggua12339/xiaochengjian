@@ -33,10 +33,11 @@ export const XCJ_AUTH_SDK_DEX_WHITELIST: string[] = [
  * xcj-defender-sdk 编译产物 classes-defender.dex 的 SHA-256 白名单(ADR 0088)
  *
  * 与 XCJ_AUTH_SDK_DEX_WHITELIST 独立,每次 defender-sdk 版本更新时同步。
- * 当前为空(MVP 阶段,首次编译后填入)
+ * 当前 v1.0.0 的 classes-defender.dex hash(2026-07-22 编译)
  */
 export const XCJ_DEFENDER_SDK_DEX_WHITELIST: string[] = [
-  // defender-sdk classes-defender.dex SHA-256(待首次编译后填入)
+  // defender-sdk classes-defender.dex SHA-256(2026-07-22 编译,v1.0.0,d8 转换)
+  'b6411e45fb1478ca4d2cda5831745e8b8020d96e769d698e67db48c5038c15e1',
 ];
 
 /**
@@ -46,7 +47,8 @@ export const XCJ_DEFENDER_SDK_DEX_WHITELIST: string[] = [
  * 与 dex 白名单独立(.aar 含 .so + classes.jar,整体校验更严格)。
  */
 export const XCJ_DEFENDER_SDK_AAR_WHITELIST: string[] = [
-  // defender-sdk .aar SHA-256(待首次编译后填入)
+  // defender-sdk .aar SHA-256(2026-07-22 编译,v1.0.0)
+  '1351da48f0e96d3d07265223b36cbac42ecf0107d79392f3c48fab20c4d415a3',
 ];
 
 /**
