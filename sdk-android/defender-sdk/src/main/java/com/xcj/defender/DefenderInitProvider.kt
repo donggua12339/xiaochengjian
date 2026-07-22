@@ -63,8 +63,9 @@ class DefenderInitProvider : ContentProvider() {
             DefenderInit.context = ctx.applicationContext
             DefenderInit.initialized = true
 
-            // 6. 启动后续模块(Batch 2/3/4 实现)
-            // TODO: Batch 2 - SignatureVerifier + AntiDebug + AntiFrida
+            // 6. Batch 2:SignatureVerifier + AntiDebug + AntiFrida
+            runBatch2Modules(ctx, config)
+
             // TODO: Batch 3 - RootDetector + IntegrityChecker + AntiDump
             // TODO: Batch 4 - XposedDetector + EmulatorDetector + WindowSecurer
 
@@ -106,6 +107,61 @@ class DefenderInitProvider : ContentProvider() {
         } catch (e: Exception) {
             Log.w(TAG, "读取 defender-config.json 失败,使用默认配置: ${e.message}")
             DefenderConfig()
+        }
+    }
+
+    /**
+     * Batch 2 模块:SignatureVerifier + AntiDebug + AntiFrida
+     *
+     * 按 config 启用状态执行,检测到风险按 onViolation 响应
+     */
+    private fun runBatch2Modules(ctx: Context, config: DefenderConfig) {
+        // AntiDebug(启动时 1 次)
+        if (config.antiDebug.enabled) {
+            Log.i(TAG, "[Batch 2] AntiDebug 检测中...")
+            val antiDebugResult = DefenderNative.checkAntiDebug()
+            if (antiDebugResult == 1) {
+                Log.e(TAG, "[Batch 2] AntiDebug 检测到调试器!")
+                // TODO: 按 config.antiDebug.onViolation 响应(kill/warn)
+                // 由 Batch 4 的 DefenderResponse 统一处理
+            } else {
+                Log.i(TAG, "[Batch 2] AntiDebug 通过")
+            }
+        }
+
+        // AntiFrida(同步 A+B+C)
+        if (config.antiFrida.enabled) {
+            Log.i(TAG, "[Batch 2] AntiFrida 检测中...")
+            val antiFridaResult = DefenderNative.checkAntiFrida()
+            if (antiFridaResult == 1) {
+                Log.e(TAG, "[Batch 2] AntiFrida 检测到 Frida!")
+                // TODO: 按 config.antiFrida.onViolation 响应
+            } else {
+                Log.i(TAG, "[Batch 2] AntiFrida 通过(同步)")
+                // 启动 D 层后台内存扫描
+                DefenderNative.startFridaMemoryScan()
+            }
+        }
+
+        // SignatureVerifier(启动时 1 次)
+        if (config.signatureVerify.enabled) {
+            Log.i(TAG, "[Batch 2] SignatureVerifier 检测中...")
+            val apkPath = ctx.packageCodePath
+            // TODO: 从服务端拉 expectedSignatureHash(C 层)
+            // 目前用 config 里的(可能为空,跳过 D 层)
+            val sigResult = DefenderNative.verifySignature(
+                apkPath,
+                null,  // D 层:从服务端拉(待实现)
+                null,  // B 层:从 config 读(待实现)
+                null,  // C 层:服务端 hash(待实现)
+                null,  // C 层:服务端 apk hash(待实现)
+            )
+            if (sigResult != 0) {
+                Log.e(TAG, "[Batch 2] SignatureVerifier 校验失败!")
+                // TODO: 按 config.signatureVerify.onViolation 响应
+            } else {
+                Log.i(TAG, "[Batch 2] SignatureVerifier 通过(占位,待服务端 hash 接入)")
+            }
         }
     }
 

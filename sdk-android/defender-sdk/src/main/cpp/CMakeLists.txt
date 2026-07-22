@@ -29,6 +29,9 @@ set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} \
 set(DEFENDER_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/defender_jni.c
     ${CMAKE_CURRENT_SOURCE_DIR}/self_verify.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/sig_verify.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/anti_debug.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/anti_frida.c
 )
 
 # ============= 构建共享库 =============

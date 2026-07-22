@@ -62,9 +62,47 @@ object DefenderNative {
      */
     external fun getVersion(): String
 
-    // ============= Batch 2:SignatureVerifier + AntiDebug + AntiFrida(待实现) =============
-    // external fun verifySignature(expectedHash: String): Int
-    // external fun checkAntiDebug(): Int
+    // ============= Batch 2:SignatureVerifier + AntiDebug + AntiFrida =============
+
+    /**
+     * 签名校验(三层:D + B + C)
+     *
+     * @param apkPath APK 文件路径
+     * @param expectedSigHash 预期签名 hash(D 层,从服务端拉)
+     * @param expectedApkHash 预期 APK 内容 hash(B 层,从 config 读)
+     * @param serverSigHash 服务端签名 hash(C 层,无网传 null 跳过)
+     * @param serverApkHash 服务端 APK hash(C 层,无网传 null 跳过)
+     * @return 0=全通过 / 1=任一层失败 / -1=内部错误
+     */
+    external fun verifySignature(
+        apkPath: String,
+        expectedSigHash: String?,
+        expectedApkHash: String?,
+        serverSigHash: String?,
+        serverApkHash: String?,
+    ): Int
+
+    /**
+     * 反调试检测(TracerPid + wchan + inline syscall)
+     *
+     * @return 0=未被调试 / 1=被调试
+     */
+    external fun checkAntiDebug(): Int
+
+    /**
+     * 防 Frida 检测(同步:A+B+C,不含 D 后台扫描)
+     *
+     * @return 0=未检测到 / 1=检测到 Frida
+     */
+    external fun checkAntiFrida(): Int
+
+    /**
+     * 启动后台内存特征字符串扫描(D 层)
+     *
+     * 延迟 3-10 秒(随机),扫描 r-xp 段搜 LIBFRIDA/frida:rpc
+     * 检测到 -> raise(SIGABRT)
+     */
+    external fun startFridaMemoryScan()
     // external fun checkAntiFrida(): Int
 
     // ============= Batch 3:RootDetector + IntegrityChecker + AntiDump(待实现) =============
