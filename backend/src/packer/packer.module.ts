@@ -4,6 +4,8 @@ import { PackerService } from './packer.service';
 import { PackerValidators } from './packer-validators';
 import { PackerLogService } from './packer-log.service';
 import { DexInjector } from './dex-injector';
+import { SoInjector } from './so-injector';
+import { DefenderConfigGenerator } from './defender-config-generator';
 
 /**
  * Packer 模块(ADR 0081)
@@ -28,6 +30,8 @@ import { DexInjector } from './dex-injector';
     PackerValidators,
     PackerLogService,
     DexInjector,
+    SoInjector,
+    DefenderConfigGenerator,
   ],
   exports: [PackerService, PackerLogService],
 })

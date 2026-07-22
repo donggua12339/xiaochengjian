@@ -92,10 +92,7 @@ export class DexInjector {
     dexName: string,
   ): Promise<{ injectedDexHash: string }> {
     const crypto = await import('crypto');
-    const injectedDexHash = crypto
-      .createHash('sha256')
-      .update(dexContent)
-      .digest('hex');
+    const injectedDexHash = crypto.createHash('sha256').update(dexContent).digest('hex');
 
     // 用 zip 命令把 dex 加到 APK(unzip -l 已验证 APK 是 zip 格式)
     const tmpDex = path.join(path.dirname(apkPath), dexName);
@@ -121,10 +118,11 @@ export class DexInjector {
    * MVP 实现:占位逻辑(实际需 AXMLParser 解析二进制 XML)
    * 生产实现:用 apktool 反编译 -> 改 XML -> 重打包
    *
-   * 允许的修改(锁 3):
+   * 允许的修改(锁 3 + ADR 0088 扩展):
    *  - <application android:name="..."> 改为 XcjApplication
-   *  - <meta-data android:name="xcj.*" />
+   *  - <meta-data android:name="xcj.*" />(含 xcj.defender.lib)
    *  - <uses-permission android:name="android.permission.INTERNET" />
+   *  - <provider android:name="com.xcj.defender.DefenderInitProvider" />(ADR 0088)
    *
    * @returns Manifest 修改项(供锁 3 校验)
    */
@@ -137,18 +135,21 @@ export class DexInjector {
       serverUrl: string;
       expectedSignatureHash: string;
     };
+    defenderConfig?: {
+      enabled: boolean;
+      randomSoName: string;
+    };
   }): Promise<{
     applicationNameChanged: boolean;
     metaDataAdded: string[];
     permissionsAdded: string[];
+    defenderProviderAdded: boolean;
     otherChanges: string[];
   }> {
-    const { apkPath, workDir, originalApplicationName, xcjConfig } = params;
+    const { apkPath, workDir, originalApplicationName, xcjConfig, defenderConfig } = params;
 
     // MVP:记录修改项,实际 XML 修改需 AXMLParser
-    this.logger.warn(
-      'patchManifest MVP 实现:实际 XML 修改需 AXMLParser/apktool,当前仅记录修改项',
-    );
+    this.logger.warn('patchManifest MVP 实现:实际 XML 修改需 AXMLParser/apktool,当前仅记录修改项');
 
     // 解压 AndroidManifest.xml 查看原 Application
     try {
@@ -159,15 +160,27 @@ export class DexInjector {
       this.logger.warn(`解压 AndroidManifest.xml 失败: ${(e as Error).message}`);
     }
 
+    const metaDataAdded = [
+      'xcj.appId',
+      'xcj.serverUrl',
+      'xcj.expectedSignatureHash',
+      'xcj.actionOnMismatch',
+    ];
+    const defenderProviderAdded = defenderConfig?.enabled === true;
+
+    if (defenderConfig?.enabled) {
+      // defender-sdk 启用:加 xcj.defender.lib meta-data + DefenderInitProvider
+      metaDataAdded.push('xcj.defender.lib');
+      this.logger.log(
+        `defender-sdk 启用:meta-data xcj.defender.lib=${defenderConfig.randomSoName} + DefenderInitProvider`,
+      );
+    }
+
     const changes = {
       applicationNameChanged: originalApplicationName !== null,
-      metaDataAdded: [
-        'xcj.appId',
-        'xcj.serverUrl',
-        'xcj.expectedSignatureHash',
-        'xcj.actionOnMismatch',
-      ],
+      metaDataAdded,
       permissionsAdded: ['android.permission.INTERNET'],
+      defenderProviderAdded,
       otherChanges: [] as string[],
     };
 
@@ -181,6 +194,8 @@ export class DexInjector {
           serverUrl: xcjConfig.serverUrl,
           expectedSignatureHash: xcjConfig.expectedSignatureHash,
           actionOnMismatch: 'PACKAGE_TAMPERED',
+          defenderEnabled: defenderConfig?.enabled ?? false,
+          defenderLibName: defenderConfig?.enabled ? defenderConfig.randomSoName : null,
         },
         null,
         2,

@@ -118,6 +118,14 @@ export class AppConfig {
   // 水印 AES-256 密钥(32 字节 hex,ADR 0030 §c 水印加密存储)
   // 用于 injector sign 子命令生成加密水印,服务端持有密钥可解密追溯
   watermarkAesKey!: string;
+
+  // ============= defender-sdk(ADR 0088,可选)=============
+  // defender-sdk .aar 路径(含 .so,用于 .so 注入,30 池随机名)
+  // 未配则 defender 注入不可用(不影响 auth-sdk 封装)
+  defenderAarPath?: string;
+  // defender-sdk classes-defender.dex 路径(预编译,用于 dex 注入)
+  // 未配则跳过 defender dex 注入(仅 .so + config)
+  defenderDexPath?: string;
 }
 
 export const appConfig = (): AppConfig => ({
@@ -156,25 +164,17 @@ export const appConfig = (): AppConfig => ({
   qqAppKey: process.env.QQ_APP_KEY || undefined,
   // 自有 APK 诊断(ADR 0077)
   auditTmpRoot: process.env.AUDIT_TMP_ROOT ?? '/tmp/audit',
-  apksignerPath:
-    process.env.APKSIGNER_PATH ??
-    '/opt/android-sdk/build-tools/34.0.0/apksigner',
-  auditReportRetentionHours: parseInt(
-    process.env.AUDIT_REPORT_RETENTION_HOURS ?? '24',
-    10,
-  ),
-  auditMaxConcurrentPerDeveloper: parseInt(
-    process.env.AUDIT_MAX_CONCURRENT_PER_DEV ?? '1',
-    10,
-  ),
+  apksignerPath: process.env.APKSIGNER_PATH ?? '/opt/android-sdk/build-tools/34.0.0/apksigner',
+  auditReportRetentionHours: parseInt(process.env.AUDIT_REPORT_RETENTION_HOURS ?? '24', 10),
+  auditMaxConcurrentPerDeveloper: parseInt(process.env.AUDIT_MAX_CONCURRENT_PER_DEV ?? '1', 10),
   auditMaxApkSizeMb: parseInt(process.env.AUDIT_MAX_APK_SIZE_MB ?? '200', 10),
-  auditTimeoutSeconds: parseInt(
-    process.env.AUDIT_TIMEOUT_SECONDS ?? '1800',
-    10,
-  ),
+  auditTimeoutSeconds: parseInt(process.env.AUDIT_TIMEOUT_SECONDS ?? '1800', 10),
   // 水印 AES-256 密钥(ADR 0030 §c,32 字节 hex = 64 字符)
   // 生产环境必须配,未配则 /v1/watermark/generate 拒绝
   watermarkAesKey: process.env.WATERMARK_AES_KEY ?? '',
+  // defender-sdk(ADR 0088,可选,未配则 defender 注入不可用)
+  defenderAarPath: process.env.DEFENDER_AAR_PATH || undefined,
+  defenderDexPath: process.env.DEFENDER_DEX_PATH || undefined,
 });
 
 export const validate = (_raw: unknown): AppConfig => {

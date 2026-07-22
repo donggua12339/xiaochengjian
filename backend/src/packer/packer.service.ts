@@ -4,20 +4,22 @@ import * as crypto from 'crypto';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { PrismaService } from '../prisma/prisma.service';
-import { PackerValidators } from './packer-validators';
+import { PackerValidators, XCJ_DEFENDER_SDK_AAR_WHITELIST } from './packer-validators';
 import { DexInjector } from './dex-injector';
+import { SoInjector } from './so-injector';
+import { DefenderConfigGenerator, DefenderConfigInput } from './defender-config-generator';
 import { PackerLogService } from './packer-log.service';
 import type { AppConfig } from '../config/configuration';
 
 /**
- * Packer 主服务(ADR 0081)
+ * Packer 主服务(ADR 0081 + ADR 0088)
  *
- * 封装流程(七锁校验):
+ * 封装流程(七锁校验 + defender-sdk 注入):
  *  1. 上传 APK + Keystore + 凭证
  *  2. 锁 1:对象锁定(三重校验)
- *  3. 锁 2:内容锁定(注入内容为固定 classes-xcj.dex)
+ *  3. 锁 2:内容锁定(注入内容为固定 classes-xcj.dex + classes-defender.dex)
  *  4. 锁 3:入口锁定(Manifest 修改范围)
- *  5. dex 注入 + Manifest 修改
+ *  5. dex 注入(auth + defender)+ .so 注入(30 池随机名)+ Manifest 修改
  *  6. 锁 4:签名锁定(自备 Keystore V1+V2+V3 重签)
  *  7. 锁 5:权限锁定(JWT 开发者自身)
  *  8. 锁 6:数据锁定(SDK 配置仅 OAID + 包信息)
@@ -34,6 +36,8 @@ export class PackerService {
     private readonly prisma: PrismaService,
     private readonly validators: PackerValidators,
     private readonly dexInjector: DexInjector,
+    private readonly soInjector: SoInjector,
+    private readonly defenderConfigGenerator: DefenderConfigGenerator,
     private readonly packerLog: PackerLogService,
     private readonly configService: ConfigService<AppConfig, true>,
   ) {}
@@ -53,11 +57,19 @@ export class PackerService {
     xcjAuthSdkDex: Buffer; // xcj-auth-sdk 编译产物(classes-xcj.dex)
     ip: string;
     userAgent?: string;
+    // ADR 0088:defender-sdk 注入(可选)
+    defenderEnabled?: boolean;
+    defenderConfig?: DefenderConfigInput;
+    defenderAarPath?: string; // defender-sdk .aar 路径(含 .so,从配置读)
+    defenderDex?: Buffer; // defender-sdk classes-defender.dex(预编译)
   }): Promise<{
     taskId: string;
     packedApk: Buffer;
     packedApkHash: string;
     injectedDexHash: string;
+    injectedDefenderDexHash: string | null;
+    injectedSoHash: string | null;
+    defenderSoName: string | null;
     keystoreFingerprint: string;
   }> {
     const {
@@ -72,6 +84,10 @@ export class PackerService {
       xcjAuthSdkDex,
       ip,
       userAgent,
+      defenderEnabled = false,
+      defenderConfig,
+      defenderAarPath,
+      defenderDex,
     } = params;
 
     // APK 大小限制
@@ -108,37 +124,68 @@ export class PackerService {
       const packageName = await this.parsePackageName(apkPath, workDir);
 
       // 锁 1:对象锁定(三重校验)
-      const app = await this.validators.validateObjectLock(
-        developerId,
-        packageName,
-        signatureHash,
-      );
+      const app = await this.validators.validateObjectLock(developerId, packageName, signatureHash);
 
       // 锁 5:权限锁定(JWT 开发者 = 应用所有者)
       this.validators.validatePermissionLock(developerId, app.id);
 
       // 锁 2:内容锁定(注入 dex hash 白名单)
-      const injectedDexHash = crypto
-        .createHash('sha256')
-        .update(xcjAuthSdkDex)
-        .digest('hex');
+      const injectedDexHash = crypto.createHash('sha256').update(xcjAuthSdkDex).digest('hex');
       this.validators.validateContentLock(injectedDexHash);
 
       // 锁 7:客户端签名自检(配置预期 hash)
-      const clientCheckConfig = this.validators.configureClientSignatureCheck(
-        signatureHash,
-      );
+      const clientCheckConfig = this.validators.configureClientSignatureCheck(signatureHash);
 
       // 复制工作副本
       await fs.copyFile(apkPath, packedPath);
 
       // dex 注入(锁 2 + 锁 3)
       const multidexInfo = await this.dexInjector.detectMultidex(packedPath);
-      await this.dexInjector.injectDex(
-        packedPath,
-        xcjAuthSdkDex,
-        multidexInfo.nextDexName,
-      );
+      await this.dexInjector.injectDex(packedPath, xcjAuthSdkDex, multidexInfo.nextDexName);
+
+      // ============= ADR 0088:defender-sdk 注入(可选) =============
+      let injectedDefenderDexHash: string | null = null;
+      let injectedSoHash: string | null = null;
+      let defenderSoName: string | null = null;
+
+      if (defenderEnabled) {
+        this.logger.log('defender-sdk 注入启用(ADR 0088)');
+
+        // defender dex 注入(预编译 classes-defender.dex)
+        if (defenderDex) {
+          // 计算下一个 dex 名(auth dex 已占一个)
+          const authDexNum = this.parseDexNumber(multidexInfo.nextDexName);
+          const defenderDexName = `classes${authDexNum + 1}.dex`;
+          const defenderResult = await this.dexInjector.injectDex(
+            packedPath,
+            defenderDex,
+            defenderDexName,
+          );
+          injectedDefenderDexHash = defenderResult.injectedDexHash;
+          // 锁 2 扩展:defender dex 白名单校验
+          this.validators.validateDefenderContentLock(injectedDefenderDexHash);
+          this.logger.log(`defender dex 注入完成:${defenderDexName}`);
+        }
+
+        // .so 注入(30 池随机名)
+        if (defenderAarPath) {
+          // .aar 白名单校验(锁 2 扩展)
+          await this.soInjector.validateAarHash(defenderAarPath, XCJ_DEFENDER_SDK_AAR_WHITELIST);
+          // 提取 .so
+          const { abis } = await this.soInjector.extractSoFromAar(defenderAarPath, workDir);
+          // 注入 .so(随机名)
+          const soResult = await this.soInjector.injectSo(packedPath, abis, workDir);
+          injectedSoHash = soResult.injectedSoHash;
+          defenderSoName = soResult.randomSoName;
+          this.logger.log(`defender .so 注入完成:${defenderSoName}`);
+        }
+
+        // defender-config.json 注入
+        if (defenderConfig) {
+          const configJson = this.defenderConfigGenerator.generate(defenderConfig);
+          await this.defenderConfigGenerator.injectConfig(packedPath, configJson, workDir);
+        }
+      }
 
       // Manifest 修改(锁 3)
       const manifestChanges = await this.dexInjector.patchManifest({
@@ -150,6 +197,9 @@ export class PackerService {
           serverUrl: String(sdkConfig.serverUrl ?? ''),
           expectedSignatureHash: clientCheckConfig.expectedSignatureHash,
         },
+        defenderConfig: defenderEnabled
+          ? { enabled: true, randomSoName: defenderSoName ?? 'libsec_helper.so' }
+          : undefined,
       });
 
       // 锁 3:入口锁定校验
@@ -169,10 +219,7 @@ export class PackerService {
 
       // 读取封装后 APK + 计算 hash
       const packedApk = await fs.readFile(packedPath);
-      const packedApkHash = crypto
-        .createHash('sha256')
-        .update(packedApk)
-        .digest('hex');
+      const packedApkHash = crypto.createHash('sha256').update(packedApk).digest('hex');
 
       // 自动入白名单(封装后 APK hash)
       await this.prisma.application.update({
@@ -183,10 +230,7 @@ export class PackerService {
       });
 
       // keystore 指纹(不存密码)
-      const keystoreFingerprint = crypto
-        .createHash('sha256')
-        .update(keystoreBuffer)
-        .digest('hex');
+      const keystoreFingerprint = crypto.createHash('sha256').update(keystoreBuffer).digest('hex');
 
       // 审计日志(七锁全过)
       await this.packerLog.record({
@@ -222,6 +266,9 @@ export class PackerService {
         packedApk,
         packedApkHash,
         injectedDexHash,
+        injectedDefenderDexHash,
+        injectedSoHash,
+        defenderSoName,
         keystoreFingerprint,
       };
     } finally {
@@ -239,11 +286,10 @@ export class PackerService {
       const { execFile } = await import('child_process');
       const { promisify } = await import('util');
       const execFileAsync = promisify(execFile);
-      const { stdout } = await execFileAsync(
-        apksignerPath,
-        ['verify', '--print-certs', apkPath],
-        { timeout: 30_000, maxBuffer: 1024 * 1024 },
-      );
+      const { stdout } = await execFileAsync(apksignerPath, ['verify', '--print-certs', apkPath], {
+        timeout: 30_000,
+        maxBuffer: 1024 * 1024,
+      });
       const match = stdout.match(/SHA-256 digest:\s*([0-9a-fA-F:]+)/i);
       if (!match) {
         throw new Error('signature SHA-256 not found');
@@ -347,5 +393,14 @@ export class PackerService {
     } catch (e) {
       this.logger.error(`清理隔离目录失败: ${(e as Error).message}`);
     }
+  }
+
+  /**
+   * 从 dex 文件名提取编号(classes.dex -> 1, classes2.dex -> 2)
+   */
+  private parseDexNumber(dexName: string): number {
+    const m = dexName.match(/classes(\d*)\.dex/);
+    if (!m) return 1;
+    return m[1] ? parseInt(m[1], 10) : 1;
   }
 }

@@ -1,9 +1,4 @@
-import {
-  Injectable,
-  ForbiddenException,
-  BadRequestException,
-  Logger,
-} from '@nestjs/common';
+import { Injectable, ForbiddenException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 /**
@@ -35,23 +30,45 @@ export const XCJ_AUTH_SDK_DEX_WHITELIST: string[] = [
 ];
 
 /**
+ * xcj-defender-sdk 编译产物 classes-defender.dex 的 SHA-256 白名单(ADR 0088)
+ *
+ * 与 XCJ_AUTH_SDK_DEX_WHITELIST 独立,每次 defender-sdk 版本更新时同步。
+ * 当前为空(MVP 阶段,首次编译后填入)
+ */
+export const XCJ_DEFENDER_SDK_DEX_WHITELIST: string[] = [
+  // defender-sdk classes-defender.dex SHA-256(待首次编译后填入)
+];
+
+/**
+ * xcj-defender-sdk .aar 的 SHA-256 白名单(ADR 0088)
+ *
+ * 锁 2 扩展:defender-sdk .so 来自固定 .aar,校验 .aar 整体 hash。
+ * 与 dex 白名单独立(.aar 含 .so + classes.jar,整体校验更严格)。
+ */
+export const XCJ_DEFENDER_SDK_AAR_WHITELIST: string[] = [
+  // defender-sdk .aar SHA-256(待首次编译后填入)
+];
+
+/**
  * Manifest 允许修改的标签白名单(锁 3)
  *
  * 仅允许:
  *  - <application android:name="...">(改为 XcjApplication 或委托)
- *  - <meta-data android:name="xcj.*" />(SDK 配置)
+ *  - <meta-data android:name="xcj.*" />(SDK 配置,含 xcj.defender.*)
  *  - <uses-permission android:name="android.permission.INTERNET" />(SDK 必需)
+ *  - <provider android:name="com.xcj.defender.DefenderInitProvider" />(ADR 0088 扩展)
  *
  * 不允许:
- *  - 修改 Activity/Service/Receiver/Provider 类名或属性
- *  - 添加新组件
+ *  - 修改 Activity/Service/Receiver 类名或属性
+ *  - 添加新组件(除 DefenderInitProvider 外)
  *  - 修改 intent-filter
  *  - 修改 UI 属性(theme/label/icon)
  */
 export const MANIFEST_ALLOWED_CHANGES = {
   applicationName: true, // 改 <application android:name>
-  metaData: /^xcj\./, // <meta-data android:name="xcj.*">
+  metaData: /^xcj\./, // <meta-data android:name="xcj.*">(含 xcj.defender.*)
   permissions: ['android.permission.INTERNET'], // 允许添加的权限
+  defenderProvider: 'com.xcj.defender.DefenderInitProvider', // ADR 0088 扩展:允许注册 DefenderInitProvider
 };
 
 @Injectable()
@@ -95,9 +112,7 @@ export class PackerValidators {
       });
     }
     const normalized = signatureHash.toLowerCase();
-    const matched = app.signHashAllowList.some(
-      (h) => h.toLowerCase() === normalized,
-    );
+    const matched = app.signHashAllowList.some((h) => h.toLowerCase() === normalized);
     if (!matched) {
       throw new ForbiddenException('SIGNATURE_MISMATCH', {
         cause: 'apk signature hash not in developer allowlist (锁 1)',
@@ -121,12 +136,32 @@ export class PackerValidators {
       return;
     }
     const normalized = injectedDexHash.toLowerCase();
-    const matched = XCJ_AUTH_SDK_DEX_WHITELIST.some(
-      (h) => h.toLowerCase() === normalized,
-    );
+    const matched = XCJ_AUTH_SDK_DEX_WHITELIST.some((h) => h.toLowerCase() === normalized);
     if (!matched) {
       throw new ForbiddenException('CONTENT_LOCK_FAILED', {
         cause: 'injected dex hash not in xcj-auth-sdk whitelist (锁 2 内容锁定)',
+      });
+    }
+  }
+
+  /**
+   * 锁 2 扩展:defender-sdk dex 内容锁定(ADR 0088)
+   *
+   * 与 validateContentLock 独立,校验 classes-defender.dex 的 SHA-256。
+   *
+   * @param injectedDefenderDexHash 注入的 classes-defender.dex SHA-256
+   * @throws ForbiddenException 注入内容不在 defender 白名单
+   */
+  validateDefenderContentLock(injectedDefenderDexHash: string): void {
+    if (XCJ_DEFENDER_SDK_DEX_WHITELIST.length === 0) {
+      this.logger.warn('锁 2 扩展:defender dex 白名单为空,跳过校验(MVP,待首次编译后填入)');
+      return;
+    }
+    const normalized = injectedDefenderDexHash.toLowerCase();
+    const matched = XCJ_DEFENDER_SDK_DEX_WHITELIST.some((h) => h.toLowerCase() === normalized);
+    if (!matched) {
+      throw new ForbiddenException('DEFENDER_CONTENT_LOCK_FAILED', {
+        cause: 'injected defender dex hash not in xcj-defender-sdk whitelist (锁 2 扩展)',
       });
     }
   }
@@ -141,10 +176,16 @@ export class PackerValidators {
     applicationNameChanged: boolean;
     metaDataAdded: string[];
     permissionsAdded: string[];
+    defenderProviderAdded: boolean;
     otherChanges: string[];
   }): void {
-    const { applicationNameChanged, metaDataAdded, permissionsAdded, otherChanges } =
-      manifestChanges;
+    const {
+      applicationNameChanged,
+      metaDataAdded,
+      permissionsAdded,
+      defenderProviderAdded,
+      otherChanges,
+    } = manifestChanges;
 
     // 不允许其他修改
     if (otherChanges.length > 0) {
@@ -153,7 +194,7 @@ export class PackerValidators {
       });
     }
 
-    // Meta-data 必须以 xcj. 开头
+    // Meta-data 必须以 xcj. 开头(含 xcj.defender.*)
     const invalidMeta = metaDataAdded.filter((m) => !MANIFEST_ALLOWED_CHANGES.metaData.test(m));
     if (invalidMeta.length > 0) {
       throw new ForbiddenException('ENTRY_LOCK_FAILED', {
@@ -173,6 +214,8 @@ export class PackerValidators {
 
     // applicationNameChanged 允许(委托模式)
     void applicationNameChanged;
+    // defenderProviderAdded 允许(ADR 0088 扩展,仅 DefenderInitProvider)
+    void defenderProviderAdded;
   }
 
   /**
@@ -213,8 +256,14 @@ export class PackerValidators {
   validateDataLock(sdkConfig: Record<string, unknown>): void {
     const allowedKeys = ['appId', 'serverUrl', 'offlineCacheDays', 'oaidEnabled'];
     const sensitiveKeys = [
-      'contacts', 'location', 'sms', 'callLog', 'phone',
-      'imei', 'serialNumber', 'macAddress',
+      'contacts',
+      'location',
+      'sms',
+      'callLog',
+      'phone',
+      'imei',
+      'serialNumber',
+      'macAddress',
     ];
 
     for (const key of Object.keys(sdkConfig)) {
