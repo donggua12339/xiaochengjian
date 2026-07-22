@@ -26,6 +26,7 @@
 #include <fcntl.h>
 #include <signal.h>
 #include <sys/mman.h>
+#include <dlfcn.h>
 #include <android/log.h>
 
 #define TAG "DefenderSelfVerify"
@@ -181,6 +182,18 @@ static const char EXPECTED_TEXT_HASH[65] __attribute__((section(".rodata"))) =
  * @return 0=成功 / -1=失败
  */
 static int find_text_section(unsigned long *base_out, unsigned long *size_out) {
+    /* 用 dladdr 获取当前 .so 的路径(兼容 30 池随机名,如 libsec_helper.so) */
+    Dl_info info;
+    if (dladdr((void *)find_text_section, &info) == 0) {
+        LOGE("dladdr 失败,无法获取 .so 路径");
+        return -1;
+    }
+
+    /* 提取 .so basename(不含目录路径) */
+    const char *so_basename = strrchr(info.dli_fname, '/');
+    so_basename = so_basename ? so_basename + 1 : info.dli_fname;
+    LOGI("当前 .so: %s (basename: %s)", info.dli_fname, so_basename);
+
     int fd = open("/proc/self/maps", O_RDONLY);
     if (fd < 0) {
         LOGE("open /proc/self/maps 失败");
@@ -191,10 +204,6 @@ static int find_text_section(unsigned long *base_out, unsigned long *size_out) {
     char line[512];
     int line_pos = 0;
     int found = 0;
-
-    /* 读 maps 找 "xcj_defender" 或 "libsec_helper" 等(但名字随机,改为找 r-xp 段) */
-    /* 简化:找第一个含 "defender" 或当前 .so 路径的 r-xp 段 */
-    /* 正式版:用 dladdr() 获取当前函数地址,反查所属 .so */
 
     ssize_t n;
     while ((n = read(fd, buf, sizeof(buf) - 1)) > 0) {
@@ -209,10 +218,8 @@ static int find_text_section(unsigned long *base_out, unsigned long *size_out) {
                     unsigned long start, end;
                     char perms[8];
                     if (sscanf(line, "%lx-%lx %s", &start, &end, perms) == 3) {
-                        /* 检查是否是本 .so(通过路径含 defender 或 so 名) */
-                        /* 简化:找路径含 "defender" 的段 */
-                        if (strstr(line, "defender") != NULL ||
-                            strstr(line, "xcj_defender") != NULL) {
+                        /* 用 dladdr 获取的 basename 匹配(兼容 30 池随机名) */
+                        if (strstr(line, so_basename) != NULL) {
                             *base_out = start;
                             *size_out = end - start;
                             found = 1;
@@ -231,7 +238,7 @@ static int find_text_section(unsigned long *base_out, unsigned long *size_out) {
     close(fd);
 
     if (!found) {
-        LOGE("未找到 defender .so 的 .text 段");
+        LOGE("未找到 .so 的 .text 段(basename: %s)", so_basename);
         return -1;
     }
 

@@ -388,10 +388,20 @@ static int check_overlayfs(void) {
     if (read_file("/proc/self/mounts", buf, sizeof(buf)) != 0) {
         return 0;
     }
-    /* Android 原生不用 overlayfs,出现 overlay = 高度可疑 */
+    /* Android 12+ 用 overlayfs 做灰度更新,直接匹配 "overlay" 会误报。
+     * 只检测 /system 或 /vendor 的 overlay(正常灰度更新不涉及,
+     * APatch/Shamiko 用 overlay 隐藏 /system 修改) */
     if (strstr(buf, "overlay") != NULL) {
-        LOGE("检测到 overlayfs 挂载(可能 APatch/Shamiko)");
-        return 1;
+        char *line = strtok(buf, "\n");
+        while (line) {
+            if (strstr(line, "overlay") != NULL &&
+                (strstr(line, " /system ") != NULL || strstr(line, " /vendor ") != NULL)) {
+                LOGE("检测到 /system 或 /vendor 的 overlayfs 挂载(可能 APatch/Shamiko)");
+                return 1;
+            }
+            line = strtok(NULL, "\n");
+        }
+        LOGW("检测到非 /system overlay,忽略(可能 Android 12+ 灰度更新)");
     }
     return 0;
 }

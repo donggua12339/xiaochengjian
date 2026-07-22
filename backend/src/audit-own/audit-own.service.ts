@@ -1,9 +1,4 @@
-import {
-  Injectable,
-  BadRequestException,
-  Logger,
-  PayloadTooLargeException,
-} from '@nestjs/common';
+import { Injectable, BadRequestException, Logger, PayloadTooLargeException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
 import * as fs from 'fs/promises';
@@ -140,10 +135,7 @@ export class AuditOwnService {
 
     // 校验 2:签名 hash 比对
     try {
-      await this.validators.validateSignatureHash(
-        app.signHashAllowList,
-        signatureHash,
-      );
+      await this.validators.validateSignatureHash(app.signHashAllowList, signatureHash);
     } catch (e) {
       await this.auditLog.record({
         developerId,
@@ -355,10 +347,7 @@ export class AuditOwnService {
 
       // 6. 读取重签后 APK,计算新 hash
       const resignedApk = await fs.readFile(resignedPath);
-      const newHash = crypto
-        .createHash('sha256')
-        .update(resignedApk)
-        .digest('hex');
+      const newHash = crypto.createHash('sha256').update(resignedApk).digest('hex');
 
       // 7. 自动入白名单(更新 application.signHashAllowList)
       await this.prisma.application.update({
@@ -371,10 +360,7 @@ export class AuditOwnService {
       });
 
       // 8. 计算 keystore 指纹(SHA-256,不存密码)
-      const keystoreFingerprint = crypto
-        .createHash('sha256')
-        .update(keystoreBuffer)
-        .digest('hex');
+      const keystoreFingerprint = crypto.createHash('sha256').update(keystoreBuffer).digest('hex');
 
       // 9. 审计日志(status=RESIGN)
       await this.auditLog.record({
@@ -469,11 +455,13 @@ export class AuditOwnService {
       if (current.length >= 3) strings.push(current);
 
       // 找匹配 Java 包名格式的字符串(至少两段 a.b.c)
-      const packagePattern = /^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$/i;
-      for (const s of strings) {
-        if (packagePattern.test(s) && s.length <= 255) {
-          return s;
-        }
+      // 去掉 i 标志:包名通常全小写,排除含大写的类名(如 com.example.app.MainActivity)
+      const packagePattern = /^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$/;
+      const candidates = strings.filter((s) => packagePattern.test(s) && s.length <= 255);
+      if (candidates.length > 0) {
+        // 取最短的(包名比 Activity 类名短,如 com.example.app < com.example.app.MainActivity)
+        candidates.sort((a, b) => a.length - b.length);
+        return candidates[0];
       }
 
       throw new Error('package name not found in AndroidManifest');
@@ -558,8 +546,7 @@ export class AuditOwnService {
         debuggable: null,
         backupEnabled: null,
       },
-      note:
-        'MVP report: full JADX/AXMLPrinter2/aapt2/dexlib2 integration pending production deployment',
+      note: 'MVP report: full JADX/AXMLPrinter2/aapt2/dexlib2 integration pending production deployment',
     };
   }
 

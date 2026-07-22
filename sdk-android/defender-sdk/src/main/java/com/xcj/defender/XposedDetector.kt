@@ -98,9 +98,12 @@ class XposedDetector(private val context: Context) {
     private fun checkMountNamespace(): Boolean {
         return try {
             val mounts = File("/proc/self/mounts").readText()
-            val overlayCount = mounts.lines().count { it.contains("overlay") }
-            if (overlayCount > 0) {
-                Log.e(TAG, "检测到 overlayfs 挂载($overlayCount 个,可能 Zygisk/Shamiko)")
+            // Android 12+ 用 overlayfs 做灰度更新,只检测 /system 或 /vendor 的 overlay
+            val suspiciousOverlay = mounts.lines().any {
+                it.contains("overlay") && (it.contains(" /system ") || it.contains(" /vendor "))
+            }
+            if (suspiciousOverlay) {
+                Log.e(TAG, "检测到 /system 或 /vendor 的 overlayfs 挂载(可能 Zygisk/Shamiko)")
                 true
             } else {
                 false
