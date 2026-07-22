@@ -42,6 +42,10 @@ object DefenderResponse {
 
         // 2. 后台线程 kill(防阻塞主线程,延迟在 native 层 usleep)
         Thread {
+            // 等待 Toast 显示(主线程 post 需要时间,防止 _exit 前 Toast 未显示)
+            if (config.showToast) {
+                Thread.sleep(500)
+            }
             Log.e(
                 TAG,
                 "kill 响应触发: method=${config.method}, delay=[${config.delayMinMs}, ${config.delayMaxMs}] ms"
