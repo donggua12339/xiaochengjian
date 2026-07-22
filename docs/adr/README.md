@@ -135,6 +135,7 @@
 - [ADR 0082-B · 腾讯乐固自检适配器(V1.5a,优先实现)](0082-b-tencent-legu-self-audit-adapter.md) - **proposed**(合规核查已通过,2026-07-21),libshell.so 检测,协议环境宽松
 - [ADR 0082-C · 爱加密自检适配器(V2 评估)](0082-c-ijiami-self-audit-adapter.md) - **draft**(暂不开发),V2 评估
 - [ADR 0085 · 加固 APK 与 xcj-auth-sdk 的兼容性边界分析](0085-hardened-apk-sdk-compatibility-boundary.md) - **accepted**(边界分析,无代码实现),技术死锁形式化证明 + 4 条合规替代路径
+- [ADR 0087 · 深度安全审计与漏洞赏金赋能计划](0087-deep-security-audit-and-bug-bounty.md) - **proposed**(设计阶段),模块一:隐私合规+供应链审计/模块二:漏洞赏金辅助研究,全程只读
 
 ## 模板
 
