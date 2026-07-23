@@ -36,6 +36,16 @@ set(DEFENDER_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/integrity.c
     ${CMAKE_CURRENT_SOURCE_DIR}/anti_dump.c
     ${CMAKE_CURRENT_SOURCE_DIR}/defender_response.c
+    # 方案 A + B + C(v2.1.1 整改)
+    ${CMAKE_CURRENT_SOURCE_DIR}/mmap_reader.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/signing_block_parser.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/hash_calculator.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/hash_storage.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/self_integrity.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/dex_integrity.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/trigger_scheduler.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/validator_core.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/server_gate.c
 )
 
 # ============= 构建共享库 =============
@@ -49,6 +59,7 @@ target_link_libraries(xcj_defender
     log
     android
     z
+    dl
 )
 
 # ============= include 目录 =============

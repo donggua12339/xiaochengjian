@@ -228,6 +228,69 @@ defender_start_anti_dump_jni(JNIEnv *env, jobject thiz) {
     anti_dump_start_monitor();
 }
 
+/* ============= v2.1.1 方案 A+B+C 综合校验 ============= */
+
+extern int validator_core_check_all(const char *apk_path, const char *expected_dex_crcs);
+extern void validator_core_init_guard(const char *apk_path, const char *expected_dex_crcs);
+extern int server_gate_has_valid_token(void);
+
+/**
+ * Java: DefenderNative.validatorCoreCheck(apkPath, expectedDexCrcs) -> int
+ *
+ * 综合校验:方案 A(签名 mmap+V2)+ 方案 B(SO 自校验 + DEX CRC)
+ *
+ * @return 0=通过 / 1=检测到篡改 / -1=内部错误
+ */
+JNIEXPORT jint JNICALL
+validator_core_check_jni(JNIEnv *env, jobject thiz,
+    jstring apk_path_j, jstring expected_dex_crcs_j
+) {
+    (void)thiz;
+    const char *apk_path = apk_path_j ? (*env)->GetStringUTFChars(env, apk_path_j, NULL) : NULL;
+    const char *expected_crcs = expected_dex_crcs_j
+        ? (*env)->GetStringUTFChars(env, expected_dex_crcs_j, NULL) : NULL;
+
+    int result = validator_core_check_all(apk_path, expected_crcs);
+
+    if (apk_path_j) (*env)->ReleaseStringUTFChars(env, apk_path_j, apk_path);
+    if (expected_dex_crcs_j) (*env)->ReleaseStringUTFChars(env, expected_dex_crcs_j, expected_crcs);
+    return (jint)result;
+}
+
+/**
+ * Java: DefenderNative.validatorInitGuard(apkPath, expectedDexCrcs) -> void
+ *
+ * 初始化守护线程(周期性校验)
+ */
+JNIEXPORT void JNICALL
+validator_init_guard_jni(JNIEnv *env, jobject thiz,
+    jstring apk_path_j, jstring expected_dex_crcs_j
+) {
+    (void)thiz;
+    const char *apk_path = apk_path_j ? (*env)->GetStringUTFChars(env, apk_path_j, NULL) : NULL;
+    const char *expected_crcs = expected_dex_crcs_j
+        ? (*env)->GetStringUTFChars(env, expected_dex_crcs_j, NULL) : NULL;
+
+    validator_core_init_guard(apk_path, expected_crcs);
+
+    if (apk_path_j) (*env)->ReleaseStringUTFChars(env, apk_path_j, apk_path);
+    if (expected_dex_crcs_j) (*env)->ReleaseStringUTFChars(env, expected_dex_crcs_j, expected_crcs);
+}
+
+/**
+ * Java: DefenderNative.serverGateHasValidToken() -> int
+ *
+ * 检查服务端 gate token 是否有效(方案 C)
+ *
+ * @return 1=有效 / 0=无效或过期
+ */
+JNIEXPORT jint JNICALL
+server_gate_has_valid_token_jni(JNIEnv *env, jobject thiz) {
+    (void)env;
+    (void)thiz;
+    return (jint)server_gate_has_valid_token();
+}
+
 /* ============= JNI_OnLoad ============= */
 
 /**
@@ -265,6 +328,9 @@ JNI_OnLoad(JavaVM *vm, void *reserved) {
         {"startAntiDumpMonitor",  "()V",                                                    (void *)defender_start_anti_dump_jni},
         {"defenderKill",          "(IILjava/lang/String;)V",                                (void *)defender_kill_jni},
         {"defenderWarn",          "(Ljava/lang/String;I)I",                                 (void *)defender_warn_throttle_jni},
+        {"validatorCoreCheck",    "(Ljava/lang/String;Ljava/lang/String;)I",                (void *)validator_core_check_jni},
+        {"validatorInitGuard",    "(Ljava/lang/String;Ljava/lang/String;)V",                (void *)validator_init_guard_jni},
+        {"serverGateHasValidToken", "()I",                                                    (void *)server_gate_has_valid_token_jni},
     };
 
     jint rc = (*env)->RegisterNatives(env, clazz, methods, sizeof(methods) / sizeof(methods[0]));

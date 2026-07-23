@@ -152,4 +152,30 @@ object DefenderNative {
      * @return 1=应该上报(首次或已过限流期)/ 0=限流中跳过
      */
     external fun defenderWarn(violationKey: String, throttleMs: Int): Int
+
+    // ============= v2.1.1 方案 A+B+C 综合校验 =============
+
+    /**
+     * 综合校验:方案 A(签名 mmap+V2)+ 方案 B(SO 自校验 + DEX CRC)
+     *
+     * @param apkPath APK 路径
+     * @param expectedDexCrcs 预期 DEX CRC JSON(可 null)
+     * @return 0=通过 / 1=检测到篡改 / -1=内部错误
+     */
+    external fun validatorCoreCheck(apkPath: String, expectedDexCrcs: String?): Int
+
+    /**
+     * 初始化守护线程(周期性校验,5-15s 随机间隔)
+     *
+     * @param apkPath APK 路径
+     * @param expectedDexCrcs 预期 DEX CRC JSON(可 null)
+     */
+    external fun validatorInitGuard(apkPath: String, expectedDexCrcs: String?)
+
+    /**
+     * 检查服务端 gate token 是否有效(方案 C)
+     *
+     * @return 1=有效 / 0=无效或过期
+     */
+    external fun serverGateHasValidToken(): Int
 }

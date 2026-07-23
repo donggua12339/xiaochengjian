@@ -429,7 +429,7 @@ static int base64_decode(const char *in, unsigned char *out, size_t *out_len) {
  *
  * @return 0=成功(需 free *data_out)/ -1=失败
  */
-static int read_apk_entry(const char *apk_path, const char *entry_name,
+int read_apk_entry(const char *apk_path, const char *entry_name,
                           unsigned char **data_out, size_t *size_out) {
     int fd = ic_openat(apk_path, 0);
     if (fd < 0) return -1;

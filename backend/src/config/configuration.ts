@@ -126,6 +126,13 @@ export class AppConfig {
   // defender-sdk classes-defender.dex 路径(预编译,用于 dex 注入)
   // 未配则跳过 defender dex 注入(仅 .so + config)
   defenderDexPath?: string;
+
+  // ============= Integrity(方案 C 服务端 gate)=============
+  // token 签名密钥(HMAC-SHA256,生产环境必须 32+ 字符)
+  integrityTokenSecret?: string;
+  // RSA 私钥(PEM,解密客户端用公钥加密的签名哈希)
+  // 未配则开发模式直接 base64 解码(便于测试)
+  integrityRsaPrivateKey?: string;
 }
 
 export const appConfig = (): AppConfig => ({
@@ -175,6 +182,9 @@ export const appConfig = (): AppConfig => ({
   // defender-sdk(ADR 0088,可选,未配则 defender 注入不可用)
   defenderAarPath: process.env.DEFENDER_AAR_PATH || undefined,
   defenderDexPath: process.env.DEFENDER_DEX_PATH || undefined,
+  // Integrity(方案 C 服务端 gate)
+  integrityTokenSecret: process.env.INTEGRITY_TOKEN_SECRET || undefined,
+  integrityRsaPrivateKey: process.env.INTEGRITY_RSA_PRIVATE_KEY || undefined,
 });
 
 export const validate = (_raw: unknown): AppConfig => {
