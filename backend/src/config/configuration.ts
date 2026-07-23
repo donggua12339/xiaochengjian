@@ -133,6 +133,8 @@ export class AppConfig {
   // RSA 私钥(PEM,解密客户端用公钥加密的签名哈希)
   // 未配则开发模式直接 base64 解码(便于测试)
   integrityRsaPrivateKey?: string;
+  // RSA 私钥文件路径(PEM,docker-compose 挂载,优先于 integrityRsaPrivateKey)
+  integrityRsaPrivateKeyFile?: string;
 }
 
 export const appConfig = (): AppConfig => ({
@@ -185,6 +187,7 @@ export const appConfig = (): AppConfig => ({
   // Integrity(方案 C 服务端 gate)
   integrityTokenSecret: process.env.INTEGRITY_TOKEN_SECRET || undefined,
   integrityRsaPrivateKey: process.env.INTEGRITY_RSA_PRIVATE_KEY || undefined,
+  integrityRsaPrivateKeyFile: process.env.INTEGRITY_RSA_PRIVATE_KEY_FILE || undefined,
 });
 
 export const validate = (_raw: unknown): AppConfig => {

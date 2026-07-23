@@ -103,6 +103,11 @@ services:
       # defender-sdk(ADR 0088,可选,未配则 defender 注入不可用)
       DEFENDER_AAR_PATH: /app/assets/defender-sdk/xcj-defender-sdk-v1.0.0.aar
       DEFENDER_DEX_PATH: /app/assets/defender-sdk/classes-defender-v1.0.0.dex
+      # Integrity(方案 C 服务端 gate,ADR 0088 v2.1.1)
+      # token 签名密钥(HMAC-SHA256,生产必须 32+ 字符)
+      INTEGRITY_TOKEN_SECRET: ${INTEGRITY_TOKEN_SECRET}
+      # RSA 私钥文件路径(PEM,挂载自 backend/keys/integrity/)
+      INTEGRITY_RSA_PRIVATE_KEY_FILE: /app/keys/integrity/integrity_private.pem
       # OAuth(ADR 0074,可选)
       GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
       GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}

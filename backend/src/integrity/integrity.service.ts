@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
+import * as fs from 'fs';
 import { PrismaService } from '../prisma/prisma.service';
 
 /**
@@ -147,14 +148,34 @@ export class IntegrityService {
   /**
    * 解密客户端用 RSA 公钥加密的签名哈希
    *
+   * 支持两种私钥配置方式:
+   *  1. 环境变量 INTEGRITY_RSA_PRIVATE_KEY(PEM 内容,多行用 \n 转义)
+   *  2. 文件路径 INTEGRITY_RSA_PRIVATE_KEY_FILE(docker-compose 挂载,推荐)
+   *
    * 简化版:假设 encryptedHash 是 base64 编码的 RSA-2048 密文。
-   * 生产环境需配置 RSA 私钥(integrityRsaPrivateKey)。
+   * 开发模式(两者都未配):直接 base64 解码,便于测试。
    */
   private decryptHash(encryptedHash: string): string {
-    const privateKeyPem = this.configService.get<string>('integrityRsaPrivateKey');
+    let privateKeyPem: string | undefined;
+
+    // 优先从文件读(docker-compose 挂载)
+    const keyFile = this.configService.get<string>('integrityRsaPrivateKeyFile');
+    if (keyFile) {
+      try {
+        privateKeyPem = fs.readFileSync(keyFile, 'utf8');
+      } catch (e) {
+        this.logger.warn(`读取 RSA 私钥文件失败: ${keyFile} - ${(e as Error).message}`);
+      }
+    }
+
+    // 回退到环境变量
     if (!privateKeyPem) {
-      // 开发阶段:直接用 base64(未加密),便于测试
-      this.logger.warn('integrityRsaPrivateKey 未配置,开发模式直接 base64 解码');
+      privateKeyPem = this.configService.get<string>('integrityRsaPrivateKey');
+    }
+
+    if (!privateKeyPem) {
+      // 开发阶段:直接 base64(未加密),便于测试
+      this.logger.warn('RSA 私钥未配置,开发模式直接 base64 解码');
       return Buffer.from(encryptedHash, 'base64').toString('utf8');
     }
 
