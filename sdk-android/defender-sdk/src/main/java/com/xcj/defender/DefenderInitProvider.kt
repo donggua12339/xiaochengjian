@@ -167,6 +167,48 @@ class DefenderInitProvider : ContentProvider() {
                 Log.i(TAG, "[Batch 2] SignatureVerifier 通过")
             }
         }
+
+        // v2.1.1 方案 A+B+C 综合校验(mmap + V2 自解析 + 三角校验 + 服务端 gate)
+        runV211Validator(ctx, config)
+    }
+
+    /**
+     * v2.1.1 方案 A+B+C 综合校验
+     *
+     * 方案 A:mmap + V2 Signing Block 自解析(对抗 NP IO 重定向)
+     * 方案 B:SO 自校验 + DEX CRC(对抗 MT IDA Pro 改 SO + 修改 DEX)
+     * 方案 C:服务端 gate(守护线程周期性校验 + token)
+     */
+    private fun runV211Validator(ctx: Context, config: DefenderConfig) {
+        if (!config.signatureVerify.enabled) return
+
+        Log.i(TAG, "[v2.1.1] 方案 A+B+C 综合校验启动...")
+        try {
+            val apkPath = ctx.packageCodePath
+
+            // 综合校验(方案 A 签名 + 方案 B SO 自校验 + DEX CRC)
+            val result = DefenderNative.validatorCoreCheck(apkPath, null)
+            when (result) {
+                0 -> Log.i(TAG, "[v2.1.1] 综合校验通过")
+                1 -> {
+                    Log.e(TAG, "[v2.1.1] 综合校验失败(检测到篡改)")
+                    applyResponse(ctx, config.signatureVerify.onViolation, config, "v211_tampered", "完整性校验失败")
+                }
+                else -> Log.w(TAG, "[v2.1.1] 综合校验内部错误(非致命)")
+            }
+
+            // 启动守护线程(周期性校验,5-15s 随机间隔)
+            DefenderNative.validatorInitGuard(apkPath, null)
+            Log.i(TAG, "[v2.1.1] 守护线程已启动")
+
+            // 方案 C:检查服务端 gate token(若配置了 serverUrl)
+            if (config.serverUrl.isNotEmpty()) {
+                val hasToken = DefenderNative.serverGateHasValidToken()
+                Log.i(TAG, "[v2.1.1] 服务端 gate token 状态: $hasToken")
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "[v2.1.1] 综合校验异常: ${e.message}")
+        }
     }
 
     /**
