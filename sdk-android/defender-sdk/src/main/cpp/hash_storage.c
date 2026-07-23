@@ -41,16 +41,19 @@
  *   3. 每段 XOR 0x5A 后写入对应 EMBEDDED_HASH_x
  *   4. 重新链接 SO(.rodata 不影响 .text,hash 不变)
  */
-/* volatile 防止编译器常量池合并/优化(确保 8 段独立存储在 .rodata)
- * 占位值 = i ^ 0x5A5A5A5A(i = 0..7,只影响最低字节) */
-static volatile uint32_t EMBEDDED_HASH_SEG_1 __attribute__((section(".rodata"))) = 0x5A5A5A5A;  /* 0 ^ key */
-static volatile uint32_t EMBEDDED_HASH_SEG_2 __attribute__((section(".rodata"))) = 0x5A5A5A5B;  /* 1 ^ key */
-static volatile uint32_t EMBEDDED_HASH_SEG_3 __attribute__((section(".rodata"))) = 0x5A5A5A58;  /* 2 ^ key */
-static volatile uint32_t EMBEDDED_HASH_SEG_4 __attribute__((section(".rodata"))) = 0x5A5A5A59;  /* 3 ^ key */
-static volatile uint32_t EMBEDDED_HASH_SEG_5 __attribute__((section(".rodata"))) = 0x5A5A5A5E;  /* 4 ^ key */
-static volatile uint32_t EMBEDDED_HASH_SEG_6 __attribute__((section(".rodata"))) = 0x5A5A5A5F;  /* 5 ^ key */
-static volatile uint32_t EMBEDDED_HASH_SEG_7 __attribute__((section(".rodata"))) = 0x5A5A5A5C;  /* 6 ^ key */
-static volatile uint32_t EMBEDDED_HASH_SEG_8 __attribute__((section(".rodata"))) = 0x5A5A5A5D;  /* 7 ^ key */
+/* used 属性防止编译器优化掉,数组避免相邻合并
+ * 占位值 = i ^ 0x5A5A5A5A(i = 0..7),小端字节序
+ * post-build 脚本写入真实 hash 后,8 段拼接成 32 字节 SHA-256 */
+static volatile uint32_t EMBEDDED_HASH[8] __attribute__((used, section(".data"))) = {
+    0x5A5A5A5A,  /* 0 ^ key */
+    0x5A5A5A5B,  /* 1 ^ key */
+    0x5A5A5A58,  /* 2 ^ key */
+    0x5A5A5A59,  /* 3 ^ key */
+    0x5A5A5A5E,  /* 4 ^ key */
+    0x5A5A5A5F,  /* 5 ^ key */
+    0x5A5A5A5C,  /* 6 ^ key */
+    0x5A5A5A5D,  /* 7 ^ key */
+};
 
 /* ============= 运行时拼接 ============= */
 
@@ -61,14 +64,9 @@ static volatile uint32_t EMBEDDED_HASH_SEG_8 __attribute__((section(".rodata")))
  * @return 0=成功 / -1=失败
  */
 int get_embedded_hash(uint8_t out_hash[32]) {
-    const volatile uint32_t *segs[8] = {
-        &EMBEDDED_HASH_SEG_1, &EMBEDDED_HASH_SEG_2, &EMBEDDED_HASH_SEG_3, &EMBEDDED_HASH_SEG_4,
-        &EMBEDDED_HASH_SEG_5, &EMBEDDED_HASH_SEG_6, &EMBEDDED_HASH_SEG_7, &EMBEDDED_HASH_SEG_8,
-    };
-
     for (int i = 0; i < 8; i++) {
         /* XOR 解码 */
-        uint32_t decoded = *segs[i] ^ 0x5A5A5A5A;
+        uint32_t decoded = EMBEDDED_HASH[i] ^ 0x5A5A5A5A;
         /* 写入 out_hash(小端) */
         out_hash[i * 4] = (uint8_t)(decoded & 0xff);
         out_hash[i * 4 + 1] = (uint8_t)((decoded >> 8) & 0xff);

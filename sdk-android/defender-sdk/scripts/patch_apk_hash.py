@@ -126,13 +126,16 @@ def patch_so_hash(so_path: str, apk_hash: bytes) -> None:
 
 
 def main():
-    if len(sys.argv) < 3:
-        print(f"用法: {sys.argv[0]} <libxcj_defender.so> <demo.apk>")
-        print(f"  计算 demo.apk 的受保护内容 hash,写入 .so 的 8 段占位符")
+    if len(sys.argv) < 4:
+        print(f"用法: {sys.argv[0]} <libxcj_defender.so> <demo.apk> <xcj-defender-sdk-release.aar>")
+        print(f"  1. 计算 demo.apk 的受保护内容 hash")
+        print(f"  2. 写入 .so 的 8 段占位符")
+        print(f"  3. 重新打包 .aar(把修改后的 .so 打包进去)")
         sys.exit(1)
 
     so_path = sys.argv[1]
     apk_path = sys.argv[2]
+    aar_path = sys.argv[3]
 
     with open(apk_path, 'rb') as f:
         apk_data = f.read()
@@ -140,8 +143,39 @@ def main():
     apk_hash = compute_apk_protected_hash(apk_data)
     print(f"APK 受保护内容 SHA-256: {apk_hash.hex()}")
 
+    # 写入 .so(build/intermediates 的 .so)
     patch_so_hash(so_path, apk_hash)
+
+    # 重新打包 .aar(把修改后的 .so 打包进去)
+    print(f"\n重新打包 .aar: {aar_path}")
+    import zipfile
+    import shutil
+    import tempfile
+
+    # 解压 .aar
+    with tempfile.TemporaryDirectory() as tmpdir:
+        with zipfile.ZipFile(aar_path, 'r') as z:
+            z.extractall(tmpdir)
+
+        # 复制修改后的 .so 到解压目录
+        for abi in ['arm64-v8a', 'armeabi-v7a']:
+            so_in_aar = os.path.join(tmpdir, f'jni/{abi}/libxcj_defender.so')
+            if os.path.exists(so_in_aar):
+                # 只对 arm64-v8a 写入 hash(armeabi-v7a 用相同 hash)
+                patch_so_hash(so_in_aar, apk_hash)
+                print(f"  已写入 {abi}/libxcj_defender.so")
+
+        # 重新打包 .aar
+        with zipfile.ZipFile(aar_path, 'w', zipfile.ZIP_DEFLATED) as z:
+            for root, dirs, files in os.walk(tmpdir):
+                for f in files:
+                    file_path = os.path.join(root, f)
+                    arcname = os.path.relpath(file_path, tmpdir)
+                    z.write(file_path, arcname)
+
+    print(f"已重新打包 .aar: {aar_path}")
 
 
 if __name__ == '__main__':
+    import os
     main()
