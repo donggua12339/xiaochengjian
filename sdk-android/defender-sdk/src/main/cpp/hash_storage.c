@@ -41,14 +41,16 @@
  *   3. 每段 XOR 0x5A 后写入对应 EMBEDDED_HASH_x
  *   4. 重新链接 SO(.rodata 不影响 .text,hash 不变)
  */
-static const uint32_t EMBEDDED_HASH_SEG_1 __attribute__((section(".rodata"))) = 0x5A5A5A5A;
-static const uint32_t EMBEDDED_HASH_SEG_2 __attribute__((section(".rodata"))) = 0x5A5A5A5A;
-static const uint32_t EMBEDDED_HASH_SEG_3 __attribute__((section(".rodata"))) = 0x5A5A5A5A;
-static const uint32_t EMBEDDED_HASH_SEG_4 __attribute__((section(".rodata"))) = 0x5A5A5A5A;
-static const uint32_t EMBEDDED_HASH_SEG_5 __attribute__((section(".rodata"))) = 0x5A5A5A5A;
-static const uint32_t EMBEDDED_HASH_SEG_6 __attribute__((section(".rodata"))) = 0x5A5A5A5A;
-static const uint32_t EMBEDDED_HASH_SEG_7 __attribute__((section(".rodata"))) = 0x5A5A5A5A;
-static const uint32_t EMBEDDED_HASH_SEG_8 __attribute__((section(".rodata"))) = 0x5A5A5A5A;
+/* volatile 防止编译器常量池合并/优化(确保 8 段独立存储在 .rodata)
+ * 占位值 = i ^ 0x5A5A5A5A(i = 0..7,只影响最低字节) */
+static volatile uint32_t EMBEDDED_HASH_SEG_1 __attribute__((section(".rodata"))) = 0x5A5A5A5A;  /* 0 ^ key */
+static volatile uint32_t EMBEDDED_HASH_SEG_2 __attribute__((section(".rodata"))) = 0x5A5A5A5B;  /* 1 ^ key */
+static volatile uint32_t EMBEDDED_HASH_SEG_3 __attribute__((section(".rodata"))) = 0x5A5A5A58;  /* 2 ^ key */
+static volatile uint32_t EMBEDDED_HASH_SEG_4 __attribute__((section(".rodata"))) = 0x5A5A5A59;  /* 3 ^ key */
+static volatile uint32_t EMBEDDED_HASH_SEG_5 __attribute__((section(".rodata"))) = 0x5A5A5A5E;  /* 4 ^ key */
+static volatile uint32_t EMBEDDED_HASH_SEG_6 __attribute__((section(".rodata"))) = 0x5A5A5A5F;  /* 5 ^ key */
+static volatile uint32_t EMBEDDED_HASH_SEG_7 __attribute__((section(".rodata"))) = 0x5A5A5A5C;  /* 6 ^ key */
+static volatile uint32_t EMBEDDED_HASH_SEG_8 __attribute__((section(".rodata"))) = 0x5A5A5A5D;  /* 7 ^ key */
 
 /* ============= 运行时拼接 ============= */
 
@@ -59,7 +61,7 @@ static const uint32_t EMBEDDED_HASH_SEG_8 __attribute__((section(".rodata"))) = 
  * @return 0=成功 / -1=失败
  */
 int get_embedded_hash(uint8_t out_hash[32]) {
-    const uint32_t *segs[8] = {
+    const volatile uint32_t *segs[8] = {
         &EMBEDDED_HASH_SEG_1, &EMBEDDED_HASH_SEG_2, &EMBEDDED_HASH_SEG_3, &EMBEDDED_HASH_SEG_4,
         &EMBEDDED_HASH_SEG_5, &EMBEDDED_HASH_SEG_6, &EMBEDDED_HASH_SEG_7, &EMBEDDED_HASH_SEG_8,
     };
@@ -74,13 +76,17 @@ int get_embedded_hash(uint8_t out_hash[32]) {
         out_hash[i * 4 + 3] = (uint8_t)((decoded >> 24) & 0xff);
     }
 
-    /* 检测占位值(全 0):说明 post-build 未写入真实哈希 */
+    /* 检测占位值(8 段解码后是 0,1,2,...,7):说明 post-build 未写入真实哈希 */
     int is_placeholder = 1;
-    for (int i = 0; i < 32; i++) {
-        if (out_hash[i] != 0) { is_placeholder = 0; break; }
+    for (int i = 0; i < 8; i++) {
+        uint32_t seg = (uint32_t)out_hash[i * 4] |
+                       ((uint32_t)out_hash[i * 4 + 1] << 8) |
+                       ((uint32_t)out_hash[i * 4 + 2] << 16) |
+                       ((uint32_t)out_hash[i * 4 + 3] << 24);
+        if (seg != (uint32_t)i) { is_placeholder = 0; break; }
     }
     if (is_placeholder) {
-        LOGW("预埋哈希为占位值(全 0),post-build 未写入真实哈希");
+        LOGW("预埋哈希为占位值(0,1,2,...,7),post-build 未写入真实哈希");
         return -1;
     }
 

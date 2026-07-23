@@ -61,33 +61,42 @@ static uint32_t compute_crc32(const uint8_t *data, size_t len) {
 /* 占位值 0,post-build 脚本计算真实 .text CRC 后覆盖 */
 static const uint32_t EMBEDDED_TEXT_CRC __attribute__((section(".rodata"))) = 0;
 
-/* ============= .text 段定位 ============= */
+/* ============= .text 段定位(主线程初始化时缓存) ============= */
+
+/* 缓存 .text 段基址与大小(由 self_integrity_init 在 JNI_OnLoad 主线程初始化) */
+static uintptr_t g_text_base = 0;
+static size_t g_text_size = 0;
+static int g_text_inited = 0;
 
 /**
- * 用 dladdr 获取当前 SO 的 .text 段
+ * 初始化 .text 段缓存(必须在主线程 JNI_OnLoad 时调用)
  *
- * @param out_base 输出:.text 起始地址
- * @param out_size 输出:.text 大小
- * @return 0=成功 / -1=失败
+ * 守护线程中 dladdr 可能失败(上下文问题),故在主线程提前缓存。
  */
-static int find_text_section(uintptr_t *out_base, size_t *out_size) {
+void self_integrity_init(void) {
+    if (g_text_inited) return;
+
     Dl_info info;
-    if (dladdr((void *)find_text_section, &info) == 0) {
-        LOGE("dladdr 失败");
-        return -1;
+    if (dladdr((void *)self_integrity_init, &info) == 0) {
+        LOGE("self_integrity_init: dladdr 失败");
+        return;
     }
 
-    const char *so_basename = strrchr(info.dli_fname, '/');
-    so_basename = so_basename ? so_basename + 1 : info.dli_fname;
+    /* dli_fbase 是 .so 的加载基址( ELF 头所在地址)。
+     * maps 中 .so 的第一个映射(最低地址,通常 r--p)起始 = dli_fbase。
+     * .text 段(r-xp)在基址之后,找该 .so 的 r-xp 段即可。 */
+    uintptr_t so_base = (uintptr_t)info.dli_fbase;
+    LOGI("self_integrity_init: .so 加载基址=0x%lx", (unsigned long)so_base);
 
-    /* 读 /proc/self/maps 找本 SO 的 r-xp 段(.text) */
     int fd = open("/proc/self/maps", O_RDONLY);
-    if (fd < 0) return -1;
+    if (fd < 0) return;
 
     char buf[8192];
-    char line[512];
+    char line[1024];
     int line_pos = 0;
     int found = 0;
+    uintptr_t text_start = 0, text_end = 0;
+    int in_this_so = 0;
 
     ssize_t n;
     while ((n = read(fd, buf, sizeof(buf) - 1)) > 0 && !found) {
@@ -95,14 +104,30 @@ static int find_text_section(uintptr_t *out_base, size_t *out_size) {
         for (int i = 0; i < n && !found; i++) {
             if (buf[i] == '\n' || line_pos >= (int)sizeof(line) - 1) {
                 line[line_pos] = '\0';
-                /* 找 r-xp 段(可执行)且属于本 SO */
-                if (strstr(line, " r-xp ") != NULL &&
-                    strstr(line, so_basename) != NULL) {
-                    uintptr_t start, end;
-                    if (sscanf(line, "%lx-%lx", (unsigned long *)&start, (unsigned long *)&end) == 2) {
-                        *out_base = start;
-                        *out_size = end - start;
-                        found = 1;
+
+                /* 解析行:start-end perms offset ... path */
+                uintptr_t start, end;
+                char perms[8];
+                if (sscanf(line, "%lx-%lx %7s", (unsigned long *)&start, (unsigned long *)&end, perms) == 3) {
+                    /* 找到 .so 基址对应的映射(起始地址 == so_base) */
+                    if (start == so_base) {
+                        in_this_so = 1;
+                    }
+
+                    /* 在本 .so 的映射范围内找 r-xp 段(.text) */
+                    if (in_this_so) {
+                        /* 检查是否还是同一个 .so(路径含 base.apk 或 .so 名) */
+                        char *path = strstr(line, "/");
+                        if (path && (strstr(path, "base.apk") || strstr(path, ".so"))) {
+                            if (perms[0] == 'r' && perms[2] == 'x') {
+                                text_start = start;
+                                text_end = end;
+                                found = 1;
+                            }
+                        } else {
+                            /* 路径变化,离开本 .so */
+                            in_this_so = 0;
+                        }
                     }
                 }
                 line_pos = 0;
@@ -112,7 +137,15 @@ static int find_text_section(uintptr_t *out_base, size_t *out_size) {
         }
     }
     close(fd);
-    return found ? 0 : -1;
+
+    if (found) {
+        g_text_base = text_start;
+        g_text_size = text_end - text_start;
+        g_text_inited = 1;
+        LOGI(".text 段缓存: base=0x%lx size=%zu", (unsigned long)g_text_base, g_text_size);
+    } else {
+        LOGE(".text 段查找失败(so_base=0x%lx)", (unsigned long)so_base);
+    }
 }
 
 /* ============= SO 自身完整性校验 ============= */
@@ -125,12 +158,17 @@ static int find_text_section(uintptr_t *out_base, size_t *out_size) {
 int self_integrity_check(void) {
     LOGI("=== SO 自身完整性校验(方案 B)===");
 
-    uintptr_t text_base = 0;
-    size_t text_size = 0;
-    if (find_text_section(&text_base, &text_size) != 0) {
-        LOGE("找不到 .text 段,跳过自校验(非致命)");
+    /* 用缓存的 .text 基址(主线程初始化时缓存,避免守护线程 dladdr 失败) */
+    if (!g_text_inited) {
+        self_integrity_init();
+    }
+    if (!g_text_inited || g_text_size == 0) {
+        LOGE("无 .text 段缓存,跳过自校验(非致命)");
         return -1;
     }
+
+    uintptr_t text_base = g_text_base;
+    size_t text_size = g_text_size;
     LOGI(".text 段: base=0x%lx size=%zu", (unsigned long)text_base, text_size);
 
     uint32_t actual_crc = compute_crc32((const uint8_t *)text_base, text_size);

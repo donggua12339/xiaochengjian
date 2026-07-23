@@ -233,6 +233,7 @@ defender_start_anti_dump_jni(JNIEnv *env, jobject thiz) {
 extern int validator_core_check_all(const char *apk_path, const char *expected_dex_crcs);
 extern void validator_core_init_guard(const char *apk_path, const char *expected_dex_crcs);
 extern int server_gate_has_valid_token(void);
+extern void self_integrity_init(void);
 
 /**
  * Java: DefenderNative.validatorCoreCheck(apkPath, expectedDexCrcs) -> int
@@ -300,6 +301,9 @@ JNIEXPORT jint JNICALL
 JNI_OnLoad(JavaVM *vm, void *reserved) {
     (void)reserved;
     LOGI("JNI_OnLoad: xcj_defender.so 已加载");
+
+    /* 主线程初始化 .text 段缓存(守护线程 dladdr 可能失败) */
+    self_integrity_init();
 
     JNIEnv *env = NULL;
     if ((*vm)->GetEnv(vm, (void **)&env, JNI_VERSION_1_6) != JNI_OK) {
