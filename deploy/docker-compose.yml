@@ -140,8 +140,8 @@ services:
     restart: unless-stopped
     depends_on: [backend, admin-web]
     ports:
-      - "80:80"
-      # - "443:443"  # HTTPS 需要证书,生产环境启用
+      - "8088:80"
+      # - "443:443"  # HTTPS 需要证书,生产环境启用(api.winmelon.cn)
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       # - ./nginx/certs:/etc/nginx/certs:ro  # HTTPS 证书

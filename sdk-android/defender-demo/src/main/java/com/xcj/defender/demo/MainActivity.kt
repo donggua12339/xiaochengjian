@@ -110,10 +110,10 @@ class MainActivity : AppCompatActivity() {
     private fun checkSignature(): Boolean {
         return try {
             val apkPath = packageCodePath
-            // demo 无预期 hash(传 null),D 层无 expected 时跳过
-            val result = DefenderNative.verifySignature(apkPath, null, null, null, null)
-            log("[SignatureVerifier] verifySignature 返回: $result (0=通过)")
-            result != 0
+            // v2.1.1 综合校验: 方案A(mmap+V2 hash) + 方案B(.text CRC + DEX CRC) + inner交叉验证
+            val result = DefenderNative.validatorCoreCheck(apkPath, null)
+            log("[SignatureVerifier] v2.1.1 validatorCoreCheck 返回: $result (0=通过, 1=篡改)")
+            result == 1
         } catch (e: Exception) {
             log("[SignatureVerifier] 异常: ${e.message}")
             false
