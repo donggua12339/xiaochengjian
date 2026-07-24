@@ -9,4 +9,10 @@ package com.xcj.defender
 object X4Native {
     /** L1 反注入综合检测(native 侧:注入 SO + 可执行段 + ptrace)。返回可疑计数,0=干净。 */
     external fun antiInjectCheck(): Int
+
+    /** L4 运行时完整性初始化(记录 libc 入口 CRC 基线等)。须在首次 check 前调用。 */
+    external fun integrityInit(apkPath: String)
+
+    /** L4 运行时完整性综合检测(libc 四入口 CRC + inline hook 指纹 + svc 签名块)。返回可疑计数,0=干净。 */
+    external fun integrityCheck(apkPath: String): Int
 }

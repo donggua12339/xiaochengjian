@@ -45,6 +45,14 @@ class DefenderTestApp : Application() {
         } catch (e: Throwable) {
             Log.e(TAG, "[X4-1] 检测失败: ${e.message}", e)
         }
+        /* X4-2 L4 运行时完整性验证(libc CRC + inline hook + svc 签名块) */
+        try {
+            com.xcj.defender.X4Native.integrityInit(packageCodePath)
+            val l4Score = com.xcj.defender.X4Native.integrityCheck(packageCodePath)
+            Log.i(TAG, "[X4-2] L4 完整性: score=$l4Score(0=干净)")
+        } catch (e: Throwable) {
+            Log.e(TAG, "[X4-2] 检测失败: ${e.message}", e)
+        }
     }
 
     companion object {
