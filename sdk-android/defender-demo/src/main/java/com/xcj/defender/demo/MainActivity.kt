@@ -40,6 +40,10 @@ class MainActivity : AppCompatActivity() {
             runAllChecks()
         }
 
+        findViewById<Button>(R.id.btn_verification).setOnClickListener {
+            startActivity(android.content.Intent(this, VerificationActivity::class.java))
+        }
+
         // 启动时自动检测
         runAllChecks()
     }

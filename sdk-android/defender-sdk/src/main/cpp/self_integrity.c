@@ -56,10 +56,22 @@ static uint32_t compute_crc32(const uint8_t *data, size_t len) {
     return crc ^ 0xFFFFFFFF;
 }
 
-/* ============= 预埋 .text CRC(占位) ============= */
+/* ============= 预埋 .text CRC + 偏移 + 大小(占位) ============= */
 
-/* 占位值 0,post-build 脚本计算真实 .text CRC 后覆盖 */
-static const uint32_t EMBEDDED_TEXT_CRC __attribute__((section(".rodata"))) = 0;
+/*
+ * post-build 脚本写入:.text CRC32 + .text 相对 load base 偏移 + .text 大小
+ * 占位值:0x5AC05AC0 / 0x5AC05AC1 / 0x5AC05AC2(便于搜索定位)
+ * 只校验纯 .text 段(排除 .plt/.rodata 等被 linker 重定位修改的段)
+ */
+#define TEXT_CRC_PLACEHOLDER   0x5AC05AC0
+#define TEXT_OFF_PLACEHOLDER   0x5AC05AC1
+#define TEXT_SIZE_PLACEHOLDER  0x5AC05AC2
+
+static volatile uint32_t EMBEDDED_TEXT_INFO[3] __attribute__((used, section(".data"))) = {
+    TEXT_CRC_PLACEHOLDER,   /* [0] .text CRC32 */
+    TEXT_OFF_PLACEHOLDER,   /* [1] .text 偏移(相对 load base / r-xp 起始) */
+    TEXT_SIZE_PLACEHOLDER,  /* [2] .text 大小 */
+};
 
 /* ============= .text 段定位(主线程初始化时缓存) ============= */
 
@@ -67,6 +79,10 @@ static const uint32_t EMBEDDED_TEXT_CRC __attribute__((section(".rodata"))) = 0;
 static uintptr_t g_text_base = 0;
 static size_t g_text_size = 0;
 static int g_text_inited = 0;
+
+/* .so 加载路径检测结果(防 SRPatch/LSPatch 路径重定向) */
+static int g_path_valid = -1;  /* -1=未检测 / 0=非法路径 / 1=合法路径 */
+static char g_so_path[512] = {0};
 
 /**
  * 初始化 .text 段缓存(必须在主线程 JNI_OnLoad 时调用)
@@ -87,6 +103,23 @@ void self_integrity_init(void) {
      * .text 段(r-xp)在基址之后,找该 .so 的 r-xp 段即可。 */
     uintptr_t so_base = (uintptr_t)info.dli_fbase;
     LOGI("self_integrity_init: .so 加载基址=0x%lx", (unsigned long)so_base);
+
+    /* 检测 .so 加载路径是否合法(防 SRPatch/LSPatch 路径重定向)
+     * 正常 APK 安装在 /data/app/ 下;
+     * SRPatch 从 /data/user/0/.../srpatch/base.apk 加载;
+     * LSPatch 从 /data/user/0/.../cache/lspatch/origin/xxx.apk 加载 */
+    if (info.dli_fname) {
+        strncpy(g_so_path, info.dli_fname, sizeof(g_so_path) - 1);
+        LOGI("self_integrity_init: .so 加载路径=%s", g_so_path);
+
+        if (strncmp(g_so_path, "/data/app/", 10) == 0) {
+            g_path_valid = 1;
+            LOGI("self_integrity_init: .so 路径合法(/data/app/)");
+        } else {
+            g_path_valid = 0;
+            LOGE("self_integrity_init: .so 路径异常! 非 /data/app/ 路径(疑似 SRPatch/LSPatch 重定向)");
+        }
+    }
 
     int fd = open("/proc/self/maps", O_RDONLY);
     if (fd < 0) return;
@@ -158,6 +191,12 @@ void self_integrity_init(void) {
 int self_integrity_check(void) {
     LOGI("=== SO 自身完整性校验(方案 B)===");
 
+    /* 路径合法性检测(防 SRPatch/LSPatch 路径重定向) */
+    if (g_path_valid == 0) {
+        LOGE(".so 从非标准路径加载: %s (SRPatch/LSPatch 重定向)", g_so_path);
+        return 1;
+    }
+
     /* 用缓存的 .text 基址(主线程初始化时缓存,避免守护线程 dladdr 失败) */
     if (!g_text_inited) {
         self_integrity_init();
@@ -167,25 +206,50 @@ int self_integrity_check(void) {
         return -1;
     }
 
-    uintptr_t text_base = g_text_base;
-    size_t text_size = g_text_size;
-    LOGI(".text 段: base=0x%lx size=%zu", (unsigned long)text_base, text_size);
-
-    uint32_t actual_crc = compute_crc32((const uint8_t *)text_base, text_size);
-    LOGI(".text 实际 CRC32: 0x%08x", actual_crc);
-
-    /* 预埋 CRC 为占位值 0 时跳过(post-build 未写入) */
-    if (EMBEDDED_TEXT_CRC == 0) {
-        LOGW("预埋 CRC 为占位值 0,跳过校验(开发阶段,运行 patch_text_hash.py 写入真实 CRC)");
-        return 0;
+    /* 预埋 CRC 为占位值 = .so 未被正确初始化(可能被 MT 替换) */
+    if (EMBEDDED_TEXT_INFO[0] == TEXT_CRC_PLACEHOLDER) {
+        LOGE("预埋 CRC 为占位值,.so 未被正确初始化(可能被替换)");
+        return 1;  /* 失败 */
     }
 
-    if (actual_crc == EMBEDDED_TEXT_CRC) {
+    /* 使用 post-build 写入的 .text 偏移和大小(只校验纯 .text,排除 .plt) */
+    uint32_t text_offset = EMBEDDED_TEXT_INFO[1];
+    uint32_t text_size = EMBEDDED_TEXT_INFO[2];
+    uint32_t expected_crc = EMBEDDED_TEXT_INFO[0];
+
+    if (text_offset == 0 || text_size == 0) {
+        LOGW(".text 偏移/大小为 0,回退到整个 r-xp 段");
+        text_offset = 0;
+        text_size = (uint32_t)g_text_size;
+    }
+
+    uintptr_t check_base = g_text_base + text_offset;
+    LOGI(".text 段: base=0x%lx offset=%u size=%u", (unsigned long)check_base, text_offset, text_size);
+
+    uint32_t actual_crc = compute_crc32((const uint8_t *)check_base, text_size);
+    LOGI(".text 实际 CRC32: 0x%08x (预期: 0x%08x)", actual_crc, expected_crc);
+
+    if (actual_crc == expected_crc) {
         LOGI(".text CRC 校验通过");
         return 0;
     }
 
-    LOGE(".text CRC 校验失败! 预期=0x%08x 实际=0x%08x", EMBEDDED_TEXT_CRC, actual_crc);
+    LOGE(".text CRC 校验失败! 预期=0x%08x 实际=0x%08x", expected_crc, actual_crc);
     LOGE(".text 被篡改(可能 IDA Pro 改返回指令)");
     return 1;
+}
+
+/**
+ * 获取 .so 加载路径合法性(供 JNI/UI 查询)
+ * @return 1=合法(/data/app/) / 0=非法(重定向) / -1=未检测
+ */
+int self_integrity_path_valid(void) {
+    return g_path_valid;
+}
+
+/**
+ * 获取 .so 加载路径字符串
+ */
+const char *self_integrity_get_so_path(void) {
+    return g_so_path;
 }

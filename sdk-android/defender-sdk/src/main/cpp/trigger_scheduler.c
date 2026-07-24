@@ -39,6 +39,10 @@ void trigger_scheduler_set_callback(verify_callback_t cb) {
     g_callback = cb;
 }
 
+/* ============= 响应(kill) ============= */
+
+extern void defender_kill(int delay_min_ms, int delay_max_ms, const char *method);
+
 /* ============= 守护线程 ============= */
 
 /**
@@ -59,8 +63,9 @@ static void *guard_thread(void *arg) {
         if (g_callback) {
             int result = g_callback();
             if (result != 0) {
-                LOGE("守护线程校验失败: result=%d", result);
-                /* 由 validator_core 决定响应(kill/warn),此处只报告 */
+                LOGE("守护线程校验失败: result=%d,触发 kill", result);
+                /* 直接 native kill(不依赖 Java 层,防 MT patch DEX 绕过) */
+                defender_kill(3000, 15000, "sigabrt");
             }
         }
 

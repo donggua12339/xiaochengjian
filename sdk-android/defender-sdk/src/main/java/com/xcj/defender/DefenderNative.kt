@@ -178,4 +178,25 @@ object DefenderNative {
      * @return 1=有效 / 0=无效或过期
      */
     external fun serverGateHasValidToken(): Int
+
+    /**
+     * 详细校验(返回 JSON 字符串,供 UI 逐条展示)
+     */
+    external fun detailedCheck(apkPath: String?): String
+
+    /**
+     * Native 层通用绕过检测(maps + dl_iterate_phdr + /proc/self/fd)
+     * @return 风险分数(0=安全, ≥40=疑似被绕过)
+     */
+    external fun nativePatchDetect(): Int
+
+    /**
+     * 获取 APK 受保护内容 hash 的 base64 编码(方案 C 用)
+     */
+    external fun getApkHashBase64(apkPath: String?): String?
+
+    /**
+     * 将服务端返回的 token 存入 native 缓存(方案 C 用)
+     */
+    external fun setServerToken(token: String, expireTs: Long)
 }

@@ -116,9 +116,9 @@ int compute_all_dex_crcs(const char *apk_path, uint32_t out_crcs[16], int *out_c
 int dex_integrity_check(const char *apk_path, const char *expected_crcs_json) {
     LOGI("=== DEX 完整性校验(方案 B)===");
 
-    if (!expected_crcs_json || expected_crcs_json[0] == '\0') {
-        LOGW("无预期 DEX CRC 表,跳过(开发阶段)");
-        return 0;
+    if (!expected_crcs_json || expected_crcs_json[0] == '\0' || strcmp(expected_crcs_json, "[]") == 0) {
+        LOGW("无预期 DEX CRC 表,跳过(需 Packer 封装时生成 integrityCrcTable)");
+        return -1;  /* -1 = 未校验,UI 应显示"跳过"而非"通过" */
     }
 
     uint32_t actual_crcs[16];

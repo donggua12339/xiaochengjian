@@ -102,7 +102,9 @@ int get_embedded_hash(uint8_t out_hash[32]) {
 int compare_with_embedded(const uint8_t computed[32]) {
     uint8_t embedded[32];
     if (get_embedded_hash(embedded) != 0) {
-        return -1;  /* 占位,跳过 */
+        /* 占位符 = .so 未被正确初始化(可能被 MT 替换回原始版本) */
+        LOGE("预埋哈希为占位值,.so 未被正确初始化(可能被替换)");
+        return 1;  /* 失败,不是跳过 */
     }
     if (memcmp(computed, embedded, 32) == 0) {
         LOGI("哈希匹配:APK 完整性校验通过");

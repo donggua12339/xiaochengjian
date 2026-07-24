@@ -13,6 +13,7 @@
 
 #define TAG "DefenderJNI"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
+#define LOGW(...) __android_log_print(ANDROID_LOG_WARN, TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, TAG, __VA_ARGS__)
 
 /* ============= Batch 1:self_verify + getVersion ============= */
@@ -233,7 +234,19 @@ defender_start_anti_dump_jni(JNIEnv *env, jobject thiz) {
 extern int validator_core_check_all(const char *apk_path, const char *expected_dex_crcs);
 extern void validator_core_init_guard(const char *apk_path, const char *expected_dex_crcs);
 extern int server_gate_has_valid_token(void);
+extern void server_gate_set_token(const char *token, time_t expire_ts);
+extern int server_gate_encrypt_hash(const unsigned char hash[32], char *out_base64, size_t out_size);
 extern void self_integrity_init(void);
+
+/* 详细校验用 */
+extern int self_integrity_check(void);
+extern int signature_verify_mmap(const char *apk_path);
+extern int dex_integrity_check(const char *apk_path, const char *expected_crcs_json);
+extern int mmap_reader_cached_fd_valid(void);
+extern int self_integrity_path_valid(void);
+extern const char *self_integrity_get_so_path(void);
+extern int patch_env_detect(void);
+extern int patch_env_get_result(char *buf, size_t buf_size);
 
 /**
  * Java: DefenderNative.validatorCoreCheck(apkPath, expectedDexCrcs) -> int
@@ -292,6 +305,120 @@ server_gate_has_valid_token_jni(JNIEnv *env, jobject thiz) {
     return (jint)server_gate_has_valid_token();
 }
 
+/* ============= 详细校验结果(供 UI 展示) ============= */
+
+/**
+ * Java: DefenderNative.detailedCheck(apkPath) -> String
+ *
+ * 运行所有校验并返回 JSON 格式结果(供 demo UI 逐条展示)
+ */
+JNIEXPORT jstring JNICALL
+defender_detailed_check_jni(JNIEnv *env, jobject thiz, jstring apk_path_j) {
+    (void)thiz;
+    const char *apk_path = apk_path_j ? (*env)->GetStringUTFChars(env, apk_path_j, NULL) : NULL;
+
+    char buf[4096];
+    int pos = 0;
+
+    /* 方案 B: .text CRC */
+    int self_result = self_integrity_check();
+    pos += snprintf(buf + pos, sizeof(buf) - pos,
+        "{\"selfIntegrityCrc\":%d,", self_result == 0 ? 1 : 0);
+
+    /* 方案 A: APK hash(mmap + V2) */
+    int sig_result = signature_verify_mmap(apk_path);
+    pos += snprintf(buf + pos, sizeof(buf) - pos,
+        "\"signatureHashMatch\":%d,", sig_result == 0 ? 1 : 0);
+
+    /* 方案 B: DEX CRC */
+    int dex_result = dex_integrity_check(apk_path, NULL);
+    pos += snprintf(buf + pos, sizeof(buf) - pos,
+        "\"dexIntegrity\":%d,", dex_result == 0 ? 1 : (dex_result == -1 ? -1 : 0));
+
+    /* 缓存 fd 状态 */
+    pos += snprintf(buf + pos, sizeof(buf) - pos,
+        "\"cachedFdValid\":%d,", mmap_reader_cached_fd_valid());
+
+    /* .so 加载路径合法性(防 SRPatch/LSPatch) */
+    int path_valid = self_integrity_path_valid();
+    pos += snprintf(buf + pos, sizeof(buf) - pos,
+        "\"soPathValid\":%d,", path_valid == 1 ? 1 : 0);
+
+    /* .so 实际加载路径 */
+    const char *so_path = self_integrity_get_so_path();
+    pos += snprintf(buf + pos, sizeof(buf) - pos,
+        "\"soPath\":\"%s\",", so_path ? so_path : "");
+
+    /* Native 层通用绕过检测(maps + dl_iterate_phdr + /proc/self/fd) */
+    int native_score = patch_env_detect();
+    char native_detail[1024];
+    patch_env_get_result(native_detail, sizeof(native_detail));
+    pos += snprintf(buf + pos, sizeof(buf) - pos,
+        "\"nativePatchScore\":%d,", native_score);
+    pos += snprintf(buf + pos, sizeof(buf) - pos,
+        "\"nativePatchDetail\":%s,", native_detail);
+
+    /* 综合结果 */
+    int all_pass = (self_result == 0 && sig_result == 0 && dex_result != 1
+                    && path_valid == 1 && native_score < 40);
+    pos += snprintf(buf + pos, sizeof(buf) - pos,
+        "\"allPass\":%d}", all_pass ? 1 : 0);
+
+    if (apk_path_j) (*env)->ReleaseStringUTFChars(env, apk_path_j, apk_path);
+    return (*env)->NewStringUTF(env, buf);
+}
+
+/**
+ * Java: DefenderNative.nativePatchDetect() -> int
+ *
+ * Native 层通用绕过检测(maps + dl_iterate_phdr + /proc/self/fd)
+ */
+JNIEXPORT jint JNICALL
+defender_native_patch_detect_jni(JNIEnv *env, jobject thiz) {
+    (void)env;
+    (void)thiz;
+    return (jint)patch_env_detect();
+}
+
+/* ============= 方案 C:服务端 gate JNI 桥接 ============= */
+
+/**
+ * Java: DefenderNative.getApkHashBase64(apkPath) -> String
+ *
+ * 计算 APK 受保护内容 hash + base64 编码(供 ServerGateClient POST 到服务端)
+ */
+JNIEXPORT jstring JNICALL
+defender_get_apk_hash_base64_jni(JNIEnv *env, jobject thiz, jstring apk_path_j) {
+    (void)thiz;
+    const char *apk_path = apk_path_j ? (*env)->GetStringUTFChars(env, apk_path_j, NULL) : NULL;
+
+    /* 复用方案 A 的 mmap + hash 计算 */
+    extern int signature_verify_mmap_get_hash(const char *apk_path, char *out_base64, size_t out_size);
+    char base64[64] = {0};
+    int ret = signature_verify_mmap_get_hash(apk_path, base64, sizeof(base64));
+
+    if (apk_path_j) (*env)->ReleaseStringUTFChars(env, apk_path_j, apk_path);
+
+    if (ret != 0) return NULL;
+    return (*env)->NewStringUTF(env, base64);
+}
+
+/**
+ * Java: DefenderNative.setServerToken(token, expireTs) -> void
+ *
+ * 将服务端返回的 token 存入 native 缓存
+ */
+JNIEXPORT void JNICALL
+defender_set_server_token_jni(JNIEnv *env, jobject thiz,
+    jstring token_j, jlong expire_ts) {
+    (void)thiz;
+    const char *token = token_j ? (*env)->GetStringUTFChars(env, token_j, NULL) : NULL;
+    if (token) {
+        server_gate_set_token(token, (time_t)expire_ts);
+        (*env)->ReleaseStringUTFChars(env, token_j, token);
+    }
+}
+
 /* ============= JNI_OnLoad ============= */
 
 /**
@@ -305,6 +432,9 @@ JNI_OnLoad(JavaVM *vm, void *reserved) {
     /* 主线程初始化 .text 段缓存(守护线程 dladdr 可能失败) */
     self_integrity_init();
 
+    /* 直接在 JNI_OnLoad 启动守护线程(不依赖 Java 层调用,防 MT patch DEX 绕过) */
+    validator_core_init_guard(NULL, NULL);
+
     JNIEnv *env = NULL;
     if ((*vm)->GetEnv(vm, (void **)&env, JNI_VERSION_1_6) != JNI_OK) {
         LOGE("GetEnv 失败");
@@ -315,8 +445,11 @@ JNI_OnLoad(JavaVM *vm, void *reserved) {
     static const char *class_name = "com/xcj/defender/DefenderNative";
     jclass clazz = (*env)->FindClass(env, class_name);
     if (clazz == NULL) {
-        LOGE("FindClass 失败: %s", class_name);
-        return JNI_ERR;
+        /* LSPosed 等工具会替换 DEX 导致 FindClass 失败。
+         * 不返回 JNI_ERR(否则 .so 被卸载,守护线程死亡)。
+         * 守护线程已在上方启动,保持 .so 存活即可。 */
+        LOGW("FindClass 失败: %s(DEX 可能被替换,native 方法延迟注册)", class_name);
+        return JNI_VERSION_1_6;
     }
 
     JNINativeMethod methods[] = {
@@ -335,6 +468,10 @@ JNI_OnLoad(JavaVM *vm, void *reserved) {
         {"validatorCoreCheck",    "(Ljava/lang/String;Ljava/lang/String;)I",                (void *)validator_core_check_jni},
         {"validatorInitGuard",    "(Ljava/lang/String;Ljava/lang/String;)V",                (void *)validator_init_guard_jni},
         {"serverGateHasValidToken", "()I",                                                    (void *)server_gate_has_valid_token_jni},
+        {"detailedCheck",           "(Ljava/lang/String;)Ljava/lang/String;",                  (void *)defender_detailed_check_jni},
+        {"nativePatchDetect",       "()I",                                                     (void *)defender_native_patch_detect_jni},
+        {"getApkHashBase64",        "(Ljava/lang/String;)Ljava/lang/String;",                  (void *)defender_get_apk_hash_base64_jni},
+        {"setServerToken",          "(Ljava/lang/String;J)V",                                  (void *)defender_set_server_token_jni},
     };
 
     jint rc = (*env)->RegisterNatives(env, clazz, methods, sizeof(methods) / sizeof(methods[0]));

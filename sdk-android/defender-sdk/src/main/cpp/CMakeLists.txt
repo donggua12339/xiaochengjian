@@ -46,6 +46,9 @@ set(DEFENDER_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/trigger_scheduler.c
     ${CMAKE_CURRENT_SOURCE_DIR}/validator_core.c
     ${CMAKE_CURRENT_SOURCE_DIR}/server_gate.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/patch_env_detect.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/inner_loader.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/custom_linker.c
 )
 
 # ============= 构建共享库 =============

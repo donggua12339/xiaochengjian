@@ -201,10 +201,20 @@ class DefenderInitProvider : ContentProvider() {
             DefenderNative.validatorInitGuard(apkPath, null)
             Log.i(TAG, "[v2.1.1] 守护线程已启动")
 
-            // 方案 C:检查服务端 gate token(若配置了 serverUrl)
+            // 方案 C:服务端 gate 校验(后台线程,不阻塞启动)
             if (config.serverUrl.isNotEmpty()) {
-                val hasToken = DefenderNative.serverGateHasValidToken()
-                Log.i(TAG, "[v2.1.1] 服务端 gate token 状态: $hasToken")
+                Log.i(TAG, "[v2.1.1] 方案 C 服务端 gate 启动: ${config.serverUrl}")
+                Thread {
+                    val pass = ServerGateClient.verify(config.serverUrl, config.appId, apkPath)
+                    if (!pass && ServerGateClient.lastVerdict != "SKIP" && ServerGateClient.lastVerdict != "NETWORK_ERROR") {
+                        Log.e(TAG, "[v2.1.1] 方案 C 校验失败: ${ServerGateClient.lastVerdict}")
+                        applyResponse(ctx, config.signatureVerify.onViolation, config, "server_gate_fail", "服务端完整性校验失败")
+                    } else if (ServerGateClient.lastVerdict == "NETWORK_ERROR") {
+                        Log.w(TAG, "[v2.1.1] 方案 C 网络不可达,宽限处理(守护线程将重试)")
+                    }
+                }.start()
+            } else {
+                Log.i(TAG, "[v2.1.1] 方案 C 跳过(serverUrl 未配置)")
             }
         } catch (e: Exception) {
             Log.w(TAG, "[v2.1.1] 综合校验异常: ${e.message}")
@@ -360,6 +370,20 @@ class DefenderInitProvider : ContentProvider() {
             } catch (e: Exception) {
                 Log.w(TAG, "[Batch 4] WindowSecurer 启动失败: ${e.message}")
             }
+        }
+
+        // 通用签名绕过检测(Java 层行为特征 + Native 层 maps/dl/fd 交叉验证)
+        Log.i(TAG, "[Batch 4] 通用绕过检测中(Java+Native)...")
+        val javaResult = PatchToolDetector.detect(ctx)
+        val nativeScore = try { DefenderNative.nativePatchDetect() } catch (_: Exception) { 0 }
+        val totalScore = javaResult.score + nativeScore
+
+        if (javaResult.detected || nativeScore >= 40 || totalScore >= 40) {
+            Log.e(TAG, "[Batch 4] 检测到签名绕过行为! javaScore=${javaResult.score} nativeScore=$nativeScore")
+            javaResult.details.forEach { Log.e(TAG, "[Batch 4]   [Java] $it") }
+            applyResponse(ctx, config.signatureVerify.onViolation, config, "patch_tool_detected", "检测到签名绕过行为(score=$totalScore)")
+        } else {
+            Log.i(TAG, "[Batch 4] 通用绕过检测通过(score=$totalScore)")
         }
     }
 

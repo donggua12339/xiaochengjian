@@ -134,13 +134,49 @@ int validator_core_check_all(const char *apk_path, const char *expected_dex_crcs
     return 0;
 }
 
+/* ============= 方案 C 辅助:获取 APK hash 的 base64 ============= */
+
+/**
+ * 计算 APK 受保护内容 hash 并 base64 编码(供方案 C 服务端校验)
+ *
+ * @param apk_path APK 路径(NULL 则从 maps 定位)
+ * @param out_base64 输出:base64 编码的 hash(至少 48 字节)
+ * @param out_size 输出缓冲区大小
+ * @return 0=成功 / -1=失败
+ */
+int signature_verify_mmap_get_hash(const char *apk_path, char *out_base64, size_t out_size) {
+    void *mapped = NULL;
+    size_t size = 0;
+    if (mmap_apk(apk_path, &mapped, &size) != 0) return -1;
+
+    size_t block_start, block_size;
+    if (locate_signing_block((const uint8_t *)mapped, size,
+                             &block_start, &block_size) != 0) {
+        mmap_apk_free(mapped, size);
+        return -1;
+    }
+
+    uint8_t computed_hash[32];
+    if (compute_apk_protected_hash((const uint8_t *)mapped, size,
+                                    block_start, block_size,
+                                    computed_hash) != 0) {
+        mmap_apk_free(mapped, size);
+        return -1;
+    }
+    mmap_apk_free(mapped, size);
+
+    /* base64 编码 */
+    extern int server_gate_encrypt_hash(const unsigned char hash[32], char *out, size_t sz);
+    return server_gate_encrypt_hash(computed_hash, out_base64, out_size);
+}
+
 /* ============= 守护线程回调(注册给 trigger_scheduler) ============= */
 
 static const char *g_apk_path = NULL;
 static const char *g_expected_dex_crcs = NULL;
 
 static int guard_verify_callback(void) {
-    if (!g_apk_path) return 0;
+    /* apk_path 为 NULL 时 signature_verify_mmap 自动从 maps 定位 */
     return validator_core_check_all(g_apk_path, g_expected_dex_crcs);
 }
 
