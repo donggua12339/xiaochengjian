@@ -18,6 +18,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
+#include <fcntl.h>
 #include <android/log.h>
 
 #define TAG "DefenderValidatorCore"
@@ -130,7 +132,48 @@ int validator_core_check_all(const char *apk_path, const char *expected_dex_crcs
         return 1;
     }
 
-    LOGI("综合校验通过");
+    /* inner 层交叉验证(VMP 保护,与外壳独立校验) */
+    extern int inner_loader_is_loaded(void);
+    extern int inner_loader_env_check(const char *maps, int len);
+    extern int inner_loader_verify_hash(const char *a, const char *b);
+
+    if (inner_loader_is_loaded()) {
+        /* 1. inner 环境检测: 读 maps 传给 inner, 独立检测 Frida/Xposed/SRPatch */
+        int mfd = open("/proc/self/maps", 0);
+        if (mfd >= 0) {
+            char mbuf[8192];
+            int mtotal = 0;
+            ssize_t mn;
+            while ((mn = read(mfd, mbuf + mtotal, sizeof(mbuf) - 1 - mtotal)) > 0)
+                mtotal += (int)mn;
+            close(mfd);
+            mbuf[mtotal] = '\0';
+
+            int env_score = inner_loader_env_check(mbuf, mtotal);
+            if (env_score >= 40) {
+                LOGE("inner 环境检测异常: score=%d (Frida/Xposed/SRPatch)", env_score);
+                return 1;
+            }
+        }
+
+        /* 2. VMP 引擎自检: 验证 inner_verify_hash 工作正确 */
+        const char *test_a = "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789";
+        const char *test_b = "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789";
+        int vmp_result = inner_loader_verify_hash(test_a, test_b);
+        if (vmp_result != 0) {
+            LOGE("VMP 引擎自检失败: 相同 hash 应返回 0, 实际 %d", vmp_result);
+            return 1;
+        }
+        /* 反向验证: 不同 hash 应返回 1 */
+        const char *test_c = "0000000000000000000000000000000000000000000000000000000000000000";
+        int vmp_result2 = inner_loader_verify_hash(test_a, test_c);
+        if (vmp_result2 != 1) {
+            LOGE("VMP 引擎自检失败: 不同 hash 应返回 1, 实际 %d", vmp_result2);
+            return 1;
+        }
+    }
+
+    LOGI("综合校验通过(含 inner 交叉验证)");
     return 0;
 }
 

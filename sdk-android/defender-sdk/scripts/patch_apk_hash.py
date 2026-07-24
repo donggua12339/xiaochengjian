@@ -418,13 +418,80 @@ def patch_and_resign(apk_path: str, new_hash: bytes, old_hash: bytes,
     return True
 
 
-def patch_apk_inplace(apk_path: str, ks_path: str, ks_pass: str):
-    """两轮 in-place patch:解决重签名改变 APK 结构的问题
+def inject_dex_crc(apk_path: str, ks_path: str, ks_pass: str):
+    """Pass 0: 计算 DEX CRC32 并注入 defender-config.json"""
+    import json as json_mod
 
+    z = zipfile.ZipFile(apk_path, 'r')
+    crc_entries = []
+    for name in sorted(z.namelist()):
+        if name.endswith('.dex'):
+            data = z.read(name)
+            crc = zlib.crc32(data) & 0xFFFFFFFF
+            crc_entries.append(f"{name}:{crc:08x}")
+            print(f"  DEX CRC: {name} = {crc:08x}")
+    z.close()
+
+    if not crc_entries:
+        print("  无 DEX 文件,跳过 CRC 注入")
+        return
+
+    # 读取并修改 config
+    z = zipfile.ZipFile(apk_path, 'r')
+    config_name = 'assets/defender-config.json'
+    try:
+        config_text = z.read(config_name).decode('utf-8')
+    except KeyError:
+        print("  无 defender-config.json,跳过 CRC 注入")
+        z.close()
+        return
+
+    config = json_mod.loads(config_text)
+    config['integrityCrcTable'] = crc_entries
+    new_config = json_mod.dumps(config, indent=2, ensure_ascii=False)
+    z.close()
+
+    # 重写 APK(替换 config entry)
+    import tempfile
+    tmp_path = apk_path + '.tmp'
+    z_in = zipfile.ZipFile(apk_path, 'r')
+    z_out = zipfile.ZipFile(tmp_path, 'w', zipfile.ZIP_DEFLATED)
+    for item in z_in.infolist():
+        if item.filename == config_name:
+            z_out.writestr(item, new_config.encode('utf-8'))
+        else:
+            z_out.writestr(item, z_in.read(item.filename))
+    z_in.close()
+    z_out.close()
+
+    # 替换原文件 + 重签
+    os.replace(tmp_path, apk_path)
+    apksigner = find_apksigner()
+    if apksigner:
+        unsigned = apk_path + '-unsigned'
+        os.rename(apk_path, unsigned)
+        cmd = [apksigner, 'sign', '--ks', ks_path, '--ks-pass', f'pass:{ks_pass}',
+               '--v1-signing-enabled', 'false', '--v2-signing-enabled', 'true',
+               '--v3-signing-enabled', 'true', '--in', unsigned, '--out', apk_path]
+        subprocess.run(cmd, capture_output=True, text=True)
+        if os.path.exists(unsigned):
+            os.remove(unsigned)
+
+    print(f"  DEX CRC 注入完成: {len(crc_entries)} 个条目")
+
+
+def patch_apk_inplace(apk_path: str, ks_path: str, ks_pass: str):
+    """三轮 in-place patch:
+
+    Pass 0: 注入 DEX CRC 到 config + 重签
     Pass 1: patch 占位符 → hash1, 重签名(V1 off)
     Pass 2: 基于重签后 APK 计算 hash2, patch hash1 → hash2, 重签名
     验证: 最终 APK hash == hash2
     """
+    # Pass 0: DEX CRC 注入
+    print("Pass 0: DEX CRC 注入...")
+    inject_dex_crc(apk_path, ks_path, ks_pass)
+
     # Pass 1
     with open(apk_path, 'rb') as f:
         orig_data = f.read()

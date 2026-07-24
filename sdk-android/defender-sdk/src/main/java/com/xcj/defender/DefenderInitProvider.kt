@@ -187,7 +187,9 @@ class DefenderInitProvider : ContentProvider() {
             val apkPath = ctx.packageCodePath
 
             // 综合校验(方案 A 签名 + 方案 B SO 自校验 + DEX CRC)
-            val result = DefenderNative.validatorCoreCheck(apkPath, null)
+            val dexCrcsJson = if (config.integrityCrcTable.isNotEmpty())
+                org.json.JSONArray(config.integrityCrcTable).toString() else null
+            val result = DefenderNative.validatorCoreCheck(apkPath, dexCrcsJson)
             when (result) {
                 0 -> Log.i(TAG, "[v2.1.1] 综合校验通过")
                 1 -> {
@@ -198,7 +200,7 @@ class DefenderInitProvider : ContentProvider() {
             }
 
             // 启动守护线程(周期性校验,5-15s 随机间隔)
-            DefenderNative.validatorInitGuard(apkPath, null)
+            DefenderNative.validatorInitGuard(apkPath, dexCrcsJson)
             Log.i(TAG, "[v2.1.1] 守护线程已启动")
 
             // 方案 C:服务端 gate 校验(后台线程,不阻塞启动)
