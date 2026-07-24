@@ -208,7 +208,10 @@ class DefenderInitProvider : ContentProvider() {
                 Log.i(TAG, "[v2.1.1] 方案 C 服务端 gate 启动: ${config.serverUrl}")
                 Thread {
                     val pass = ServerGateClient.verify(config.serverUrl, config.appId, apkPath)
-                    if (!pass && ServerGateClient.lastVerdict != "SKIP" && ServerGateClient.lastVerdict != "NETWORK_ERROR") {
+                    if (!pass && ServerGateClient.lastVerdict != "SKIP"
+                        && ServerGateClient.lastVerdict != "NETWORK_ERROR"
+                        && ServerGateClient.lastVerdict != "HASH_EMPTY"
+                        && ServerGateClient.lastVerdict != "HASH_ERROR") {
                         Log.e(TAG, "[v2.1.1] 方案 C 校验失败: ${ServerGateClient.lastVerdict}")
                         applyResponse(ctx, config.signatureVerify.onViolation, config, "server_gate_fail", "服务端完整性校验失败")
                     } else if (ServerGateClient.lastVerdict == "NETWORK_ERROR") {

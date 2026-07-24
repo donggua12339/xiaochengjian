@@ -394,7 +394,7 @@ defender_get_apk_hash_base64_jni(JNIEnv *env, jobject thiz, jstring apk_path_j) 
 
     /* 复用方案 A 的 mmap + hash 计算 */
     extern int signature_verify_mmap_get_hash(const char *apk_path, char *out_base64, size_t out_size);
-    char base64[64] = {0};
+    char base64[128] = {0};
     int ret = signature_verify_mmap_get_hash(apk_path, base64, sizeof(base64));
 
     if (apk_path_j) (*env)->ReleaseStringUTFChars(env, apk_path_j, apk_path);

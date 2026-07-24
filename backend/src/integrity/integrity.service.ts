@@ -179,16 +179,22 @@ export class IntegrityService {
       return Buffer.from(encryptedHash, 'base64').toString('utf8');
     }
 
-    const privateKey = crypto.createPrivateKey(privateKeyPem);
-    const decrypted = crypto.privateDecrypt(
-      {
-        key: privateKey,
-        padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
-        oaepHash: 'sha256',
-      },
-      Buffer.from(encryptedHash, 'base64'),
-    );
-    return decrypted.toString('utf8');
+    try {
+      const privateKey = crypto.createPrivateKey(privateKeyPem);
+      const decrypted = crypto.privateDecrypt(
+        {
+          key: privateKey,
+          padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
+          oaepHash: 'sha256',
+        },
+        Buffer.from(encryptedHash, 'base64'),
+      );
+      return decrypted.toString('utf8');
+    } catch (e) {
+      // RSA 解密失败:客户端可能尚未实现 RSA 加密,回退 base64 解码
+      this.logger.warn(`RSA 解密失败,回退 base64 解码: ${(e as Error).message}`);
+      return Buffer.from(encryptedHash, 'base64').toString('utf8');
+    }
   }
 
   /**

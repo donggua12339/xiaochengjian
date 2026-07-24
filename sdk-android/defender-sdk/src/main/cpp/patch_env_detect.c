@@ -144,7 +144,9 @@ static int is_in_app_private_dir(const char *path) {
 /** 去除路径末尾的换行/空格 */
 static void trim_path(char *path) {
     char *end = path + strlen(path) - 1;
-    while (end >= path && (*end == '\n' || *end == '\r' || *end == ' '))
+    /* 去掉末尾空白 + ART 匿名映射的 ] 后缀
+     * 格式: [anon:dalvik-classes.dex extracted in memory from /data/app/.../base.apk] */
+    while (end >= path && (*end == '\n' || *end == '\r' || *end == ' ' || *end == ']'))
         *end-- = '\0';
 }
 
