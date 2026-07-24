@@ -52,6 +52,14 @@ class DefenderTestApp : Application() {
         } catch (e: Throwable) {
             Log.e(TAG, "[X4-3] 检测失败: ${e.message}", e)
         }
+        /* X4-4 L3 反 dump 验证(rwx 段 + anon:dalvik + memfd + inotify) */
+        try {
+            com.xcj.defender.X4Native.antiDumpInit()
+            val l3Score = com.xcj.defender.X4Native.antiDumpCheck()
+            Log.i(TAG, "[X4-4] L3 反dump: score=$l3Score(0=干净)")
+        } catch (e: Throwable) {
+            Log.e(TAG, "[X4-4] 检测失败: ${e.message}", e)
+        }
         /* X4-2 L4 运行时完整性验证(libc CRC + inline hook + svc 签名块) */
         try {
             com.xcj.defender.X4Native.integrityInit(packageCodePath)

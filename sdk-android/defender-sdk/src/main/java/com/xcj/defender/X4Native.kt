@@ -13,6 +13,12 @@ object X4Native {
     /** L2 反调试综合检测(stat state + 时间差 + 断点扫描 + Frida 端口)。返回可疑计数,0=干净。 */
     external fun antiDebugCheck(): Int
 
+    /** L3 反 dump 初始化(记录 memfd/anon:dalvik 基线 + 启动 inotify 预警线程)。须在 X0 加载后调用。 */
+    external fun antiDumpInit()
+
+    /** L3 反 dump 综合检测(rwx 段 + anon:dalvik + memfd 数量 + inotify)。返回可疑计数,0=干净。 */
+    external fun antiDumpCheck(): Int
+
     /** L4 运行时完整性初始化(记录 libc 入口 CRC 基线等)。须在首次 check 前调用。 */
     external fun integrityInit(apkPath: String)
 

@@ -56,6 +56,7 @@ set(DEFENDER_SOURCES
     # X4-1 L1 反注入(ADR 0093):注入SO/可执行段/ptrace 检测 + JNI 桥接
     ${CMAKE_CURRENT_SOURCE_DIR}/x4_anti_inject.c
     ${CMAKE_CURRENT_SOURCE_DIR}/x4_anti_debug.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/x4_anti_dump.c
     ${CMAKE_CURRENT_SOURCE_DIR}/x4_integrity.c
     ${CMAKE_CURRENT_SOURCE_DIR}/x4_jni.c
 )
