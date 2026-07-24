@@ -49,6 +49,10 @@ set(DEFENDER_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/patch_env_detect.c
     ${CMAKE_CURRENT_SOURCE_DIR}/inner_loader.c
     ${CMAKE_CURRENT_SOURCE_DIR}/custom_linker.c
+    # X4-0 基建(ADR 0093):svc 原语 + 自实现字符串 + 守护线程框架
+    ${CMAKE_CURRENT_SOURCE_DIR}/x4_svc.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/x4_str.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/x4_daemon.c
 )
 
 # ============= X1 字符串多态加密(构建期代码生成)=============
