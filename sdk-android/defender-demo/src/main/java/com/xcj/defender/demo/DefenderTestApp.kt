@@ -36,6 +36,15 @@ class DefenderTestApp : Application() {
         } catch (e: Throwable) {
             Log.e(TAG, "[X0] DefenderNative 调用失败: ${e.message}", e)
         }
+        /* X4-1 L1 反注入验证(native + Java 交叉) */
+        try {
+            val nativeScore = com.xcj.defender.X4Native.antiInjectCheck()
+            val javaScore = com.xcj.defender.X4InjectionDetector.check(
+                this, "com.xcj.defender.demo.DefenderTestApp")
+            Log.i(TAG, "[X4-1] L1 反注入: native=$nativeScore java=$javaScore(0=干净)")
+        } catch (e: Throwable) {
+            Log.e(TAG, "[X4-1] 检测失败: ${e.message}", e)
+        }
     }
 
     companion object {

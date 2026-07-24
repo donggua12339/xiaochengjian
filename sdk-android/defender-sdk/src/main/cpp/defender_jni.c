@@ -480,6 +480,12 @@ JNI_OnLoad(JavaVM *vm, void *reserved) {
         return JNI_ERR;
     }
 
+    /* X4-1:注册 X4 native 检测(反注入等) */
+    extern int x4_register_natives(JNIEnv *env);
+    if (x4_register_natives(env) != 0) {
+        LOGW("X4 native 注册失败(非致命)");
+    }
+
     LOGI("JNI_OnLoad 完成,native 方法已注册");
     return JNI_VERSION_1_6;
 }
