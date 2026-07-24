@@ -333,11 +333,17 @@ int mmap_apk(const char *apk_path, void **out_mapped, size_t *out_size) {
     char maps_path[512];
     const char *effective_path = apk_path;
 
-    /* 优先从 maps 定位(绕过 Java packageCodePath hook) */
-    if (!apk_path || find_apk_path_from_maps(maps_path, sizeof(maps_path)) == 0) {
+    /* 优先从 maps 定位(绕过 Java packageCodePath hook)。
+     * 无条件调用 find_apk_path_from_maps:原 `!apk_path || ...` 写法在 apk_path==NULL
+     * 时会因 || 短路跳过定位,使 maps_path 未初始化、effective_path 指向栈垃圾。 */
+    if (find_apk_path_from_maps(maps_path, sizeof(maps_path)) == 0) {
         effective_path = maps_path;
         LOGI("从 maps 定位 APK: %s", effective_path);
+    } else if (!apk_path) {
+        LOGE("无法定位 APK 路径(maps 失败且未传入 apk_path)");
+        return -1;
     }
+    /* else: maps 失败但传入了 apk_path,回退使用传入路径 */
 
     /* 优先使用 .init_array 缓存的 fd(绕过 SRPatch SVC hook 重定向 openat) */
     int fd = get_valid_apk_fd(effective_path);
