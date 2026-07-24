@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { IntegrityController } from './integrity.controller';
+import { IntegrityClientController } from './integrity-client.controller';
 import { IntegrityService } from './integrity.service';
 
 /**
@@ -12,7 +13,7 @@ import { IntegrityService } from './integrity.service';
  * 详见 xcj_blue_demo_v2.1.1_prompt.md §方案 C
  */
 @Module({
-  controllers: [IntegrityController],
+  controllers: [IntegrityController, IntegrityClientController],
   providers: [IntegrityService],
   exports: [IntegrityService],
 })
