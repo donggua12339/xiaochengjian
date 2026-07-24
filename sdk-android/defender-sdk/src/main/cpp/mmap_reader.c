@@ -29,6 +29,8 @@
 #include <sys/stat.h>
 #include <android/log.h>
 
+#include "obfstr_poly.h"   /* X1 字符串多态加密:OBF() / obf_poly_decode */
+
 #define TAG "DefenderMmapReader"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
 #define LOGW(...) __android_log_print(ANDROID_LOG_WARN, TAG, __VA_ARGS__)
@@ -238,7 +240,7 @@ static int get_valid_apk_fd(const char *fallback_path) {
  * @return 0=成功 / -1=失败
  */
 static int find_apk_path_from_maps(char *apk_path_out, size_t out_size) {
-    int fd = mr_openat("/proc/self/maps", 0);
+    int fd = mr_openat(OBF("/proc/self/maps"), 0);
     if (fd < 0) return -1;
 
     char buf[8192];
@@ -257,7 +259,7 @@ static int find_apk_path_from_maps(char *apk_path_out, size_t out_size) {
                 line[line_pos] = '\0';
 
                 /* 优先搜索 ".apk!" 格式(extractNativeLibs=false 时) */
-                char *apk_marker = strstr(line, ".apk!");
+                char *apk_marker = strstr(line, OBF(".apk!"));
                 if (apk_marker != NULL) {
                     char *path_start = strrchr(line, ' ');
                     if (path_start != NULL) {
@@ -276,9 +278,9 @@ static int find_apk_path_from_maps(char *apk_path_out, size_t out_size) {
                  * maps 中没有 ".apk!" 条目,但 DEX 仍从 APK mmap,
                  * maps 中有 "/data/app/.../base.apk" 条目 */
                 if (!found && !has_fallback) {
-                    char *data_app = strstr(line, "/data/app/");
+                    char *data_app = strstr(line, OBF("/data/app/"));
                     if (data_app) {
-                        char *base_apk = strstr(data_app, "base.apk");
+                        char *base_apk = strstr(data_app, OBF("base.apk"));
                         if (base_apk && (base_apk[8] == '\0' || base_apk[8] == ' ' ||
                                          base_apk[8] == '\n' || base_apk[8] == '!')) {
                             /* 提取完整路径(从 /data/app/ 到 base.apk) */

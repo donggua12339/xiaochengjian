@@ -183,8 +183,38 @@ def _self_test(rng: random.Random) -> None:
           f"多态差异确认;非退化映射确认")
 
 
+def transform_file(in_path: str, out_path: str, rng: random.Random) -> int:
+    """构建期:读 IN,把 OBF("...") 替换为 _OBF_USE(...) 写入 OUT。返回替换处数。"""
+    with open(in_path, "r", encoding="utf-8") as f:
+        text = f.read()
+    out_text = transform_source(text, rng)
+    with open(out_path, "w", encoding="utf-8", newline="\n") as f:
+        f.write(out_text)
+    return len(_OBF_RE.findall(text))
+
+
 def main():
-    rng = random.Random(0xC0FFEE)  # 固定种子便于 vectors 可复现;构建期 transform 应用 os urandom
+    import argparse
+    parser = argparse.ArgumentParser(
+        description="玄甲 X1 字符串多态加密(构建期加密 + 源码扫描替换)")
+    parser.add_argument("--transform", nargs=2, metavar=("IN", "OUT"),
+                        help="构建期:扫描 IN 中 OBF(\"...\") 替换为 _OBF_USE(...) 写入 OUT")
+    parser.add_argument("--seed", type=int, default=None,
+                        help="transform 随机种子;默认 os.urandom(每构建不同密文),CI 可固定以便复现")
+    args = parser.parse_args()
+
+    if args.transform:
+        in_path, out_path = args.transform
+        if args.seed is not None:
+            rng = random.Random(args.seed)
+        else:
+            rng = random.Random(int.from_bytes(os.urandom(8), "big"))
+        n = transform_file(in_path, out_path, rng)
+        print(f"[obfstr_poly] transform: {in_path} -> {out_path}, 替换 {n} 处 OBF()")
+        return
+
+    # 默认:自测 + 生成 vectors(固定种子可复现)
+    rng = random.Random(0xC0FFEE)
     _self_test(rng)
     here = os.path.dirname(os.path.abspath(__file__))
     out = os.path.join(here, "..", "src", "main", "cpp", "tests", "test_vectors_generated.h")
