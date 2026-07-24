@@ -113,3 +113,10 @@ target_link_libraries(xcj_defender
 target_include_directories(xcj_defender PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
 )
+
+# ============= X0-3 stub loader(原型,不加密的小 .so)=============
+# 正常 System.loadLibrary 加载;JNI_OnLoad 里自举:解密嵌入载荷 → memfd →
+# android_dlopen_ext → 手动调载荷 JNI_OnLoad。原型载荷为 x0test(见 x0test_enc.h)。
+add_library(xcj_loader SHARED ${CMAKE_CURRENT_SOURCE_DIR}/xcj_loader.c)
+target_link_libraries(xcj_loader log android dl)
+target_include_directories(xcj_loader PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})

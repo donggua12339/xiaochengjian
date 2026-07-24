@@ -27,6 +27,14 @@ class DefenderTestApp : Application() {
     override fun onCreate() {
         super.onCreate()
         Log.d(TAG, "DefenderTestApp onCreate")
+        /* X0-3 原型:验证"加密 .so → memfd → 手动 JNI_OnLoad"核心链路。
+         * ping() 返回 pong-from-memfd-x0 即 stub 自举成功。 */
+        try {
+            val pong = com.xcj.defender.DefenderX0Test.ping()
+            Log.i(TAG, "[X0-3] ping() = $pong(期望 pong-from-memfd-x0)")
+        } catch (e: Throwable) {
+            Log.e(TAG, "[X0-3] ping() 失败: ${e.message}", e)
+        }
     }
 
     companion object {
