@@ -7,10 +7,16 @@
 #include <jni.h>
 #include "x4_anti_inject.h"
 #include "x4_integrity.h"
+#include "x4_anti_debug.h"
 
 static jint x4_anti_inject_check_jni(JNIEnv *env, jobject thiz) {
     (void)env; (void)thiz;
     return (jint)x4_anti_inject_check();
+}
+
+static jint x4_anti_debug_check_jni(JNIEnv *env, jobject thiz) {
+    (void)env; (void)thiz;
+    return (jint)x4_anti_debug_check();
 }
 
 static void x4_integrity_init_jni(JNIEnv *env, jobject thiz, jstring apk_path_j) {
@@ -36,10 +42,11 @@ int x4_register_natives(JNIEnv *env) {
     }
     JNINativeMethod methods[] = {
         {"antiInjectCheck",  "()I",                      (void *)x4_anti_inject_check_jni},
+        {"antiDebugCheck",   "()I",                      (void *)x4_anti_debug_check_jni},
         {"integrityInit",    "(Ljava/lang/String;)V",    (void *)x4_integrity_init_jni},
         {"integrityCheck",   "(Ljava/lang/String;)I",    (void *)x4_integrity_check_jni},
     };
-    jint rc = (*env)->RegisterNatives(env, clazz, methods, 3);
+    jint rc = (*env)->RegisterNatives(env, clazz, methods, 4);
     (*env)->DeleteLocalRef(env, clazz);
     return (rc == JNI_OK) ? 0 : -1;
 }

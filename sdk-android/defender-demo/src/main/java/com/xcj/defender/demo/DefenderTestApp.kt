@@ -45,6 +45,13 @@ class DefenderTestApp : Application() {
         } catch (e: Throwable) {
             Log.e(TAG, "[X4-1] 检测失败: ${e.message}", e)
         }
+        /* X4-3 L2 反调试验证(stat state + 时间差 + 断点扫描 + Frida 端口) */
+        try {
+            val l2Score = com.xcj.defender.X4Native.antiDebugCheck()
+            Log.i(TAG, "[X4-3] L2 反调试: score=$l2Score(0=干净)")
+        } catch (e: Throwable) {
+            Log.e(TAG, "[X4-3] 检测失败: ${e.message}", e)
+        }
         /* X4-2 L4 运行时完整性验证(libc CRC + inline hook + svc 签名块) */
         try {
             com.xcj.defender.X4Native.integrityInit(packageCodePath)
