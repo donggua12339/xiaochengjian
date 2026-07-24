@@ -208,9 +208,29 @@ int signature_verify_mmap_get_hash(const char *apk_path, char *out_base64, size_
     }
     mmap_apk_free(mapped, size);
 
-    /* base64 编码 */
-    extern int server_gate_encrypt_hash(const unsigned char hash[32], char *out, size_t sz);
-    return server_gate_encrypt_hash(computed_hash, out_base64, out_size);
+    /* 先转 hex 字符串(64 字符),再 base64 编码 hex 字符串
+     * 服务端 base64 解码后得到 hex 字符串,与白名单匹配 */
+    char hex_str[65];
+    for (int i = 0; i < 32; i++)
+        snprintf(hex_str + i * 2, 3, "%02x", computed_hash[i]);
+    hex_str[64] = '\0';
+
+    /* base64 编码 hex 字符串(64 字节 → 88 字节 base64) */
+    static const char b64[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    int len = 64;
+    if (out_size < 92) return -1;
+    int pos = 0;
+    for (int i = 0; i < len; i += 3) {
+        unsigned int n = (unsigned int)hex_str[i] << 16;
+        if (i + 1 < len) n |= (unsigned int)hex_str[i + 1] << 8;
+        if (i + 2 < len) n |= (unsigned int)hex_str[i + 2];
+        out_base64[pos++] = b64[(n >> 18) & 0x3F];
+        out_base64[pos++] = b64[(n >> 12) & 0x3F];
+        out_base64[pos++] = (i + 1 < len) ? b64[(n >> 6) & 0x3F] : '=';
+        out_base64[pos++] = (i + 2 < len) ? b64[n & 0x3F] : '=';
+    }
+    out_base64[pos] = '\0';
+    return 0;
 }
 
 /* ============= 守护线程回调(注册给 trigger_scheduler) ============= */

@@ -1,7 +1,7 @@
 {
   "version": 1,
-  "serverUrl": "",
-  "appId": "defender-demo",
+  "serverUrl": "http://162.251.93.199:8088",
+  "appId": "com.xcj.defender.demo",
   "signatureExpectedHash": "",
   "signatureVerify": { "enabled": true, "onViolation": "kill" },
   "antiDebug": { "enabled": true, "onViolation": "none" },
