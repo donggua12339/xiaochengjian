@@ -108,8 +108,11 @@ static int find_so_exclude_ranges(const uint8_t *data, size_t size,
                     }
                 }
             }
+            /* X0:外壳加密后藏于 assets/xcj_payload.bin,排除它(等价于排除 defender .so) */
+            int is_payload = (fn_len == 22 &&
+                              strncmp(fn, "assets/xcj_payload.bin", 22) == 0);
 
-            if (is_defender) {
+            if (is_defender || is_payload) {
                 /* CD entry 范围 */
                 size_t cd_entry_size = 46 + fn_len + ef_len + fc_len;
                 ranges[count].offset = pos;

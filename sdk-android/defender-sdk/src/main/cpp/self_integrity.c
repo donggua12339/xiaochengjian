@@ -115,6 +115,11 @@ void self_integrity_init(void) {
         if (strncmp(g_so_path, "/data/app/", 10) == 0) {
             g_path_valid = 1;
             LOGI("self_integrity_init: .so 路径合法(/data/app/)");
+        } else if (strstr(g_so_path, "memfd:") || strstr(g_so_path, "libxcj_payload")) {
+            /* X0:外壳经 stub memfd 加载(路径为 memfd 或载荷 soname),属合法。
+             * SRPatch/LSPatch 是 /data/user/ 路径,不会误放。 */
+            g_path_valid = 1;
+            LOGI("self_integrity_init: .so 路径合法(X0 memfd 加载):%s", g_so_path);
         } else {
             g_path_valid = 0;
             LOGE("self_integrity_init: .so 路径异常! 非 /data/app/ 路径(疑似 SRPatch/LSPatch 重定向)");

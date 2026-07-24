@@ -27,6 +27,10 @@ MAGIC = b"XCJSO1"
 MAGIC_LEN = 6
 TRAILER_LEN = MAGIC_LEN + 4
 
+# 密文中不得出现的魔数(zip 局部/中央目录/EOCD/数据描述符 + 本框架魔数),否则会干扰
+# "倒扫定位"(EOCD 倒扫 / 扫 XCJSO1)。frame_clean 换密钥重试直到密文不含这些。
+FORBIDDEN = (b"PK\x03\x04", b"PK\x01\x02", b"PK\x05\x06", b"PK\x07\x08", MAGIC)
+
 
 def rc4_crypt(key: bytes, data: bytes) -> bytes:
     """RC4 流密码;加解密同函数。key 非空。"""
@@ -72,6 +76,27 @@ def extract(blob: bytes, key: bytes) -> bytes:
     return rc4_crypt(key, cipher)
 
 
+def contains_forbidden(cipher: bytes) -> bool:
+    """密文(不含框架 trailer)是否含会干扰定位的魔数。"""
+    return any(m in cipher for m in FORBIDDEN)
+
+
+def gen_key(n: int = 32) -> bytes:
+    """生成 n 字节随机 RC4 密钥。"""
+    return os.urandom(n)
+
+
+def frame_clean(plain: bytes, key: bytes = None, max_tries: int = 256):
+    """加密并确保密文不含 FORBIDDEN 魔数:先用给定 key,不行换随机 key 重试。
+    返回 (framed_blob, key_used);key_used 需注入解码端(stub 编译期)。"""
+    candidates = ([key] if key else []) + [gen_key(32) for _ in range(max_tries)]
+    for k in candidates:
+        framed = frame(plain, k)
+        if not contains_forbidden(framed[:-TRAILER_LEN]):   # 只查密文(trailer 本就含 MAGIC)
+            return framed, k
+    raise RuntimeError(f"frame_clean:{max_tries} 次仍未得到干净密文")
+
+
 def _self_test() -> None:
     keys = [b"xcj-dev-key", b"\x00\x01\x02", os.urandom(16), b"k" * 32]
     plains = [b"", b"\x7fELF" + os.urandom(4096), b"A" * 100000, bytes(range(256)) * 4]
@@ -106,24 +131,34 @@ def main():
                     help="把密文框架追加到资源 RES 尾部(如 ic_launcher.webp);与 --encrypt 合用")
     ap.add_argument("--key", default="xcj-dev-key",
                     help="RC4 密钥(默认开发密钥;生产由 Packer 每构建随机注入)")
+    ap.add_argument("--genkey", nargs="?", type=int, const=32, metavar="N",
+                    help="生成 N 字节(默认 32)随机密钥,hex 输出")
     args = ap.parse_args()
+
+    if args.genkey is not None:
+        print(gen_key(args.genkey).hex())
+        return
+
     key = args.key.encode()
 
     if args.encrypt:
         plain_so, out_bin = args.encrypt
         with open(plain_so, "rb") as f:
             plain = f.read()
+        # frame_clean:先用给定 key,密文撞魔数则换随机 key 重试
+        framed, key_used = frame_clean(plain, key)
         if args.prepend_resource:
             with open(args.prepend_resource, "rb") as f:
                 res = f.read()
-            blob = append_to_resource(res, plain, key)
+            blob = res + framed
             where = f" [藏于 {args.prepend_resource} 尾部]"
         else:
-            blob = frame(plain, key)
+            blob = framed
             where = ""
         with open(out_bin, "wb") as f:
             f.write(blob)
         print(f"[so_cipher] 加密 {plain_so}({len(plain)}B) -> {out_bin}({len(blob)}B){where}")
+        print(f"[so_cipher] 实际密钥(hex,需注入解码端):{key_used.hex()}")
         return
 
     _self_test()

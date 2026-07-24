@@ -74,3 +74,7 @@ __pycache__/
 
 # 宿主编译的 C 交叉验证产物(勿入库)
 *.exe
+
+# X0 生成物(含密钥/密文,勿入库;由 build_x0_pack.py 生成)
+sdk-android/defender-sdk/src/main/cpp/x0_key.h
+sdk-android/defender-demo/src/main/assets/xcj_payload.bin

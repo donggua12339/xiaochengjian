@@ -34,6 +34,19 @@ android {
     buildFeatures {
         viewBinding = false
     }
+
+    /* X0 载荷密文(assets/xcj_payload.bin)须 STORED 不压缩,供 stub 扫 APK 魔数定位 */
+    androidResources {
+        noCompress += "bin"
+    }
+
+    /* X0:明文外壳 libxcj_defender.so 不打进 lib/(防静态提取),仅以密文存于 assets,
+     * 运行时由 stub(xcj_loader)解密 + memfd 加载 */
+    packaging {
+        jniLibs {
+            excludes += "**/libxcj_defender.so"
+        }
+    }
 }
 
 dependencies {

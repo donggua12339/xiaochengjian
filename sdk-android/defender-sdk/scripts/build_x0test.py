@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
-build_x0test.py - X0-3 原型构建:编译 x0test.c → libx0test.so(arm64),
-RC4 加密(魔数框架)→ 生成 x0test_enc.h 供 stub(xcj_loader.c)嵌入。
+build_x0test.py - X0-3 原型构建:
+  1. NDK 编译 x0test.c → libx0test.so(arm64)
+  2. frame_clean 加密(自动避开 zip/框架魔数,撞了换随机密钥)
+  3. 生成 x0_key.h(密钥,供 stub 编译)+ x0_payload.bin(密文框架,供嵌入 APK)
 
-复用 build_inner_so.py 的 NDK 探测(find_ndk/find_clang)+ so_cipher.py 的框架封装。
+载荷密文作为 demo 的 noCompress asset(STORED)进 APK,stub 扫 APK 魔数定位。
+原型跑通后,载荷换成真 libxcj_defender.so(见 ADR 0092 / build_x0_pack 流程)。
 
-用法:
-  python scripts/build_x0test.py [--ndk-path <path>] [--abi arm64-v8a]
-
-原型用固定密钥 x0-prototype-key;生产由 Packer 每构建随机生成 + X1 OBF 混淆(见 ADR 0092 §4)。
+用法:python scripts/build_x0test.py [--ndk-path <path>] [--abi arm64-v8a]
 """
 import os
 import sys
@@ -21,46 +21,29 @@ import so_cipher
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CPP = os.path.join(HERE, "..", "src", "main", "cpp")
-KEY = b"x0-prototype-key"   # 原型固定密钥
+DEMO_ASSETS = os.path.join(HERE, "..", "..", "defender-demo", "src", "main", "assets")
+PROTO_KEY = b"x0-prototype-key"   # 首选密钥;撞魔数则 frame_clean 自动换随机密钥
 
 
 def build_payload_so(ndk: str, abi: str, out_dir: str) -> str:
     clang_exe, target = find_clang(ndk, abi)
-    # NDK sysroot(jni.h / android/log.h 在此);clang 在 .../prebuilt/<host>/bin/
     sysroot = os.path.join(os.path.dirname(os.path.dirname(clang_exe)), "sysroot")
     src = os.path.join(CPP, "x0test.c")
     out = os.path.join(out_dir, "libx0test.so")
-    cmd = [
-        clang_exe, f"--target={target}", f"--sysroot={sysroot}",
-        "-shared", "-fPIC", "-O2",
-        "-I", CPP,
-        src, "-o", out,
-        "-llog",
-    ]
-    print("[build_x0test] 编译:", " ".join(os.path.basename(c) if os.path.sep in c else c for c in cmd))
+    cmd = [clang_exe, f"--target={target}", f"--sysroot={sysroot}",
+           "-shared", "-fPIC", "-O2", "-I", CPP, src, "-o", out, "-llog"]
     subprocess.run(cmd, check=True)
     return out
 
 
-def gen_header(framed: bytes, key: bytes, out_path: str) -> None:
-    def carray(data: bytes, per: int = 16) -> str:
-        lines = []
-        for i in range(0, len(data), per):
-            chunk = data[i:i + per]
-            lines.append("    " + ",".join(f"0x{b:02x}" for b in chunk) + ",")
-        return "\n".join(lines)
-
+def gen_key_header(key: bytes, out_path: str) -> None:
     key_arr = ",".join(f"0x{b:02x}" for b in key)
-    content = f"""/* x0test_enc.h - build_x0test.py 生成,勿手改。加密载荷 libx0test.so(RC4 + 魔数框架)。 */
-#ifndef X0TEST_ENC_H
-#define X0TEST_ENC_H
+    content = f"""/* x0_key.h - build_x0test.py 生成,勿手改。X0 载荷解密密钥(注入 stub)。 */
+#ifndef X0_KEY_H
+#define X0_KEY_H
 #include <stdint.h>
-#define X0TEST_ENC_SIZE {len(framed)}
-static const uint8_t X0TEST_ENC_DATA[X0TEST_ENC_SIZE] = {{
-{carray(framed)}
-}};
-#define X0TEST_ENC_KEY_LEN {len(key)}
-static const uint8_t X0TEST_ENC_KEY[X0TEST_ENC_KEY_LEN] = {{ {key_arr} }};
+#define X0_KEY_LEN {len(key)}
+static const uint8_t X0_KEY[X0_KEY_LEN] = {{ {key_arr} }};
 #endif
 """
     with open(out_path, "w", encoding="utf-8", newline="\n") as f:
@@ -69,7 +52,7 @@ static const uint8_t X0TEST_ENC_KEY[X0TEST_ENC_KEY_LEN] = {{ {key_arr} }};
 
 def main():
     import argparse
-    ap = argparse.ArgumentParser(description="X0-3 原型:编译+加密载荷,生成 x0test_enc.h")
+    ap = argparse.ArgumentParser(description="X0-3 原型:编译+加密载荷,生成 x0_key.h + x0_payload.bin")
     ap.add_argument("--abi", default="arm64-v8a")
     ap.add_argument("--ndk-path", help="NDK 路径(默认自动探测)")
     args = ap.parse_args()
@@ -85,10 +68,19 @@ def main():
         with open(so, "rb") as f:
             plain = f.read()
         print(f"[build_x0test] libx0test.so: {len(plain)} bytes")
-        framed = so_cipher.frame(plain, KEY)   # [密文][MAGIC][len]
-        out_h = os.path.join(CPP, "x0test_enc.h")
-        gen_header(framed, KEY, out_h)
-        print(f"[build_x0test] 生成 {out_h}(框架 {len(framed)} bytes)")
+
+        framed, key_used = so_cipher.frame_clean(plain, PROTO_KEY)
+
+        # 密钥头(供 stub 编译)
+        gen_key_header(key_used, os.path.join(CPP, "x0_key.h"))
+        # 密文框架(供嵌入 APK,demo noCompress asset)
+        os.makedirs(DEMO_ASSETS, exist_ok=True)
+        payload_bin = os.path.join(DEMO_ASSETS, "xcj_payload.bin")
+        with open(payload_bin, "wb") as f:
+            f.write(framed)
+
+        print(f"[build_x0test] x0_key.h 密钥(hex): {key_used.hex()}")
+        print(f"[build_x0test] 密文载荷 -> {payload_bin}({len(framed)} bytes)")
 
 
 if __name__ == "__main__":

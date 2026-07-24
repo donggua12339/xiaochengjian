@@ -13,27 +13,28 @@ class DefenderTestApp : Application() {
 
     override fun attachBaseContext(base: Context) {
         super.attachBaseContext(base)
-        /* 在 ContentProvider 之前加载 defender .so(防 LSPatch 替换 ContentProvider 导致 .so 不加载)
-         * attachBaseContext 是 Application 生命周期最早的可执行点,
-         * LSPatch 的 AppComponentFactory 虽可替换组件,但仍需委托原始 Application 生命周期 */
+        /* X0:加载 stub libxcj_loader.so,bootstrap 从 APK 定位加密外壳 → RC4 解密 →
+         * memfd 加载 → 手动调外壳 JNI_OnLoad 注册 DefenderNative。
+         * 明文外壳 libxcj_defender.so 打包时已从 lib/ 排除(防静态提取),仅以密文存于 assets。
+         * attachBaseContext 早于 ContentProvider(DefenderInitProvider),确保 native 先就绪。 */
         try {
-            System.loadLibrary("xcj_defender")
-            Log.i(TAG, "defender .so 在 attachBaseContext 中加载成功")
+            System.loadLibrary("xcj_loader")
+            val rc = com.xcj.defender.DefenderX0Test.bootstrap(packageCodePath)
+            Log.i(TAG, "[X0] bootstrap rc=$rc(0=外壳经 stub 加密加载成功)")
         } catch (e: UnsatisfiedLinkError) {
-            Log.w(TAG, "attachBaseContext 加载 .so 失败(可能已加载): ${e.message}")
+            Log.w(TAG, "[X0] 加载失败(可能已加载): ${e.message}")
         }
     }
 
     override fun onCreate() {
         super.onCreate()
         Log.d(TAG, "DefenderTestApp onCreate")
-        /* X0-3 原型:验证"加密 .so → memfd → 手动 JNI_OnLoad"核心链路。
-         * ping() 返回 pong-from-memfd-x0 即 stub 自举成功。 */
+        /* X0 验证:外壳经 stub 加密加载后,DefenderNative 应已注册可用 */
         try {
-            val pong = com.xcj.defender.DefenderX0Test.ping()
-            Log.i(TAG, "[X0-3] ping() = $pong(期望 pong-from-memfd-x0)")
+            val ver = com.xcj.defender.DefenderNative.getVersion()
+            Log.i(TAG, "[X0] DefenderNative.getVersion() = $ver(外壳经 stub 加载并注册成功)")
         } catch (e: Throwable) {
-            Log.e(TAG, "[X0-3] ping() 失败: ${e.message}", e)
+            Log.e(TAG, "[X0] DefenderNative 调用失败: ${e.message}", e)
         }
     }
 
