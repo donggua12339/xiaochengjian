@@ -19,6 +19,15 @@ object X4Native {
     /** L3 反 dump 综合检测(rwx 段 + anon:dalvik + memfd 数量 + inotify)。返回可疑计数,0=干净。 */
     external fun antiDumpCheck(): Int
 
+    /** L5 SMC 自测(RC4 往返 + 执行 + 擦除 + 零 rwx 纪律)。返回 0=通过。 */
+    external fun smcSelftest(): Int
+
+    /** L5 SMC 演示敏感计算:解密加密机器码→沙箱页执行→擦除。返回 a+b。 */
+    external fun smcAdd(a: Int, b: Int): Int
+
+    /** L5 SMC 诊断:执行后沙箱页是否已擦除。1=已擦。 */
+    external fun smcWiped(): Int
+
     /** L4 运行时完整性初始化(记录 libc 入口 CRC 基线等)。须在首次 check 前调用。 */
     external fun integrityInit(apkPath: String)
 

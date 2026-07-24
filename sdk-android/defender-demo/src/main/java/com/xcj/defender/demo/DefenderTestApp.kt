@@ -60,6 +60,15 @@ class DefenderTestApp : Application() {
         } catch (e: Throwable) {
             Log.e(TAG, "[X4-4] 检测失败: ${e.message}", e)
         }
+        /* X4-5 L5 SMC 验证(加密机器码→沙箱页执行→擦除 + 零 rwx 纪律) */
+        try {
+            val st = com.xcj.defender.X4Native.smcSelftest()
+            val sum = com.xcj.defender.X4Native.smcAdd(30, 12)
+            val wiped = com.xcj.defender.X4Native.smcWiped()
+            Log.i(TAG, "[X4-5] L5 SMC: selftest=$st(0=pass) smcAdd(30,12)=$sum wiped=$wiped")
+        } catch (e: Throwable) {
+            Log.e(TAG, "[X4-5] SMC 失败: ${e.message}", e)
+        }
         /* X4-2 L4 运行时完整性验证(libc CRC + inline hook + svc 签名块) */
         try {
             com.xcj.defender.X4Native.integrityInit(packageCodePath)

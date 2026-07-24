@@ -57,6 +57,7 @@ set(DEFENDER_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/x4_anti_inject.c
     ${CMAKE_CURRENT_SOURCE_DIR}/x4_anti_debug.c
     ${CMAKE_CURRENT_SOURCE_DIR}/x4_anti_dump.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/x4_smc.c
     ${CMAKE_CURRENT_SOURCE_DIR}/x4_integrity.c
     ${CMAKE_CURRENT_SOURCE_DIR}/x4_jni.c
 )

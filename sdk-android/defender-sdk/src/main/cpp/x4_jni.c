@@ -9,6 +9,7 @@
 #include "x4_integrity.h"
 #include "x4_anti_debug.h"
 #include "x4_anti_dump.h"
+#include "x4_smc.h"
 
 static jint x4_anti_inject_check_jni(JNIEnv *env, jobject thiz) {
     (void)env; (void)thiz;
@@ -28,6 +29,21 @@ static void x4_anti_dump_init_jni(JNIEnv *env, jobject thiz) {
 static jint x4_anti_dump_check_jni(JNIEnv *env, jobject thiz) {
     (void)env; (void)thiz;
     return (jint)x4_anti_dump_check();
+}
+
+static jint x4_smc_selftest_jni(JNIEnv *env, jobject thiz) {
+    (void)env; (void)thiz;
+    return (jint)x4_smc_selftest();
+}
+
+static jint x4_smc_add_jni(JNIEnv *env, jobject thiz, jint a, jint b) {
+    (void)env; (void)thiz;
+    return (jint)x4_smc_add((int)a, (int)b);
+}
+
+static jint x4_smc_wiped_jni(JNIEnv *env, jobject thiz) {
+    (void)env; (void)thiz;
+    return (jint)x4_smc_sandbox_wiped();
 }
 
 static void x4_integrity_init_jni(JNIEnv *env, jobject thiz, jstring apk_path_j) {
@@ -56,10 +72,13 @@ int x4_register_natives(JNIEnv *env) {
         {"antiDebugCheck",   "()I",                      (void *)x4_anti_debug_check_jni},
         {"antiDumpInit",     "()V",                      (void *)x4_anti_dump_init_jni},
         {"antiDumpCheck",    "()I",                      (void *)x4_anti_dump_check_jni},
+        {"smcSelftest",      "()I",                      (void *)x4_smc_selftest_jni},
+        {"smcAdd",           "(II)I",                    (void *)x4_smc_add_jni},
+        {"smcWiped",         "()I",                      (void *)x4_smc_wiped_jni},
         {"integrityInit",    "(Ljava/lang/String;)V",    (void *)x4_integrity_init_jni},
         {"integrityCheck",   "(Ljava/lang/String;)I",    (void *)x4_integrity_check_jni},
     };
-    jint rc = (*env)->RegisterNatives(env, clazz, methods, 6);
+    jint rc = (*env)->RegisterNatives(env, clazz, methods, 9);
     (*env)->DeleteLocalRef(env, clazz);
     return (rc == JNI_OK) ? 0 : -1;
 }
