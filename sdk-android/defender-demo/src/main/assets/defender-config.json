@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "serverUrl": "http://162.251.93.199:8088",
+  "serverUrl": "https://xcj-api.winmelon.cn",
   "appId": "com.xcj.defender.demo",
   "signatureExpectedHash": "",
   "signatureVerify": { "enabled": true, "onViolation": "kill" },
