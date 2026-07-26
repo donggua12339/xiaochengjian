@@ -500,10 +500,11 @@ static jstring native_str_decrypt(JNIEnv *env, jclass clazz, jstring encoded_j) 
 
     /* XOR 解密 */
     uint8_t plain[1024];
-    int plen = dlen < (int)sizeof(plain) ? dlen : (int)sizeof(plain);
+    int plen = dlen < (int)sizeof(plain) - 1 ? dlen : (int)sizeof(plain) - 1;
     for (int i = 0; i < plen; i++) {
         plain[i] = decoded[i] ^ sk[i % X0_STR_KEY_LEN];
     }
+    plain[plen] = '\0';  /* NewStringUTF 需要 null-terminated */
     memset(sk, 0, sizeof(sk)); /* 清零 */
 
     jstring result = (*env)->NewStringUTF(env, (const char *)plain);
