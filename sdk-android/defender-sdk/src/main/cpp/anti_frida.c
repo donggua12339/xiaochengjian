@@ -22,6 +22,9 @@
 #include <fcntl.h>
 #include <dirent.h>
 #include <sys/stat.h>
+#include <poll.h>
+#include <sys/wait.h>
+#include <errno.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -556,17 +559,344 @@ static int check_frida_files(void) {
     return score;
 }
 
-/* ============= 组合检测(同步:A+B+C+E) ============= */
+/* ============= F+G 层:D-Bus 协议探测 + 被动端口扫描 =============
+ *
+ * Frida 使用 D-Bus 协议通信。即使改了端口名/进程名,协议握手不变:
+ *   客户端发: \x00AUTH\r\n
+ *   Frida 回: REJECTED EXTERNAL DBUS_COOKIE_SHA1 ANONYMOUS\r\n
+ *
+ * G 层: 读 /proc/net/tcp(不 connect,被动读)找所有 LISTEN 端口。
+ * F 层: 对非常规 LISTEN 端口发 D-Bus AUTH 探测。
+ *
+ * 魔改 Frida 几乎无法绕过(除非重写整个 D-Bus 协议栈,成本极高)。
+ */
+
+/* 已知合法端口(排除) */
+static int is_known_port(int port) {
+    static const int known[] = {
+        22, 53, 80, 443, 554, 8080, 8443,    /* 常见服务 */
+        5037,                                  /* adb */
+        9222, 9223, 9229,                     /* Chrome DevTools */
+        0
+    };
+    for (int i = 0; known[i]; i++) {
+        if (port == known[i]) return 1;
+    }
+    return 0;
+}
 
 /**
- * AntiFrida 检测(同步:A maps + B 端口 + C 线程名 + E 文件路径,不含 D 后台扫描)
+ * F 层:对指定端口发 D-Bus AUTH 探测
+ * @return 1=检测到 D-Bus 服务(疑似 Frida) / 0=未检测到
+ */
+static int probe_dbus_on_port(int port) {
+    int sock = socket(AF_INET, SOCK_STREAM, 0);
+    if (sock < 0) return 0;
+
+    /* 非阻塞 + 超时 */
+    struct timeval tv = { .tv_sec = 0, .tv_usec = 300000 }; /* 300ms */
+    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+
+    struct sockaddr_in addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons((uint16_t)port);
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+
+    if (connect(sock, (struct sockaddr *)&addr, sizeof(addr)) != 0) {
+        close(sock);
+        return 0;
+    }
+
+    /* 发 D-Bus AUTH 握手 */
+    const char auth_msg[] = "\x00AUTH\r\n";
+    send(sock, auth_msg, sizeof(auth_msg) - 1, 0);
+
+    /* 读响应 */
+    char resp[256] = {0};
+    ssize_t n = recv(sock, resp, sizeof(resp) - 1, 0);
+    close(sock);
+
+    if (n <= 0) return 0;
+    resp[n] = '\0';
+
+    /* D-Bus 服务响应特征:包含 REJECTED 或 EXTERNAL 或 DBUS_COOKIE */
+    if (strstr(resp, "REJECTED") || strstr(resp, "EXTERNAL") ||
+        strstr(resp, "DBUS_COOKIE") || strstr(resp, "ANONYMOUS")) {
+        return 1;
+    }
+    return 0;
+}
+
+/**
+ * F+G 层组合:被动端口扫描 + D-Bus 协议探测
+ * @return 1=检测到 Frida D-Bus / 0=未检测到
+ */
+static int check_dbus_protocol(void) {
+    /* G 层:读 /proc/net/tcp 找所有 LISTEN 端口 */
+    static const char *tcp_files[] = { "/proc/net/tcp", "/proc/net/tcp6", NULL };
+
+    for (int fi = 0; tcp_files[fi]; fi++) {
+        int fd = open(tcp_files[fi], O_RDONLY);
+        if (fd < 0) continue;
+
+        char buf[8192];
+        ssize_t total = 0, n;
+        while ((n = read(fd, buf + total, sizeof(buf) - 1 - (size_t)total)) > 0) {
+            total += n;
+            if ((size_t)total >= sizeof(buf) - 1) break;
+        }
+        close(fd);
+        buf[total] = '\0';
+
+        /* 逐行解析,找 state=0A(LISTEN)的端口 */
+        char *line = buf;
+        while (line && *line) {
+            char *nl = strchr(line, '\n');
+            if (nl) *nl = '\0';
+
+            /* 跳过表头 */
+            if (strstr(line, "local_address")) { line = nl ? nl + 1 : NULL; continue; }
+
+            /* 解析: sl local_address rem_address st ...
+             * 格式:  1: 0100007F:XXXX 00000000:0000 0A ...
+             * st=0A 表示 LISTEN */
+            char *st_pos = strstr(line, " 0A ");
+            if (!st_pos) { line = nl ? nl + 1 : NULL; continue; }
+
+            /* 提取本地端口(local_address 中 : 后的 4 位 hex) */
+            char *colon = strchr(line, ':');
+            if (!colon) { line = nl ? nl + 1 : NULL; continue; }
+            /* 找第二个冒号(本地端口) */
+            char *colon2 = strchr(colon + 1, ':');
+            if (!colon2) { line = nl ? nl + 1 : NULL; continue; }
+            int port = 0;
+            sscanf(colon2 + 1, "%X", &port);
+
+            if (port > 0 && port < 65536 && !is_known_port(port)) {
+                /* F 层:D-Bus 探测 */
+                if (probe_dbus_on_port(port)) {
+                    LOGE("F+G 层:D-Bus 协议探测命中端口 %d", port);
+                    return 1;
+                }
+            }
+
+            line = nl ? nl + 1 : NULL;
+        }
+    }
+    return 0;
+}
+
+/* ============= H 层:seccomp-bpf 系统调用过滤 =============
+ *
+ * 内核级拦截 process_vm_readv / process_vm_writev。
+ * Frida 的内存读写依赖这两个系统调用,拦截后注入失效。
+ * 不过滤 ptrace(自身反调试互锁需要)。
+ *
+ * 注意:必须在自身 ptrace 互锁完成后再安装。
+ */
+#include <linux/filter.h>
+#include <linux/seccomp.h>
+#include <linux/audit.h>
+#include <sys/prctl.h>
+
+/* ARM64 syscall 号 */
+#ifdef __aarch64__
+#define SYS_NR_process_vm_readv   270
+#define SYS_NR_process_vm_writev  271
+#else
+#define SYS_NR_process_vm_readv   310
+#define SYS_NR_process_vm_writev  311
+#endif
+
+static int install_seccomp_filter(void) {
+    /* 先设 NO_NEW_PRIVS(seccomp 要求) */
+    if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0) {
+        LOGW("H 层:PR_SET_NO_NEW_PRIVS 失败");
+        return -1;
+    }
+
+    /* BPF 程序:拦截 process_vm_readv/writev,允许其他 */
+    struct sock_filter filter[] = {
+        /* 加载 syscall 号 */
+        BPF_STMT(BPF_LD | BPF_W | BPF_ABS,
+                 (offsetof(struct seccomp_data, nr))),
+        /* 如果是 process_vm_readv → 拒绝 */
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_NR_process_vm_readv, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | (EPERM & 0xFFFF)),
+        /* 如果是 process_vm_writev → 拒绝 */
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_NR_process_vm_writev, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | (EPERM & 0xFFFF)),
+        /* 其他 → 允许 */
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+    };
+
+    struct sock_fprog prog = {
+        .len = (unsigned short)(sizeof(filter) / sizeof(filter[0])),
+        .filter = filter,
+    };
+
+    if (prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &prog) != 0) {
+        LOGW("H 层:seccomp 安装失败(errno=%d)", errno);
+        return -1;
+    }
+
+    LOGI("H 层:seccomp-bpf 已安装(process_vm_readv/writev 已拦截)");
+    return 0;
+}
+
+/* ============= I 层:多进程交叉检测 =============
+ *
+ * fork 子进程读父进程 /proc/<ppid>/maps + status。
+ * Frida 通常只 hook 目标进程,子进程检测逻辑不受影响。
+ * 子进程通过 exit code 传回结果:0=干净 / 1=检测到 frida / 2=被调试。
+ */
+static int check_cross_process(void) {
+    int pipefd[2];
+    if (pipe(pipefd) != 0) return 0;
+
+    pid_t child = fork();
+    if (child < 0) {
+        close(pipefd[0]); close(pipefd[1]);
+        return 0;
+    }
+
+    if (child == 0) {
+        /* 子进程 */
+        close(pipefd[0]);
+        int result = 0;
+        pid_t ppid = getppid();
+
+        /* 检查父进程 TracerPid */
+        char status_path[64];
+        snprintf(status_path, sizeof(status_path), "/proc/%d/status", ppid);
+        int sfd = open(status_path, O_RDONLY);
+        if (sfd >= 0) {
+            char sbuf[4096];
+            ssize_t sn = read(sfd, sbuf, sizeof(sbuf) - 1);
+            close(sfd);
+            if (sn > 0) {
+                sbuf[sn] = '\0';
+                char *tracer = strstr(sbuf, "TracerPid:");
+                if (tracer) {
+                    int tpid = 0;
+                    sscanf(tracer + 10, "%d", &tpid);
+                    if (tpid != 0) result = 2;  /* 被调试 */
+                }
+            }
+        }
+
+        /* 检查父进程 maps 中 frida 特征 */
+        char maps_path[64];
+        snprintf(maps_path, sizeof(maps_path), "/proc/%d/maps", ppid);
+        int mfd = open(maps_path, O_RDONLY);
+        if (mfd >= 0) {
+            char mbuf[65536];
+            ssize_t mn = 0, r;
+            while ((r = read(mfd, mbuf + mn, sizeof(mbuf) - 1 - (size_t)mn)) > 0) {
+                mn += r;
+                if ((size_t)mn >= sizeof(mbuf) - 1) break;
+            }
+            close(mfd);
+            mbuf[mn] = '\0';
+            if (strstr(mbuf, "frida") || strstr(mbuf, "gadget") ||
+                strstr(mbuf, "linjector") || strstr(mbuf, "frida-agent")) {
+                result = 1;
+            }
+        }
+
+        write(pipefd[1], &result, sizeof(result));
+        close(pipefd[1]);
+        _exit(0);
+    }
+
+    /* 父进程:等子进程结果(最多 2 秒) */
+    close(pipefd[1]);
+    int result = 0;
+    struct pollfd pfd = { .fd = pipefd[0], .events = POLLIN };
+    if (poll(&pfd, 1, 2000) > 0) {
+        read(pipefd[0], &result, sizeof(result));
+    }
+    close(pipefd[0]);
+
+    /* 回收子进程(非阻塞) */
+    int status;
+    waitpid(child, &status, WNOHANG);
+
+    if (result == 1) {
+        LOGE("I 层:子进程检测到父进程 maps 含 frida");
+        return 1;
+    }
+    if (result == 2) {
+        LOGE("I 层:子进程检测到父进程被调试(TracerPid!=0)");
+        return 1;
+    }
+    return 0;
+}
+
+/* ============= J 层:rwxp 匿名映射检测(反 inline hook) =============
+ *
+ * Frida inline hook 必然将代码段 mprotect 为 rwxp。
+ * 正常 app 不应有大块 rwxp 匿名映射(除了 ART JIT 的 code_cache)。
+ */
+static int check_rwxp_anonymous(void) {
+    int fd = open("/proc/self/maps", O_RDONLY);
+    if (fd < 0) return 0;
+
+    char buf[65536];
+    ssize_t total = 0, n;
+    while ((n = read(fd, buf + total, sizeof(buf) - 1 - (size_t)total)) > 0) {
+        total += n;
+        if ((size_t)total >= sizeof(buf) - 1) break;
+    }
+    close(fd);
+    buf[total] = '\0';
+
+    int rwxp_count = 0;
+    char *line = buf;
+    while (line && *line) {
+        char *nl = strchr(line, '\n');
+        if (nl) *nl = '\0';
+
+        /* 找 rwxp 权限 */
+        if (strstr(line, "rwxp")) {
+            /* 排除已知合法:ART code_cache / JIT / dalvik-jit */
+            if (!strstr(line, "code_cache") && !strstr(line, "dalvik-jit") &&
+                !strstr(line, "/dev/ashmem") && !strstr(line, "anon_inode")) {
+                /* 解析映射大小 */
+                unsigned long start, end;
+                if (sscanf(line, "%lx-%lx", &start, &end) == 2) {
+                    unsigned long size = end - start;
+                    if (size > 4096) {  /* >4KB 的 rwxp 匿名映射 = 可疑 */
+                        rwxp_count++;
+                    }
+                }
+            }
+        }
+        line = nl ? nl + 1 : NULL;
+    }
+
+    if (rwxp_count > 0) {
+        LOGE("J 层:检测到 %d 个可疑 rwxp 匿名映射(inline hook?)", rwxp_count);
+        return 1;
+    }
+    return 0;
+}
+
+/* ============= 组合检测(同步:A+B+C+E+F+G+H+I+J) ============= */
+
+/**
+ * AntiFrida 检测(同步:A-E + F/G + H + I + J)
  *
  * @return 0=未检测到 / 1=检测到 Frida
  */
-int anti_frida_check(void) {
-    LOGI("=== AntiFrida 检测(A+B+C+E) ===");
+static int g_seccomp_installed = 0;
 
-    int strong_hit = 0;  /* A/B/C 强信号计数 */
+int anti_frida_check(void) {
+    LOGI("=== AntiFrida 检测(A-E + F/G + H + I + J) ===");
+
+    int strong_hit = 0;
 
     /* A:maps 扫描 */
     if (check_maps_frida()) {
@@ -586,19 +916,43 @@ int anti_frida_check(void) {
         strong_hit = 1;
     }
 
-    /* E:通用文件特征扫描(降权:单独命中不 kill)
-     * 文件残留 ≠ 活跃注入;改名 frida 运行时 A 层会抓到。
-     * E 层仅在 A/B/C 均未命中时提供辅助告警。 */
+    /* E:通用文件特征扫描(降权) */
     int e_score = check_frida_files();
     if (e_score > 0 && !strong_hit) {
-        LOGW("E 层检测到可疑文件(score=%d),但无活跃注入证据,不单独触发", e_score);
+        LOGW("E 层:可疑文件 score=%d(不单独触发)", e_score);
+    }
+
+    /* F+G:D-Bus 协议探测(杀手锏) */
+    if (check_dbus_protocol()) {
+        LOGE("F+G 层:D-Bus 协议探测命中");
+        strong_hit = 1;
+    }
+
+    /* I:多进程交叉检测 */
+    if (check_cross_process()) {
+        LOGE("I 层:多进程交叉检测到异常");
+        strong_hit = 1;
+    }
+
+    /* J:rwxp 匿名映射检测 */
+    if (check_rwxp_anonymous()) {
+        LOGE("J 层:rwxp 匿名映射(inline hook?)");
+        strong_hit = 1;
+    }
+
+    /* H:seccomp-bpf(仅首次安装,内核级防线)
+     * 放在最后:确保自身 ptrace 互锁等操作已完成 */
+    if (!g_seccomp_installed) {
+        if (install_seccomp_filter() == 0) {
+            g_seccomp_installed = 1;
+        }
     }
 
     if (strong_hit) {
-        LOGE("AntiFrida:强信号命中(A/B/C)");
+        LOGE("AntiFrida:强信号命中");
         return 1;
     }
 
-    LOGI("AntiFrida 检测通过(未检测到活跃 Frida)");
+    LOGI("AntiFrida 检测通过(9 层全绿)");
     return 0;
 }
