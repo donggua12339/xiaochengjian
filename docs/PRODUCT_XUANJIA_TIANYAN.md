@@ -58,6 +58,21 @@
 
 **玄甲 v1.0 总工程量：约 17 天**
 
+### 实现状态(2026-07-26 更新)
+
+| # | 状态 | 真机验证 | 备注 |
+|---|:----:|:--------:|------|
+| X0 | ✅ 完成 | ✅ | RC4+memfd+T1 cl 匿名(ADR 0092 accepted) |
+| X1 | ✅ 完成 | ✅ | obfstr_poly + java_obf native 化 + CFF 碎片 + Hikari |
+| X2 | ✅ 完成 | ✅ | defender_log.h + LOGE 脱敏 |
+| X3 | ✅ 完成 | ✅ | X3LifecycleGuard.kt 三项检测 |
+| X4 | ✅ 完成+超配 | ✅ | 五层+响应链+Xposed+KeyAttestation+PlayIntegrity(ADR 0093 accepted) |
+| X5 | ✅ 完成 | ✅ | VpnProxyDetector.kt(tun/proxy/proc/net/tcp) |
+| X6 | ✅ 完成 | ✅ | DualAppDetector.kt(uid/多用户/虚拟框架/包名) |
+| X7 | ✅ 完成 | ✅ | 强证据③ IDA 23946 + anti_frida 27042-27045 + SVC |
+| X8 | ✅ 完成 | ✅ | x8_anti_fart.c(data 目录/maps/fd/tmp 四维) |
+| X9 | ✅ 完成 | ✅ | x9_odex_detect.c(时间/vdex 大小/oat 目录) |
+
 > **设计红线**：玄甲的所有功能**不修改用户已有 DEX 字节码**（遵守 ADR 0077）。X0-X9 全部在 SDK 自身 .so / 注入 dex 内实现。用户 Java 代码中的字符串加密属天衍 T4，需 ADR 0090 授权。
 
 ---
@@ -137,6 +152,17 @@ MT 管理器「字符串解密」原理：扫描 `.rodata/.data`，找连续 ASC
 | **T6** | 加固质量报告 | Packer 封装后自动运行 audit-own 检测加固后 APK 安全性，输出 JSON 报告（字符串残留 / 明文泄露 / 检测覆盖率） | 2 天 | P1 |
 
 **天衍 v1.0 增量工程量：约 13 天**
+
+### 实现状态(2026-07-26 更新)
+
+| # | 状态 | 真机验证 | 备注 |
+|---|:----:|:--------:|------|
+| T1 | ✅ 完成 | ✅ | custom_linker cl_dlopen_mem 真机通过,defender 匿名映射(自引用+namespace 修复) |
+| T2 | ✅ 完成 | 待 T4_ENABLED | vm_engine + VM_BC_xor_decrypt[79B],XOR 解密已字节码化 |
+| T3 | ✅ 代码就位 | 待构建期脚本 | t3_segment_str.c 运行时组装+VMP+清零;缺 Python 分段生成工具 |
+| T4 | ✅ 代码就位 | 待端到端 | DexStringEncryptor(dexlib2) + t4_str_decrypt(VM);ADR 0090 accepted |
+| T5 | ✅ 完成 | — | HardenCommand CLI + JSON 配置 + defender-config 生成 |
+| T6 | ✅ 完成 | — | QualityReportCommand CLI + 5 维评分 + JSON 报告 |
 
 ---
 
