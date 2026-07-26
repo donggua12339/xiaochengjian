@@ -40,7 +40,7 @@ export class HealthController {
     const promMetrics = await this.metricsService.getMetrics();
 
     // 自定义 DB 连通性指标
-    const dbUp = await this.checkDb() ? 1 : 0;
+    const dbUp = (await this.checkDb()) ? 1 : 0;
     const dbMetric = [
       '# HELP xcj_db_up Database connectivity (1=up, 0=down)',
       '# TYPE xcj_db_up gauge',

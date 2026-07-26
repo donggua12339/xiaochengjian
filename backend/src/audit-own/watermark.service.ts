@@ -1,8 +1,4 @@
-import {
-  Injectable,
-  BadRequestException,
-  Logger,
-} from '@nestjs/common';
+import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
 import * as yauzl from 'yauzl';
@@ -40,9 +36,7 @@ export class WatermarkService {
       this.logger.log('水印 AES-256 密钥已加载');
     } else {
       this.watermarkKey = null;
-      this.logger.warn(
-        'WATERMARK_AES_KEY 未配置或格式错误(需 32 字节 hex),水印生成端点将拒绝',
-      );
+      this.logger.warn('WATERMARK_AES_KEY 未配置或格式错误(需 32 字节 hex),水印生成端点将拒绝');
     }
   }
 
@@ -115,9 +109,11 @@ export class WatermarkService {
     if (!this.watermarkKey) {
       throw new BadRequestException('WATERMARK_KEY_NOT_CONFIGURED');
     }
-    const envelope = JSON.parse(
-      Buffer.from(watermarkBase64, 'base64').toString('utf8'),
-    ) as { iv: string; ciphertext: string; tag: string };
+    const envelope = JSON.parse(Buffer.from(watermarkBase64, 'base64').toString('utf8')) as {
+      iv: string;
+      ciphertext: string;
+      tag: string;
+    };
     const plaintext = this.cryptoService.aesDecrypt(
       this.watermarkKey,
       Buffer.from(envelope.iv, 'base64'),

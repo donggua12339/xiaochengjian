@@ -139,7 +139,13 @@ export class HandshakeService {
       return null;
     }
 
-    let sessionData: { aesKey: string; appId: string; developerId: string; createdAt?: number; rotatedAt?: number };
+    let sessionData: {
+      aesKey: string;
+      appId: string;
+      developerId: string;
+      createdAt?: number;
+      rotatedAt?: number;
+    };
     try {
       sessionData = JSON.parse(raw);
     } catch {

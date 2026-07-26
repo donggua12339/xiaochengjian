@@ -10,13 +10,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import {
-  ApiBearerAuth,
-  ApiOperation,
-  ApiTags,
-  ApiBody,
-  ApiConsumes,
-} from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiTags, ApiBody, ApiConsumes } from '@nestjs/swagger';
 import { IsString, MaxLength, MinLength } from 'class-validator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentDeveloper } from '../common/decorators/current-developer.decorator';
@@ -76,10 +70,7 @@ export class WatermarkController {
     if (!wid) {
       throw new BadRequestException('WATERMARK_ID_REQUIRED');
     }
-    return this.watermarkService.generateEncryptedWatermark(
-      wid,
-      dto.version ?? '0.2.0',
-    );
+    return this.watermarkService.generateEncryptedWatermark(wid, dto.version ?? '0.2.0');
   }
 
   /**
@@ -133,9 +124,7 @@ export class WatermarkController {
       throw new BadRequestException('APK_FILE_REQUIRED');
     }
 
-    const result = await this.watermarkService.extractAndDecryptFromApk(
-      file.buffer,
-    );
+    const result = await this.watermarkService.extractAndDecryptFromApk(file.buffer);
 
     return {
       found: result.found,

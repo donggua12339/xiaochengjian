@@ -1,8 +1,4 @@
-import {
-  Injectable,
-  ForbiddenException,
-  Logger,
-} from '@nestjs/common';
+import { Injectable, ForbiddenException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 /**
@@ -33,7 +29,10 @@ export class AuditOwnValidators {
    * @returns 匹配的 application(含 id / signHashAllowList)
    * @throws ForbiddenException 包名不在白名单
    */
-  async validatePackageName(developerId: string, packageName: string): Promise<{
+  async validatePackageName(
+    developerId: string,
+    packageName: string,
+  ): Promise<{
     id: string;
     name: string;
     signHashAllowList: string[];
@@ -43,9 +42,7 @@ export class AuditOwnValidators {
       select: { id: true, name: true, signHashAllowList: true },
     });
     if (!app) {
-      this.logger.warn(
-        `包名白名单校验失败:developerId=${developerId} packageName=${packageName}`,
-      );
+      this.logger.warn(`包名白名单校验失败:developerId=${developerId} packageName=${packageName}`);
       throw new ForbiddenException('APP_NOT_OWNED', {
         cause: 'package name not in developer whitelist',
       });
@@ -61,19 +58,14 @@ export class AuditOwnValidators {
    *
    * @throws ForbiddenException 签名不匹配 / 白名单为空
    */
-  async validateSignatureHash(
-    signHashAllowList: string[],
-    signatureHash: string,
-  ): Promise<void> {
+  async validateSignatureHash(signHashAllowList: string[], signatureHash: string): Promise<void> {
     if (!signHashAllowList || signHashAllowList.length === 0) {
       throw new ForbiddenException('SIGNATURE_WHITELIST_EMPTY', {
         cause: 'developer must configure signHashAllowList in admin-web first',
       });
     }
     const normalized = signatureHash.toLowerCase();
-    const matched = signHashAllowList.some(
-      (h) => h.toLowerCase() === normalized,
-    );
+    const matched = signHashAllowList.some((h) => h.toLowerCase() === normalized);
     if (!matched) {
       this.logger.warn(
         `签名 hash 校验失败:expected one of ${signHashAllowList.length} hashes, got ${normalized}`,

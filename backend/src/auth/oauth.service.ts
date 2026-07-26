@@ -1,9 +1,4 @@
-import {
-  Injectable,
-  BadRequestException,
-  UnauthorizedException,
-  Logger,
-} from '@nestjs/common';
+import { Injectable, BadRequestException, UnauthorizedException, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
@@ -51,8 +46,7 @@ export class OAuthService {
 
     if (provider === 'github') {
       const clientId = this.configService.get('githubClientId', { infer: true }) as
-        | string
-        | undefined;
+        string | undefined;
       if (!clientId) {
         throw new BadRequestException('GITHUB_OAUTH_NOT_CONFIGURED');
       }
@@ -130,10 +124,7 @@ export class OAuthService {
   /**
    * 用 code 换 OAuth access_token
    */
-  private async exchangeCodeForToken(
-    provider: 'github' | 'qq',
-    _code: string,
-  ): Promise<string> {
+  private async exchangeCodeForToken(provider: 'github' | 'qq', _code: string): Promise<string> {
     // TODO: 实现实际 HTTP 请求(待 OAuth app 配置后)
     // GitHub: POST https://github.com/login/oauth/access_token
     //   body: { client_id, client_secret, code, redirect_uri }
@@ -159,9 +150,7 @@ export class OAuthService {
     // GitHub: GET https://api.github.com/user + GET https://api.github.com/user/emails
     // QQ: GET https://graph.qq.com/oauth2.0/me(拿 openid) + GET https://graph.qq.com/user/get_user_info
 
-    throw new Error(
-      `OAuth ${provider} fetch user info not implemented yet (ADR 0074 proposed)`,
-    );
+    throw new Error(`OAuth ${provider} fetch user info not implemented yet (ADR 0074 proposed)`);
   }
 
   /**

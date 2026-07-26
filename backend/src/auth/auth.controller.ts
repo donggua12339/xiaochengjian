@@ -83,10 +83,7 @@ export class AuthController {
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: '修改密码(需登录,校验当前密码)' })
-  async changePassword(
-    @CurrentDeveloper() developerId: string,
-    @Body() dto: ChangePasswordDto,
-  ) {
+  async changePassword(@CurrentDeveloper() developerId: string, @Body() dto: ChangePasswordDto) {
     return this.authService.changePassword(developerId, dto.currentPassword, dto.newPassword);
   }
 

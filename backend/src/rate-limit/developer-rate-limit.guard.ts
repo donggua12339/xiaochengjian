@@ -51,8 +51,11 @@ export class DeveloperRateLimitGuard implements CanActivate {
     const limit = options.limit ?? 100;
     const window = options.window ?? 60;
 
-    const { allowed, remaining, retryAfter } =
-      await this.rateLimitService.checkDeveloperRateLimit(developerId, limit, window);
+    const { allowed, remaining, retryAfter } = await this.rateLimitService.checkDeveloperRateLimit(
+      developerId,
+      limit,
+      window,
+    );
 
     if (!allowed) {
       throw new HttpException(

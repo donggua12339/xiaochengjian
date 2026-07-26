@@ -1,9 +1,4 @@
-import {
-  Injectable,
-  BadRequestException,
-  ForbiddenException,
-  Logger,
-} from '@nestjs/common';
+import { Injectable, BadRequestException, ForbiddenException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 
 /**
@@ -175,9 +170,7 @@ export class HardenerEulaService {
       },
     });
 
-    this.logger.log(
-      `${hardener} EULA v${CURRENT_EULA_VERSION} 已接受: developerId=${developerId}`,
-    );
+    this.logger.log(`${hardener} EULA v${CURRENT_EULA_VERSION} 已接受: developerId=${developerId}`);
   }
 
   /**

@@ -35,19 +35,14 @@ const BANGCLE_APP_PREFIXES = ['com.bangcle.', 'com.secapk.'];
 /**
  * 腾讯乐固特征(ADR 0082-B)
  */
-const LEGU_SO_PATTERNS = [
-  /^lib\/[^/]+\/libshell\.so$/i,
-  /^lib\/[^/]+\/libshella\.so$/i,
-];
+const LEGU_SO_PATTERNS = [/^lib\/[^/]+\/libshell\.so$/i, /^lib\/[^/]+\/libshella\.so$/i];
 
 const LEGU_APP_PREFIXES = ['com.tencent.'];
 
 /**
  * 360 加固保特征(ADR 0082-A)
  */
-const QIHOO360_SO_PATTERNS = [
-  /^lib\/[^/]+\/libjiagu\.so$/i,
-];
+const QIHOO360_SO_PATTERNS = [/^lib\/[^/]+\/libjiagu\.so$/i];
 
 const QIHOO360_APP_PREFIXES = ['com.qihoo.util.', 'com.qihoo.'];
 
@@ -109,18 +104,13 @@ export class HardenerDetector {
    * @returns 检测结果
    * @throws ForbiddenException 检测到不支持的加固厂商(UNSUPPORTED_HARDENER)
    */
-  detect(
-    apkEntries: string[],
-    applicationClassName?: string,
-  ): HardenerDetectResult {
+  detect(apkEntries: string[], applicationClassName?: string): HardenerDetectResult {
     // 1. 先检测不支持的厂商(黑名单优先,拒绝)
     const unsupportedSos = apkEntries.filter((entry) =>
       UNSUPPORTED_HARDENER_SO_PATTERNS.some((pattern) => pattern.test(entry)),
     );
     if (unsupportedSos.length > 0) {
-      this.logger.warn(
-        `检测到不支持的加固厂商 so: ${unsupportedSos.join(', ')}`,
-      );
+      this.logger.warn(`检测到不支持的加固厂商 so: ${unsupportedSos.join(', ')}`);
       throw new ForbiddenException('UNSUPPORTED_HARDENER', {
         cause:
           'detected unsupported hardener (ijiami/baidu/netease/kiwi/dingxiang/mobifree/nagain). Only bangcle/legu/qihoo360 are supported (ADR 0078 + 0082-A/B)',
@@ -150,9 +140,7 @@ export class HardenerDetector {
       }
 
       if (evidence.length > 0) {
-        this.logger.log(
-          `检测到 ${hardener.name} 加固: ${evidence.join('; ')}`,
-        );
+        this.logger.log(`检测到 ${hardener.name} 加固: ${evidence.join('; ')}`);
         return { hardener: hardener.name as HardenerType, evidence };
       }
     }

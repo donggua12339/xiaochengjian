@@ -4,7 +4,10 @@ import { CardKeyService } from './card-key.service';
 import { GenerateCardsDto, CreateCardTemplateDto, UnbindDeviceDto } from './dto/card-key.dto';
 import { PaginationDto } from '../common/dto/pagination.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { DeveloperRateLimitGuard, DeveloperRateLimit } from '../rate-limit/developer-rate-limit.guard';
+import {
+  DeveloperRateLimitGuard,
+  DeveloperRateLimit,
+} from '../rate-limit/developer-rate-limit.guard';
 import { CurrentDeveloper } from '../common/decorators/current-developer.decorator';
 import { Audit } from '../audit/audit.decorator';
 import type { CardKeyType } from '@prisma/client';
