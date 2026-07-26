@@ -21,6 +21,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <dirent.h>
+#include <sys/stat.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -474,29 +475,85 @@ void anti_frida_start_memory_scan(void) {
 /* ============= E:文件路径检测 ============= */
 
 /**
- * 检测 Frida 默认文件路径
+ * E 层:通用可执行文件特征扫描(降权,不单独触发 kill)
  *
- * Frida server 通常推送到 /data/local/tmp/,检查常见路径。
- * 用 inline syscall 的 faccessat(避免 libc hook)。
+ * 改造说明(2026-07-27):
+ *   旧 E 层硬编码 6 个文件名,改名即绕过(.fs176/.hluda1656 实证)。
+ *   新 E 层遍历 /data/local/tmp/ 下所有文件,读前 4KB 检查 frida 特征字符串。
+ *   不依赖文件名,改名无效。
  *
- * @return 0=未检测到 / 1=检测到 Frida 文件
+ * 返回值:
+ *   0  = 未检测到
+ *   >0 = 命中分数(内容特征=30, 仅存在=10)
+ *   E 层为辅助确认层,单独命中不触发 kill(需 A/B/C 交叉)。
  */
 static int check_frida_files(void) {
-    const char *paths[] = {
-        "/data/local/tmp/frida-server",
-        "/data/local/tmp/re.frida.server",
-        "/data/local/tmp/frida-server-64",
-        "/data/local/tmp/frida-server-32",
-        "/data/local/tmp/frida-gadget.so",
-        "/data/local/tmp/re.frida.server.so",
+    int score = 0;
+
+    /* frida 二进制中的特征字符串(用最短不变前缀) */
+    static const char * const sigs[] = {
+        "LIBFRIDA",
+        "frida:rpc",
+        "frida-agent",
+        "gum-js-loop",
+        "FridaGadget",
+        "frida-server",
     };
-    for (int i = 0; i < 6; i++) {
-        if (af_access(paths[i], 0) == 0) {  /* F_OK=0 */
-            LOGE("文件路径检测到 Frida");
-            return 1;
+    const int sig_count = 6;
+
+    DIR *d = opendir("/data/local/tmp");
+    if (!d) return 0;
+
+    struct dirent *ent;
+    while ((ent = readdir(d)) != NULL) {
+        if (ent->d_name[0] == '.') {
+            /* 跳过 . 和 ..,但不跳过 .fs176 这类隐藏文件 */
+            if (ent->d_name[1] == '\0' || (ent->d_name[1] == '.' && ent->d_name[2] == '\0'))
+                continue;
+        }
+        if (ent->d_type == DT_DIR) continue;
+
+        char full_path[300];
+        snprintf(full_path, sizeof(full_path), "/data/local/tmp/%s", ent->d_name);
+
+        /* 只读前 4KB(ELF header + 前几个 section 通常含特征字符串) */
+        int fd = open(full_path, O_RDONLY);
+        if (fd < 0) continue;
+
+        char buf[4096];
+        ssize_t n = read(fd, buf, sizeof(buf) - 1);
+        close(fd);
+        if (n <= 0) continue;
+        buf[n] = '\0';
+
+        /* 检查是否为 ELF */
+        int is_elf = (n >= 4 && buf[0] == '\x7f' && buf[1] == 'E' &&
+                      buf[2] == 'L' && buf[3] == 'F');
+
+        /* 扫描特征字符串 */
+        int hit = 0;
+        for (int i = 0; i < sig_count; i++) {
+            if (strstr(buf, sigs[i])) {
+                hit = 1;
+                break;
+            }
+        }
+
+        if (hit) {
+            LOGE("E 层:文件含 frida 特征");
+            score += 30;
+        } else if (is_elf) {
+            /* ELF 但无特征(可能是字符串混淆版 frida 或其他工具) */
+            /* 检查文件大小:frida-server 通常 >10MB */
+            struct stat st;
+            if (stat(full_path, &st) == 0 && st.st_size > 10 * 1024 * 1024) {
+                score += 10;  /* 大 ELF 在 /data/local/tmp 可疑 */
+            }
         }
     }
-    return 0;
+    closedir(d);
+
+    return score;
 }
 
 /* ============= 组合检测(同步:A+B+C+E) ============= */
@@ -509,30 +566,39 @@ static int check_frida_files(void) {
 int anti_frida_check(void) {
     LOGI("=== AntiFrida 检测(A+B+C+E) ===");
 
+    int strong_hit = 0;  /* A/B/C 强信号计数 */
+
     /* A:maps 扫描 */
     if (check_maps_frida()) {
         LOGE("A 层检测到 Frida(maps)");
-        return 1;
+        strong_hit = 1;
     }
 
     /* B:端口 27042 */
     if (check_frida_port()) {
         LOGE("B 层检测到 Frida(端口 27042)");
-        return 1;
+        strong_hit = 1;
     }
 
     /* C:线程名 */
     if (check_thread_names()) {
         LOGE("C 层检测到 Frida(线程名)");
+        strong_hit = 1;
+    }
+
+    /* E:通用文件特征扫描(降权:单独命中不 kill)
+     * 文件残留 ≠ 活跃注入;改名 frida 运行时 A 层会抓到。
+     * E 层仅在 A/B/C 均未命中时提供辅助告警。 */
+    int e_score = check_frida_files();
+    if (e_score > 0 && !strong_hit) {
+        LOGW("E 层检测到可疑文件(score=%d),但无活跃注入证据,不单独触发", e_score);
+    }
+
+    if (strong_hit) {
+        LOGE("AntiFrida:强信号命中(A/B/C)");
         return 1;
     }
 
-    /* E:文件路径 */
-    if (check_frida_files()) {
-        LOGE("E 层检测到 Frida(文件路径)");
-        return 1;
-    }
-
-    LOGI("AntiFrida 检测通过(未检测到 Frida)");
+    LOGI("AntiFrida 检测通过(未检测到活跃 Frida)");
     return 0;
 }

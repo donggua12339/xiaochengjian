@@ -11,7 +11,7 @@
   "xposedDetect": { "enabled": true, "onViolation": "none", "killThreshold": 70 },
   "emulatorDetect": { "enabled": true, "onViolation": "none" },
   "integrityCheck": { "enabled": true, "onViolation": "none" },
-  "secureScreen": { "enabled": false, "excludeActivities": [] },
+  "secureScreen": { "enabled": true, "excludeActivities": [] },
   "onViolationKill": {
     "delayMinMs": 3000,
     "delayMaxMs": 15000,
