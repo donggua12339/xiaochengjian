@@ -29,8 +29,6 @@ class DualAppDetector(private val context: Context) {
             "com.polestar.super.clone",   // Super Clone
             "com.jumobile.multiapp",      // Multi App
             "info.cloneapp.app",          // Clone App
-            "com.pwrd.hzwgbjx",           // 华为分身
-            "com.miui.securitycenter",    // MIUI 分身(仅标记,不判定)
         )
 
         private val VIRTUAL_PATHS = listOf(

@@ -114,6 +114,40 @@ class DefenderTestApp : Application() {
         } catch (e: Throwable) {
             Log.e(TAG, "[X4-2] 检测失败: ${e.message}", e)
         }
+
+        /* X5 VPN/代理检测 */
+        try {
+            val x5 = com.xcj.defender.VpnProxyDetector(this).detect()
+            Log.i(TAG, "[X5] VPN/代理: score=${x5.score} detected=${x5.detected}")
+        } catch (e: Throwable) {
+            Log.e(TAG, "[X5] 检测失败: ${e.message}", e)
+        }
+
+        /* X6 双开/分身检测 */
+        try {
+            val x6 = com.xcj.defender.DualAppDetector(this).detect()
+            Log.i(TAG, "[X6] 双开/分身: score=${x6.score} detected=${x6.detected}")
+        } catch (e: Throwable) {
+            Log.e(TAG, "[X6] 检测失败: ${e.message}", e)
+        }
+
+        /* X8 FART 脱壳扫描 */
+        try {
+            com.xcj.defender.X4Native.antiFartInit(packageName)
+            val x8 = com.xcj.defender.X4Native.antiFartCheck()
+            Log.i(TAG, "[X8] FART 扫描: score=$x8(0=干净)")
+        } catch (e: Throwable) {
+            Log.e(TAG, "[X8] 检测失败: ${e.message}", e)
+        }
+
+        /* X9 ODEX 修补检测 */
+        try {
+            com.xcj.defender.X4Native.odexInit(packageCodePath)
+            val x9 = com.xcj.defender.X4Native.odexCheck()
+            Log.i(TAG, "[X9] ODEX 检测: score=$x9(0=干净)")
+        } catch (e: Throwable) {
+            Log.e(TAG, "[X9] 检测失败: ${e.message}", e)
+        }
     }
 
     companion object {
