@@ -336,7 +336,7 @@ static int cl_relocate_one(struct cl_soinfo *si, uintptr_t reloc_addr,
         const char *name = cl_strtab_get(si, si->symtab[r_sym].st_name);
         void *sym_addr = cl_resolve_sym(si, name, r_sym);
         if (!sym_addr) {
-            __android_log_print(ANDROID_LOG_ERROR, "CL_DEBUG", "reloc fail: sym=%s type=%lu", name, (unsigned long)r_type);
+            LOGE("重定位: 符号未找到");
             return -1;
         }
         *(uintptr_t *)reloc_addr = (uintptr_t)sym_addr;
@@ -346,7 +346,7 @@ static int cl_relocate_one(struct cl_soinfo *si, uintptr_t reloc_addr,
         const char *name = cl_strtab_get(si, si->symtab[r_sym].st_name);
         void *sym_addr = cl_resolve_sym(si, name, r_sym);
         if (!sym_addr) {
-            __android_log_print(ANDROID_LOG_ERROR, "CL_DEBUG", "ABS64 fail: sym=%s", name);
+            LOGE("重定位 ABS64: 符号未找到");
             return -1;
         }
         *(uintptr_t *)reloc_addr = (uintptr_t)sym_addr + addend;
