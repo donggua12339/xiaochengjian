@@ -9,6 +9,7 @@ import com.github.ajalt.clikt.parameters.options.required
 import com.github.ajalt.clikt.parameters.types.path
 import com.xcj.injector.audit.AuditAnalyzeCommand
 import com.xcj.injector.audit.AuditCommand
+import com.xcj.injector.dexstring.EncryptStringsCommand
 import com.xcj.injector.packer.PackerCommand
 import com.xcj.injector.packer.PackerPackCommand
 import com.xcj.injector.packer.PackerLogsCommand
@@ -480,6 +481,7 @@ fun main(args: Array<String>) {
         .subcommands(
             InitCommand(),
             SignCommand(),
+            EncryptStringsCommand(),
             AuditCommand().subcommands(
                 AuditAnalyzeCommand(),
                 AuditResignCommand(),

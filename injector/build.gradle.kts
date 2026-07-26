@@ -8,7 +8,8 @@ application {
 }
 
 dependencies {
-    // v2 重构:移除 dexlib2(不再做 dex 字节码注入)
+    // T4 DEX 字符串加密(ADR 0090 授权):恢复 dexlib2 用于 DEX 字节码修改
+    implementation("com.android.tools.smali:smali-dexlib2:3.0.7")
     implementation("net.lingala.zip4j:zip4j:2.11.5")
     implementation("com.github.ajalt.clikt:clikt:4.2.2")
     implementation("org.slf4j:slf4j-simple:2.0.13")

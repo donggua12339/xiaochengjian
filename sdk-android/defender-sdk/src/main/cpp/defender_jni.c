@@ -531,6 +531,12 @@ JNI_OnLoad(JavaVM *vm, void *reserved) {
         LOGW("X4 native 注册失败(非致命)");
     }
 
+    /* T4:注册 DEX 字符串解密 native(ADR 0090) */
+    extern int t4_register_natives(JNIEnv *env);
+    if (t4_register_natives(env) != 0) {
+        LOGW("T4 native 注册失败(非致命,DEX 字符串加密未启用)");
+    }
+
     LOGI("JNI_OnLoad 完成,native 方法已注册");
     return JNI_VERSION_1_6;
 }

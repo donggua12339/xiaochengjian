@@ -1,6 +1,9 @@
 cmake_minimum_required(VERSION 3.22.1)
 project(xcj_defender C)
 
+# T4 DEX 字符串解密开关(ADR 0090):需先跑 injector encrypt-strings 生成 t4_str_key.h
+option(T4_ENABLED "Enable T4 DEX string decryption (requires t4_str_key.h)" OFF)
+
 # ============= 编译选项 =============
 # -O2: 优化(体积 + 性能)
 # -fvisibility=hidden: 隐藏非导出符号(防逆向定位)
@@ -49,6 +52,8 @@ set(DEFENDER_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/patch_env_detect.c
     ${CMAKE_CURRENT_SOURCE_DIR}/inner_loader.c
     ${CMAKE_CURRENT_SOURCE_DIR}/custom_linker.c
+    # T4 DEX 字符串解密(ADR 0090)
+    ${CMAKE_CURRENT_SOURCE_DIR}/t4_str_decrypt.c
     # X4-0 基建(ADR 0093):svc 原语 + 自实现字符串 + 守护线程框架
     ${CMAKE_CURRENT_SOURCE_DIR}/x4_svc.c
     ${CMAKE_CURRENT_SOURCE_DIR}/x4_str.c
@@ -138,6 +143,11 @@ target_link_libraries(xcj_defender
     z
     dl
 )
+
+# T4 编译开关(ADR 0090)
+if(T4_ENABLED)
+    target_compile_definitions(xcj_defender PRIVATE T4_ENABLED=1)
+endif()
 
 # ============= include 目录 =============
 target_include_directories(xcj_defender PRIVATE
