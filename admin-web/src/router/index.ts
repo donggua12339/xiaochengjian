@@ -56,6 +56,11 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/Packer.vue'),
       },
       {
+        path: 'harden-config',
+        name: 'harden-config',
+        component: () => import('@/views/HardenConfig.vue'),
+      },
+      {
         path: 'apps/:id',
         name: 'app-detail',
         component: () => import('@/views/AppDetail.vue'),
