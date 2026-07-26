@@ -285,6 +285,41 @@ static void cl_parse_dynamic(struct cl_soinfo *si) {
 
 /* ============= 4. Relocate ============= */
 
+/* Android 7+ linker namespace 隔离:RTLD_DEFAULT 可能看不到系统库。
+ * 显式 dlopen 常用系统库并缓存 handle,作为 dlsym 回退搜索。 */
+static void *g_sys_libs[4] = {NULL};
+static int g_sys_libs_inited = 0;
+
+static void cl_init_sys_libs(void) {
+    if (g_sys_libs_inited) return;
+    g_sys_libs[0] = dlopen("libz.so", RTLD_NOW);
+    g_sys_libs[1] = dlopen("liblog.so", RTLD_NOW);
+    g_sys_libs[2] = dlopen("libdl.so", RTLD_NOW);
+    g_sys_libs[3] = dlopen("libm.so", RTLD_NOW);
+    g_sys_libs_inited = 1;
+}
+
+static void *cl_resolve_sym(struct cl_soinfo *si, const char *name, unsigned long r_sym) {
+    /* 1. RTLD_DEFAULT(当前 namespace) */
+    void *addr = dlsym(RTLD_DEFAULT, name);
+    if (addr) return addr;
+
+    /* 2. 自身符号表(自引用) */
+    if (si->symtab[r_sym].st_value != 0) {
+        return (void *)(si->load_bias + si->symtab[r_sym].st_value);
+    }
+
+    /* 3. 显式打开的系统库(namespace 穿越) */
+    cl_init_sys_libs();
+    for (int i = 0; i < 4; i++) {
+        if (g_sys_libs[i]) {
+            addr = dlsym(g_sys_libs[i], name);
+            if (addr) return addr;
+        }
+    }
+    return NULL;
+}
+
 static int cl_relocate_one(struct cl_soinfo *si, uintptr_t reloc_addr,
                            unsigned long r_type, unsigned long r_sym,
                            uintptr_t addend) {
@@ -299,9 +334,9 @@ static int cl_relocate_one(struct cl_soinfo *si, uintptr_t reloc_addr,
     case R_AARCH64_GLOB_DAT:
     case R_AARCH64_JUMP_SLOT: {
         const char *name = cl_strtab_get(si, si->symtab[r_sym].st_name);
-        void *sym_addr = dlsym(RTLD_DEFAULT, name);
+        void *sym_addr = cl_resolve_sym(si, name, r_sym);
         if (!sym_addr) {
-            LOGE("重定位: 符号未找到");
+            __android_log_print(ANDROID_LOG_ERROR, "CL_DEBUG", "reloc fail: sym=%s type=%lu", name, (unsigned long)r_type);
             return -1;
         }
         *(uintptr_t *)reloc_addr = (uintptr_t)sym_addr;
@@ -309,9 +344,9 @@ static int cl_relocate_one(struct cl_soinfo *si, uintptr_t reloc_addr,
     }
     case R_AARCH64_ABS64: {
         const char *name = cl_strtab_get(si, si->symtab[r_sym].st_name);
-        void *sym_addr = dlsym(RTLD_DEFAULT, name);
+        void *sym_addr = cl_resolve_sym(si, name, r_sym);
         if (!sym_addr) {
-            LOGE("重定位 ABS64: 符号未找到");
+            __android_log_print(ANDROID_LOG_ERROR, "CL_DEBUG", "ABS64 fail: sym=%s", name);
             return -1;
         }
         *(uintptr_t *)reloc_addr = (uintptr_t)sym_addr + addend;
