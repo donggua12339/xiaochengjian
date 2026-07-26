@@ -17,6 +17,11 @@
 #include "t4_str_key.h"
 #include "vm_engine.h"
 #include "vm_bytecode.h"
+/* 白盒 S-box(可选,由 build_whitebox_key.py 生成;存在时替代 VMP XOR) */
+#if __has_include("wb_sbox.h")
+#include "wb_sbox.h"
+#define T4_USE_WHITEBOX 1
+#endif
 #endif
 
 #define DEFENDER_TAG "T4StrDecrypt"
@@ -72,7 +77,7 @@ static jstring t4_get(JNIEnv *env, jclass clazz, jint index) {
         return (*env)->NewStringUTF(env, "");
     }
 
-    /* 4. VMP 解密(T2:通过 VM 引擎执行 XOR,IDA 只看到 dispatch loop) */
+    /* 4. 解密:白盒 S-box 优先 → VMP XOR 回退 */
     jbyte *encData = (*env)->GetByteArrayElements(env, encBytes, NULL);
     char *plain = (char *)malloc((size_t)byteLen + 1);
     if (!plain) {
@@ -81,16 +86,22 @@ static jstring t4_get(JNIEnv *env, jclass clazz, jint index) {
         return (*env)->NewStringUTF(env, "");
     }
 
-    /* 复制密文到 plain 缓冲,VM 原地解密 */
+#ifdef T4_USE_WHITEBOX
+    /* 白盒解密: plain[i] = WB_SBOX[i % WB_KEY_LEN][enc[i]] */
+    for (jsize i = 0; i < byteLen; i++) {
+        plain[i] = (char)WB_SBOX[i % WB_KEY_LEN][(uint8_t)encData[i]];
+    }
+#else
+    /* VMP 解密(T2:通过 VM 引擎执行 XOR,IDA 只看到 dispatch loop) */
     memcpy(plain, encData, (size_t)byteLen);
-
     vm_context_t vm;
     vm_init(&vm, VM_BC_xor_decrypt, VM_BC_xor_decrypt_size);
-    vm_set_arg(&vm, 0, (uint64_t)(uintptr_t)plain);              /* buf_ptr */
-    vm_set_arg(&vm, 1, (uint64_t)(uintptr_t)T4_XOR_KEY);        /* key_ptr */
-    vm_set_arg(&vm, 2, (uint64_t)(uint32_t)byteLen);            /* len */
-    vm_set_arg(&vm, 3, (uint64_t)T4_XOR_KEY_LEN);              /* key_len */
+    vm_set_arg(&vm, 0, (uint64_t)(uintptr_t)plain);
+    vm_set_arg(&vm, 1, (uint64_t)(uintptr_t)T4_XOR_KEY);
+    vm_set_arg(&vm, 2, (uint64_t)(uint32_t)byteLen);
+    vm_set_arg(&vm, 3, (uint64_t)T4_XOR_KEY_LEN);
     vm_execute(&vm);
+#endif
 
     plain[byteLen] = '\0';
 
