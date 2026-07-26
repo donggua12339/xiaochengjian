@@ -344,6 +344,26 @@ static int bootstrap(const char *apk_path) {
 
     jint rc = on_load(g_vm, NULL);                    /* 手动注册载荷 native */
     LOGI("载荷 JNI_OnLoad 返回 %d", rc);
+
+    /* ELF 头擦除(delayed erase):JNI_OnLoad 完成后,所有注册/初始化已结束。
+     * 只擦 e_ident(前 16 字节),不碰后续数据(与第一个 PT_LOAD 重叠)。
+     * 假 magic \x7fPRV 让扫描器命中但解析 e_type/e_machine 时全错。
+     * 注意:首页可能为 r--p,需临时 mprotect RWX 再恢复。 */
+    if (g_defender_cl) {
+        uintptr_t base = cl_get_base(g_defender_cl);
+        if (base) {
+            /* 对齐到页边界 */
+            uintptr_t page = base & ~0xFFFUL;
+            mprotect((void *)page, 4096, PROT_READ | PROT_WRITE);
+            uint8_t *hdr = (uint8_t *)base;
+            hdr[0] = 0x7f; hdr[1] = 'P'; hdr[2] = 'R'; hdr[3] = 'V';
+            hdr[4] = 0x00; hdr[5] = 0x00; hdr[6] = 0xFF;
+            memset(hdr + 7, 0x41, 9);
+            /* 恢复只读 */
+            mprotect((void *)page, 4096, PROT_READ);
+        }
+    }
+
     return 0;
 }
 

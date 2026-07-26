@@ -144,6 +144,23 @@ class VMAssembler:
         self.resolve()
         return bytes(self.code)
 
+    def emit_integrity_selfcheck(self):
+        """
+        路线 C 行为自检:验证 dispatch 语义正确性(抗 -O3/LTO/patch)。
+        如果 dispatch 被 NOP/RET patch,V14 不会变成 0 → 检测到。
+        使用 V13/V14/V15 三个临时寄存器(调用方不使用这三个做参数)。
+        """
+        self.mov_ri(15, 0xDEAD)     # V15 = 0xDEAD (known value)
+        self.mov_rr(14, 15)         # V14 = V15 (应为 0xDEAD)
+        self.xor(14, 14, 15)        # V14 = V14 ^ V15 = 0 (if XOR works)
+        self.mov_ri(13, 0)          # V13 = 0
+        self.cmp(14, 13)            # V14 == 0?
+        self.jz('sc_pass')          # 通过 → 继续
+        # 失败:dispatch 被篡改
+        self.mov_ri(0, -1)          # return -1 (error indicator)
+        self.ret()
+        self.label('sc_pass')
+
 
 def assemble_verify_hash():
     """
@@ -169,6 +186,9 @@ def assemble_verify_hash():
       V8 = 1 (常量)
     """
     a = VMAssembler()
+
+    # 路线 C 行为自检(验证 dispatch 未被 patch)
+    a.emit_integrity_selfcheck()
 
     # 初始化
     a.mov_ri(2, 0)        # V2 = diff = 0
@@ -253,6 +273,9 @@ def assemble_xor_decrypt():
       V11 = 保存原始 buf_ptr(返回值)
     """
     a = VMAssembler()
+
+    # 路线 C 行为自检(验证 dispatch 未被 patch)
+    a.emit_integrity_selfcheck()
 
     # 初始化
     a.mov_rr(11, 0)       # V11 = buf_ptr (保存原始)
