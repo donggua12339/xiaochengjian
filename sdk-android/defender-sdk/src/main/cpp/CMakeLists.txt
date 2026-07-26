@@ -57,6 +57,8 @@ set(DEFENDER_SOURCES
     # X8 FART 脱壳扫描 + X9 ODEX 修补检测
     ${CMAKE_CURRENT_SOURCE_DIR}/x8_anti_fart.c
     ${CMAKE_CURRENT_SOURCE_DIR}/x9_odex_detect.c
+    # T3 字符串分段散列(天衍)
+    ${CMAKE_CURRENT_SOURCE_DIR}/t3_segment_str.c
     # X4-0 基建(ADR 0093):svc 原语 + 自实现字符串 + 守护线程框架
     ${CMAKE_CURRENT_SOURCE_DIR}/x4_svc.c
     ${CMAKE_CURRENT_SOURCE_DIR}/x4_str.c
