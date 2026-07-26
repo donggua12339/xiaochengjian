@@ -44,16 +44,6 @@ static JavaVM *g_vm = NULL;
 /* T1 自实现 Linker 加载后的 defender 句柄(R4) */
 static cl_handle_t g_defender_cl = NULL;
 
-/** 供 self_integrity / self_verify 查询 defender 加载基址(0=未用 cl 加载) */
-uintptr_t xcj_loader_get_defender_base(void) {
-    return g_defender_cl ? cl_get_base(g_defender_cl) : 0;
-}
-
-/** 供 self_integrity / self_verify 查询 defender 映射大小 */
-size_t xcj_loader_get_defender_size(void) {
-    return g_defender_cl ? cl_get_size(g_defender_cl) : 0;
-}
-
 /* ===================================================================== */
 /* Hikari CFF 保护的密钥派生链(ADR 0094 §2-3, §7)                       */
 /* =====================================================================
@@ -317,6 +307,16 @@ static int bootstrap(const char *apk_path) {
     g_defender_cl = cl_dlopen_mem(so, so_len, "libxcj_defender");
     if (g_defender_cl) {
         cl_call_constructors(g_defender_cl);
+
+        /* 推送 cl 基址/大小给 defender 的完整性校验模块 */
+        typedef void (*set_cl_info_fn)(uintptr_t, size_t);
+        set_cl_info_fn si_set = (set_cl_info_fn)cl_dlsym(g_defender_cl, "self_integrity_set_cl_info");
+        set_cl_info_fn sv_set = (set_cl_info_fn)cl_dlsym(g_defender_cl, "self_verify_set_cl_info");
+        uintptr_t cl_base = cl_get_base(g_defender_cl);
+        size_t cl_size = cl_get_size(g_defender_cl);
+        if (si_set) si_set(cl_base, cl_size);
+        if (sv_set) sv_set(cl_base, cl_size);
+
         on_load = (jni_onload_t)cl_dlsym(g_defender_cl, "JNI_OnLoad");
         if (on_load) {
             LOGI("T1 cl_dlopen_mem 成功(匿名映射)");

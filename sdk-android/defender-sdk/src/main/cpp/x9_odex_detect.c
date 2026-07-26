@@ -21,7 +21,6 @@
 
 #define DEFENDER_TAG "X9OdexDetect"
 #include "defender_log.h"
-#include "x4_svc.h"
 
 static char g_apk_path[512] = {0};
 

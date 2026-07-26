@@ -28,9 +28,14 @@
 #define DEFENDER_TAG "DefenderSelfIntegrity"
 #include "defender_log.h"
 
-/* T1 自实现 Linker(R4):xcj_loader 暴露的 defender 基址/大小查询 */
-extern uintptr_t xcj_loader_get_defender_base(void);
-extern size_t xcj_loader_get_defender_size(void);
+/* T1 自实现 Linker(R4):xcj_loader 加载 defender 后通过 setter 推送基址/大小 */
+static uintptr_t g_cl_base = 0;
+static size_t g_cl_size = 0;
+
+void self_integrity_set_cl_info(uintptr_t base, size_t size) {
+    g_cl_base = base;
+    g_cl_size = size;
+}
 
 /* ============= CRC32 实现 ============= */
 
@@ -116,8 +121,8 @@ void self_integrity_init(void) {
             }
         }
     } else {
-        /* dladdr 失败 → 尝试 T1 cl 基址 */
-        so_base = xcj_loader_get_defender_base();
+        /* dladdr 失败 → 尝试 T1 cl 基址(由 xcj_loader 通过 setter 推送) */
+        so_base = g_cl_base;
         if (so_base != 0) {
             via_cl = 1;
             g_path_valid = 1;  /* 匿名映射 = 自研 linker 设计,合法 */
@@ -142,14 +147,12 @@ void self_integrity_init(void) {
             uint32_t p_type = *(const uint32_t *)(ph);
             uint32_t p_flags = *(const uint32_t *)(ph + 4);
             if (p_type == 1 /* PT_LOAD */ && (p_flags & 1 /* PF_X */)) {
-                uint64_t p_offset = *(const uint64_t *)(ph + 8);
                 uint64_t p_vaddr = *(const uint64_t *)(ph + 16);
                 uint64_t p_filesz = *(const uint64_t *)(ph + 32);
                 text_start = so_base + (uintptr_t)p_vaddr;
                 text_end = text_start + (uintptr_t)p_filesz;
                 break;
             }
-            (void)p_offset;
         }
         if (text_start && text_end > text_start) {
             g_text_base = text_start;

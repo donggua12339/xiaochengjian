@@ -23,6 +23,8 @@
 #define DEFENDER_TAG "X8AntiFart"
 #include "defender_log.h"
 #include "x4_svc.h"
+#include "x4_str.h"
+#include "obfstr_poly.h"
 
 static char g_pkg_dir[256] = {0};
 
@@ -131,9 +133,6 @@ static int check_fd_dex_count(void) {
     if (dir_fd < 0) return 0;
 
     int dex_count = 0;
-    char buf[4096];
-    ssize_t n;
-    /* 用 getdents 遍历(简化:读目录内容) */
     DIR *d = fdopendir(dir_fd);
     if (!d) { x4_svc_close(dir_fd); return 0; }
 

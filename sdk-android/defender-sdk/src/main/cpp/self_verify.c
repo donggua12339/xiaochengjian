@@ -32,9 +32,13 @@
 #define DEFENDER_TAG "DefenderSelfVerify"
 #include "defender_log.h"
 
-/* T1 自实现 Linker(R4) */
-extern uintptr_t xcj_loader_get_defender_base(void);
-extern size_t xcj_loader_get_defender_size(void);
+/* T1 自实现 Linker(R4):由 xcj_loader 通过 setter 推送 */
+extern void self_integrity_set_cl_info(uintptr_t base, size_t size);
+static uintptr_t g_sv_cl_base = 0;
+
+void self_verify_set_cl_info(uintptr_t base, size_t size) {
+    g_sv_cl_base = base;
+}
 
 /* ============= SHA-256 简化实现 ============= */
 /* 注:为避免外部依赖,使用简化 SHA-256。
@@ -185,7 +189,7 @@ static const char EXPECTED_TEXT_HASH[65] __attribute__((section(".rodata"))) =
  */
 static int find_text_section(unsigned long *base_out, unsigned long *size_out) {
     /* T1(R4):先尝试 cl 基址 + ELF phdr 解析(匿名映射,dladdr/maps 均不可用) */
-    uintptr_t cl_base = xcj_loader_get_defender_base();
+    uintptr_t cl_base = g_sv_cl_base;
     if (cl_base != 0) {
         const uint8_t *bp = (const uint8_t *)cl_base;
         uint64_t phoff = *(const uint64_t *)(bp + 32);
