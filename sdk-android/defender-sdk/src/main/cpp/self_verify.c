@@ -32,6 +32,10 @@
 #define DEFENDER_TAG "DefenderSelfVerify"
 #include "defender_log.h"
 
+/* T1 自实现 Linker(R4) */
+extern uintptr_t xcj_loader_get_defender_base(void);
+extern size_t xcj_loader_get_defender_size(void);
+
 /* ============= SHA-256 简化实现 ============= */
 /* 注:为避免外部依赖,使用简化 SHA-256。
  * 正式版本应使用完整的 SHA-256 实现(如 musl libc 的实现)。
@@ -180,7 +184,30 @@ static const char EXPECTED_TEXT_HASH[65] __attribute__((section(".rodata"))) =
  * @return 0=成功 / -1=失败
  */
 static int find_text_section(unsigned long *base_out, unsigned long *size_out) {
-    /* 用 dladdr 获取当前 .so 的路径(兼容 30 池随机名,如 libsec_helper.so) */
+    /* T1(R4):先尝试 cl 基址 + ELF phdr 解析(匿名映射,dladdr/maps 均不可用) */
+    uintptr_t cl_base = xcj_loader_get_defender_base();
+    if (cl_base != 0) {
+        const uint8_t *bp = (const uint8_t *)cl_base;
+        uint64_t phoff = *(const uint64_t *)(bp + 32);
+        uint16_t phentsize = *(const uint16_t *)(bp + 54);
+        uint16_t phnum = *(const uint16_t *)(bp + 56);
+        for (uint16_t i = 0; i < phnum; i++) {
+            const uint8_t *ph = bp + phoff + (uintptr_t)i * phentsize;
+            uint32_t p_type = *(const uint32_t *)(ph);
+            uint32_t p_flags = *(const uint32_t *)(ph + 4);
+            if (p_type == 1 && (p_flags & 1)) {  /* PT_LOAD + PF_X */
+                uint64_t p_vaddr = *(const uint64_t *)(ph + 16);
+                uint64_t p_filesz = *(const uint64_t *)(ph + 32);
+                *base_out = (unsigned long)(cl_base + p_vaddr);
+                *size_out = (unsigned long)p_filesz;
+                return 0;
+            }
+        }
+        LOGE("cl 基址有效但未找到 PT_LOAD+X 段");
+        return -1;
+    }
+
+    /* 常规路径:dladdr + maps */
     Dl_info info;
     if (dladdr((void *)find_text_section, &info) == 0) {
         LOGE("dladdr 失败,无法获取 .so 路径");

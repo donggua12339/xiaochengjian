@@ -450,12 +450,12 @@ JNI_OnLoad(JavaVM *vm, void *reserved) {
                     raise(SIGABRT); _exit(137);
                 }
                 /* 检查 2:so 被第三方工具 cache 加载(非 /data/app/ 路径)
-                 * 找 libxcj_loader 或 libxcj_defender 的映射行,看路径前缀 */
+                 * 只查 libxcj_loader(T1 后 defender 经 cl 匿名加载,maps 不可见) */
                 char *p = mbuf;
                 while (p && *p) {
                     char *nl = strchr(p, '\n');
                     if (nl) *nl = 0;
-                    if (strstr(p, "libxcj_loader") || strstr(p, "libxcj_defender")) {
+                    if (strstr(p, "libxcj_loader")) {
                         /* 真 app:路径含 /data/app/ ; MT:路径含 /data/data/bin.mt.../cache/ */
                         if (strstr(p, "/data/data/") && !strstr(p, "/data/app/")) {
                             LOGE("检测到 so 从第三方 cache 加载");

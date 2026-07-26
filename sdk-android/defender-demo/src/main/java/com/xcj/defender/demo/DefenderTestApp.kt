@@ -30,6 +30,22 @@ class DefenderTestApp : Application() {
     override fun onCreate() {
         super.onCreate()
         Log.d(TAG, "DefenderTestApp onCreate")
+
+        /* X3 生命周期劫持检测(硬门禁,命中即 kill) */
+        try {
+            val x3 = com.xcj.defender.X3LifecycleGuard.check(
+                this, "com.xcj.defender.demo.DefenderTestApp"
+            )
+            if (x3.hijacked) {
+                Log.e(TAG, "[X3] 生命周期劫持检测: ${x3.reasons}")
+                android.os.Process.killProcess(android.os.Process.myPid())
+                return
+            }
+            Log.i(TAG, "[X3] 生命周期完整性校验通过")
+        } catch (e: Throwable) {
+            Log.e(TAG, "[X3] 检测异常(非致命): ${e.message}")
+        }
+
         /* X0 验证:外壳经 stub 加密加载后,DefenderNative 应已注册可用 */
         try {
             val ver = com.xcj.defender.DefenderNative.getVersion()

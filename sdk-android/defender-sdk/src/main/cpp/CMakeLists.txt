@@ -169,7 +169,10 @@ endif()
 # 正常 System.loadLibrary 加载;JNI_OnLoad 里自举:解密嵌入载荷 → memfd →
 # android_dlopen_ext → 手动调载荷 JNI_OnLoad。
 # 密钥不再明文存储,改为 CFF 保护的运行时派生(xcj_check_abi_compat)。
-add_library(xcj_loader SHARED ${CMAKE_CURRENT_SOURCE_DIR}/xcj_loader.c)
+add_library(xcj_loader SHARED
+    ${CMAKE_CURRENT_SOURCE_DIR}/xcj_loader.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/custom_linker.c
+)
 target_link_libraries(xcj_loader log android dl)
 target_include_directories(xcj_loader PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 if(Python3_Interpreter_FOUND AND EXISTS ${HIKARI_SCRIPT})

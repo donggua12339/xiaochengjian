@@ -30,6 +30,7 @@
 #include <android/dlext.h>
 
 #include "so_cipher.h"
+#include "custom_linker.h"
 #include "cff_params.h"   /* Hikari CFF 随机参数(ADR 0094) */
 #include "x0_derive.h"    /* 密钥派生材料(ADR 0094) */
 #include "x0_str_key.h"   /* 字符串解密 key 碎片(ADR 0094 防 MT 一键解密) */
@@ -39,6 +40,19 @@
 #include "defender_log.h"
 
 static JavaVM *g_vm = NULL;
+
+/* T1 自实现 Linker 加载后的 defender 句柄(R4) */
+static cl_handle_t g_defender_cl = NULL;
+
+/** 供 self_integrity / self_verify 查询 defender 加载基址(0=未用 cl 加载) */
+uintptr_t xcj_loader_get_defender_base(void) {
+    return g_defender_cl ? cl_get_base(g_defender_cl) : 0;
+}
+
+/** 供 self_integrity / self_verify 查询 defender 映射大小 */
+size_t xcj_loader_get_defender_size(void) {
+    return g_defender_cl ? cl_get_size(g_defender_cl) : 0;
+}
 
 /* ===================================================================== */
 /* Hikari CFF 保护的密钥派生链(ADR 0094 §2-3, §7)                       */
@@ -296,15 +310,38 @@ static int bootstrap(const char *apk_path) {
     if (!so) { LOGE("未在 APK 中定位到加密载荷"); return -1; }
     LOGI("定位+解密载荷成功 len=%u", so_len);
 
-    void *handle = load_so_from_mem(so, so_len, "libxcj_payload.so");
+    /* T1 自实现 Linker 优先(R4):匿名映射,maps 不可见,dl_iterate_phdr 枚举不到 */
+    typedef jint (*jni_onload_t)(JavaVM *, void *);
+    jni_onload_t on_load = NULL;
+
+    g_defender_cl = cl_dlopen_mem(so, so_len, "libxcj_defender");
+    if (g_defender_cl) {
+        cl_call_constructors(g_defender_cl);
+        on_load = (jni_onload_t)cl_dlsym(g_defender_cl, "JNI_OnLoad");
+        if (on_load) {
+            LOGI("T1 cl_dlopen_mem 成功(匿名映射)");
+        } else {
+            LOGE("cl_dlsym JNI_OnLoad 失败,降级 memfd");
+            cl_dlclose(g_defender_cl);
+            g_defender_cl = NULL;
+        }
+    } else {
+        LOGE("cl_dlopen_mem 失败,降级 memfd+dlopen_ext");
+    }
+
+    /* 降级路径:memfd + android_dlopen_ext(原 X0 流程) */
+    void *handle = NULL;
+    if (!on_load) {
+        handle = load_so_from_mem(so, so_len, "libxcj_payload.so");
+        if (!handle) { LOGE("android_dlopen_ext 失败"); memset(so, 0, so_len); free(so); return -1; }
+        on_load = (jni_onload_t)dlsym(handle, "JNI_OnLoad");
+        if (!on_load) { LOGE("dlsym JNI_OnLoad 失败"); memset(so, 0, so_len); free(so); return -1; }
+        LOGI("降级 memfd 加载成功");
+    }
+
     memset(so, 0, so_len);                            /* 清理解密缓冲 */
     free(so);
-    if (!handle) { LOGE("android_dlopen_ext 失败"); return -1; }
-    LOGI("android_dlopen_ext 成功 handle=%p", handle);
 
-    typedef jint (*jni_onload_t)(JavaVM *, void *);
-    jni_onload_t on_load = (jni_onload_t)dlsym(handle, "JNI_OnLoad");
-    if (!on_load) { LOGE("dlsym JNI_OnLoad 失败"); return -1; }
     jint rc = on_load(g_vm, NULL);                    /* 手动注册载荷 native */
     LOGI("载荷 JNI_OnLoad 返回 %d", rc);
     return 0;

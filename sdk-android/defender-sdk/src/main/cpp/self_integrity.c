@@ -28,6 +28,10 @@
 #define DEFENDER_TAG "DefenderSelfIntegrity"
 #include "defender_log.h"
 
+/* T1 自实现 Linker(R4):xcj_loader 暴露的 defender 基址/大小查询 */
+extern uintptr_t xcj_loader_get_defender_base(void);
+extern size_t xcj_loader_get_defender_size(void);
+
 /* ============= CRC32 实现 ============= */
 
 static uint32_t crc32_table[256];
@@ -86,44 +90,76 @@ static char g_so_path[512] = {0};
  * 初始化 .text 段缓存(必须在主线程 JNI_OnLoad 时调用)
  *
  * 守护线程中 dladdr 可能失败(上下文问题),故在主线程提前缓存。
+ * T1(R4):若经 cl_dlopen_mem 加载(匿名映射),dladdr 必失败,
+ * 回退到 xcj_loader_get_defender_base() 提供的基址 + ELF phdr 解析。
  */
 void self_integrity_init(void) {
     if (g_text_inited) return;
 
+    uintptr_t so_base = 0;
+    int via_cl = 0;  /* 是否经自实现 Linker 加载 */
+
     Dl_info info;
-    if (dladdr((void *)self_integrity_init, &info) == 0) {
-        LOGE("self_integrity_init: dladdr 失败");
-        return;
-    }
+    if (dladdr((void *)self_integrity_init, &info) != 0) {
+        so_base = (uintptr_t)info.dli_fbase;
 
-    /* dli_fbase 是 .so 的加载基址( ELF 头所在地址)。
-     * maps 中 .so 的第一个映射(最低地址,通常 r--p)起始 = dli_fbase。
-     * .text 段(r-xp)在基址之后,找该 .so 的 r-xp 段即可。 */
-    uintptr_t so_base = (uintptr_t)info.dli_fbase;
-    LOGI("self_integrity_init: .so 加载基址=0x%lx", (unsigned long)so_base);
-
-    /* 检测 .so 加载路径是否合法(防 SRPatch/LSPatch 路径重定向)
-     * 正常 APK 安装在 /data/app/ 下;
-     * SRPatch 从 /data/user/0/.../srpatch/base.apk 加载;
-     * LSPatch 从 /data/user/0/.../cache/lspatch/origin/xxx.apk 加载 */
-    if (info.dli_fname) {
-        strncpy(g_so_path, info.dli_fname, sizeof(g_so_path) - 1);
-        LOGI("self_integrity_init: .so 加载路径=%s", g_so_path);
-
-        if (strncmp(g_so_path, "/data/app/", 10) == 0) {
-            g_path_valid = 1;
-            LOGI("self_integrity_init: .so 路径合法(/data/app/)");
-        } else if (strstr(g_so_path, "memfd:") || strstr(g_so_path, "libxcj_payload")) {
-            /* X0:外壳经 stub memfd 加载(路径为 memfd 或载荷 soname),属合法。
-             * SRPatch/LSPatch 是 /data/user/ 路径,不会误放。 */
-            g_path_valid = 1;
-            LOGI("self_integrity_init: .so 路径合法(X0 memfd 加载):%s", g_so_path);
+        /* 路径合法性检测 */
+        if (info.dli_fname) {
+            strncpy(g_so_path, info.dli_fname, sizeof(g_so_path) - 1);
+            if (strncmp(g_so_path, "/data/app/", 10) == 0) {
+                g_path_valid = 1;
+            } else if (strstr(g_so_path, "memfd:") || strstr(g_so_path, "libxcj_payload")) {
+                g_path_valid = 1;
+            } else {
+                g_path_valid = 0;
+                LOGE("self_integrity_init: .so 路径异常(疑似 SRPatch/LSPatch 重定向)");
+            }
+        }
+    } else {
+        /* dladdr 失败 → 尝试 T1 cl 基址 */
+        so_base = xcj_loader_get_defender_base();
+        if (so_base != 0) {
+            via_cl = 1;
+            g_path_valid = 1;  /* 匿名映射 = 自研 linker 设计,合法 */
+            LOGI("self_integrity_init: 经 T1 cl 加载(匿名映射)");
         } else {
-            g_path_valid = 0;
-            LOGE("self_integrity_init: .so 路径异常! 非 /data/app/ 路径(疑似 SRPatch/LSPatch 重定向)");
+            LOGE("self_integrity_init: dladdr 失败且无 cl 基址");
+            return;
         }
     }
 
+    /* 定位 .text 段 */
+    if (via_cl) {
+        /* 匿名映射:maps 里无路径,直接解析 ELF program headers */
+        const uint8_t *base_ptr = (const uint8_t *)so_base;
+        /* ELF64 header: e_phoff at offset 32, e_phentsize at 54, e_phnum at 56 */
+        uint64_t phoff = *(const uint64_t *)(base_ptr + 32);
+        uint16_t phentsize = *(const uint16_t *)(base_ptr + 54);
+        uint16_t phnum = *(const uint16_t *)(base_ptr + 56);
+        uintptr_t text_start = 0, text_end = 0;
+        for (uint16_t i = 0; i < phnum; i++) {
+            const uint8_t *ph = base_ptr + phoff + (uintptr_t)i * phentsize;
+            uint32_t p_type = *(const uint32_t *)(ph);
+            uint32_t p_flags = *(const uint32_t *)(ph + 4);
+            if (p_type == 1 /* PT_LOAD */ && (p_flags & 1 /* PF_X */)) {
+                uint64_t p_offset = *(const uint64_t *)(ph + 8);
+                uint64_t p_vaddr = *(const uint64_t *)(ph + 16);
+                uint64_t p_filesz = *(const uint64_t *)(ph + 32);
+                text_start = so_base + (uintptr_t)p_vaddr;
+                text_end = text_start + (uintptr_t)p_filesz;
+                break;
+            }
+            (void)p_offset;
+        }
+        if (text_start && text_end > text_start) {
+            g_text_base = text_start;
+            g_text_size = text_end - text_start;
+            g_text_inited = 1;
+        }
+        return;
+    }
+
+    /* 常规路径:从 maps 解析 .text 段 */
     int fd = open("/proc/self/maps", O_RDONLY);
     if (fd < 0) return;
 
@@ -141,18 +177,13 @@ void self_integrity_init(void) {
             if (buf[i] == '\n' || line_pos >= (int)sizeof(line) - 1) {
                 line[line_pos] = '\0';
 
-                /* 解析行:start-end perms offset ... path */
                 uintptr_t start, end;
                 char perms[8];
                 if (sscanf(line, "%lx-%lx %7s", (unsigned long *)&start, (unsigned long *)&end, perms) == 3) {
-                    /* 找到 .so 基址对应的映射(起始地址 == so_base) */
                     if (start == so_base) {
                         in_this_so = 1;
                     }
-
-                    /* 在本 .so 的映射范围内找 r-xp 段(.text) */
                     if (in_this_so) {
-                        /* 检查是否还是同一个 .so(路径含 base.apk 或 .so 名) */
                         char *path = strstr(line, "/");
                         if (path && (strstr(path, "base.apk") || strstr(path, ".so"))) {
                             if (perms[0] == 'r' && perms[2] == 'x') {
