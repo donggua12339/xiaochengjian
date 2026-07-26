@@ -100,13 +100,22 @@ int signature_verify_mmap(const char *apk_path) {
  * @param expected_dex_crcs 预期 DEX CRC JSON(NULL 跳过 DEX 校验)
  * @return 0=全部通过 / 1=任一失败 / -1=内部错误
  */
+
+/* Canary 防短路:每次 check_all 执行后更新 g_validator_canary,
+ * 守护线程验证此值。hook return 0 不会更新 canary → 被识破。 */
+#include "canary_guard.h"
+volatile uint32_t g_validator_canary = 0;
+#define VALIDATOR_CHECK_COUNT 3  /* self_integrity + signature + dex */
+
 int validator_core_check_all(const char *apk_path, const char *expected_dex_crcs) {
     LOGI("=== 综合校验(方案 A + B)===");
 
     int failed = 0;
+    uint32_t canary = CANARY_INIT;
 
     /* 方案 B:SO 自身完整性(防 IDA Pro 改 SO) */
     int self_result = self_integrity_check();
+    CANARY_UPDATE(canary, 0);
     if (self_result == 1) {
         LOGE("SO 自身完整性校验失败(.text 被篡改)");
         failed = 1;
@@ -114,6 +123,7 @@ int validator_core_check_all(const char *apk_path, const char *expected_dex_crcs
 
     /* 方案 A:签名校验(mmap + V2 自解析) */
     int sig_result = signature_verify_mmap(apk_path);
+    CANARY_UPDATE(canary, 1);
     if (sig_result == 1) {
         LOGE("签名校验失败(APK 被篡改)");
         failed = 1;
@@ -121,10 +131,14 @@ int validator_core_check_all(const char *apk_path, const char *expected_dex_crcs
 
     /* 方案 B:DEX 完整性 */
     int dex_result = dex_integrity_check(apk_path, expected_dex_crcs);
+    CANARY_UPDATE(canary, 2);
     if (dex_result == 1) {
         LOGE("DEX 完整性校验失败(DEX 被篡改)");
         failed = 1;
     }
+
+    /* 输出 canary(守护线程验证) */
+    g_validator_canary = canary;
 
     if (failed) {
         LOGE("综合校验:检测到篡改");

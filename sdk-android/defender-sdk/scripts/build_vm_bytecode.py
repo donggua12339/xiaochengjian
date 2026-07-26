@@ -319,17 +319,25 @@ def assemble_xor_decrypt():
     return a.get_bytecode()
 
 
-def generate_header(verify_hash_bc, xor_decrypt_bc):
-    """生成 C 头文件"""
+def generate_header(verify_hash_bc, xor_decrypt_bc, opcode_xor_key=0):
+    """生成 C 头文件(opcode XOR 洗牌)"""
+    # 如果 key 非零,XOR 所有字节(加密 bytecode)
+    if opcode_xor_key:
+        verify_hash_bc = bytes(b ^ opcode_xor_key for b in verify_hash_bc)
+        xor_decrypt_bc = bytes(b ^ opcode_xor_key for b in xor_decrypt_bc)
+
     lines = []
     lines.append('/**')
     lines.append(' * vm_bytecode.h - VM 字节码(自动生成,请勿手动修改)')
     lines.append(' * 由 build_vm_bytecode.py 生成')
+    lines.append(f' * Opcode XOR key: 0x{opcode_xor_key:02X}')
     lines.append(' */')
     lines.append('#ifndef VM_BYTECODE_H')
     lines.append('#define VM_BYTECODE_H')
     lines.append('')
     lines.append('#include <stdint.h>')
+    lines.append('')
+    lines.append(f'#define VM_OPCODE_XOR_KEY 0x{opcode_xor_key:02X}')
     lines.append('')
 
     # verify_hash 字节码
@@ -361,7 +369,12 @@ def generate_header(verify_hash_bc, xor_decrypt_bc):
 
 
 def main():
+    import random as rng_mod
     print("=== 小城笺加固 v0.3: VM 字节码生成 ===")
+
+    # VM handler 洗牌:每构建随机 opcode XOR key
+    opcode_xor_key = rng_mod.randint(1, 255)  # 非零
+    print(f"Opcode XOR key: 0x{opcode_xor_key:02X}(每构建随机)")
 
     # 汇编 inner_verify_hash
     verify_hash_bc = assemble_verify_hash()
@@ -372,7 +385,7 @@ def main():
     print(f"XOR decrypt VMP 字节码: {len(xor_decrypt_bc)} bytes")
 
     # 生成头文件
-    header = generate_header(verify_hash_bc, xor_decrypt_bc)
+    header = generate_header(verify_hash_bc, xor_decrypt_bc, opcode_xor_key)
     output_path = os.path.join(os.path.dirname(__file__), '..', 'src', 'main', 'cpp', 'vm_bytecode.h')
     with open(output_path, 'w') as f:
         f.write(header)

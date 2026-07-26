@@ -18,33 +18,36 @@
  */
 
 #include "vm_engine.h"
+#include "vm_bytecode.h"
 #include <string.h>
 #include <android/log.h>
 
 #define TAG "DefenderVM"
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, TAG, __VA_ARGS__)
 
-/* ============= 读取辅助 ============= */
+/* ============= 读取辅助(opcode XOR 解码) ============= */
+
+#define VM_DEC(b) ((uint8_t)((b) ^ VM_OPCODE_XOR_KEY))
 
 static inline uint8_t fetch8(vm_context_t *ctx) {
-    return ctx->code[ctx->pc++];
+    return VM_DEC(ctx->code[ctx->pc++]);
 }
 
 static inline uint8_t peek8(vm_context_t *ctx, int offset) {
-    return ctx->code[ctx->pc + offset];
+    return VM_DEC(ctx->code[ctx->pc + offset]);
 }
 
 static inline uint16_t fetch16(vm_context_t *ctx) {
-    uint16_t v = (uint16_t)ctx->code[ctx->pc] | ((uint16_t)ctx->code[ctx->pc + 1] << 8);
+    uint16_t v = (uint16_t)VM_DEC(ctx->code[ctx->pc]) | ((uint16_t)VM_DEC(ctx->code[ctx->pc + 1]) << 8);
     ctx->pc += 2;
     return v;
 }
 
 static inline uint32_t fetch32(vm_context_t *ctx) {
-    uint32_t v = (uint32_t)ctx->code[ctx->pc]
-               | ((uint32_t)ctx->code[ctx->pc + 1] << 8)
-               | ((uint32_t)ctx->code[ctx->pc + 2] << 16)
-               | ((uint32_t)ctx->code[ctx->pc + 3] << 24);
+    uint32_t v = (uint32_t)VM_DEC(ctx->code[ctx->pc])
+               | ((uint32_t)VM_DEC(ctx->code[ctx->pc + 1]) << 8)
+               | ((uint32_t)VM_DEC(ctx->code[ctx->pc + 2]) << 16)
+               | ((uint32_t)VM_DEC(ctx->code[ctx->pc + 3]) << 24);
     ctx->pc += 4;
     return v;
 }

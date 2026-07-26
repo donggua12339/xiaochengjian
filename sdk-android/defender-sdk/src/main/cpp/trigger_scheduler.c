@@ -41,6 +41,11 @@ void trigger_scheduler_set_callback(verify_callback_t cb) {
 
 extern void defender_kill(int delay_min_ms, int delay_max_ms, const char *method);
 
+/* Canary 防短路:验证 validator_core_check_all 是否被 hook 短路 */
+#include "canary_guard.h"
+extern volatile uint32_t g_validator_canary;
+#define VALIDATOR_CHECK_COUNT 3
+
 /* ============= 守护线程 ============= */
 
 /**
@@ -60,10 +65,16 @@ static void *guard_thread(void *arg) {
     while (g_scheduler_running) {
         if (g_callback) {
             int result = g_callback();
+
+            /* Canary 验证:检测函数被 hook return 0 时 canary 不会被更新 */
+            uint32_t expected = canary_expected(VALIDATOR_CHECK_COUNT);
+            if (g_validator_canary != expected) {
+                LOGE("Canary 防短路:校验函数被 hook 短路");
+                defender_kill(0, 1000, "sigabrt");
+            }
+
             if (result != 0) {
                 LOGE("守护线程校验失败: result=%d,触发 kill", result);
-                /* 直接 native kill(不依赖 Java 层,防 MT patch DEX 绕过)
-                 * 2026-07-26: delay 从 3-15s 改为 0-1s,不给 MT exit 窗口 */
                 defender_kill(0, 1000, "sigabrt");
             }
         }
