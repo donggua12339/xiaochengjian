@@ -118,6 +118,11 @@ class VMAssembler:
         self._emit8((dst & 0xF) | ((src & 0xF) << 4))
         self._emit16(offset)
 
+    def store8(self, base, value, offset):
+        self._emit8(STORE8)
+        self._emit8((base & 0xF) | ((value & 0xF) << 4))
+        self._emit16(offset)
+
     def call_ext(self, func_idx):
         self._emit8(CALL_EXT)
         self._emit8(func_idx)
@@ -223,7 +228,75 @@ def assemble_verify_hash():
     return a.get_bytecode()
 
 
-def generate_header(verify_hash_bc):
+def assemble_xor_decrypt():
+    """
+    汇编 XOR 字符串解密的 VMP 版本(T2)
+
+    原始 C 逻辑:
+      void xor_decrypt(uint8_t *buf, const uint8_t *key, uint32_t len, uint32_t key_len) {
+          for (uint32_t i = 0; i < len; i++)
+              buf[i] ^= key[i % key_len];
+      }
+
+    寄存器分配:
+      V0 = buf_ptr (arg0, 递进)
+      V1 = key_base (arg1, 不变)
+      V2 = remaining (arg2, 递减)
+      V3 = key_len (arg3, 不变)
+      V4 = key_idx (0..key_len-1, 回绕)
+      V5 = temp: enc byte
+      V6 = temp: key byte
+      V7 = temp: xor result
+      V8 = 1 (常量)
+      V9 = 0 (常量)
+      V10 = key_current_ptr (递进, 回绕到 V1)
+      V11 = 保存原始 buf_ptr(返回值)
+    """
+    a = VMAssembler()
+
+    # 初始化
+    a.mov_rr(11, 0)       # V11 = buf_ptr (保存原始)
+    a.mov_rr(10, 1)       # V10 = key_current = key_base
+    a.mov_ri(4, 0)        # V4 = key_idx = 0
+    a.mov_ri(8, 1)        # V8 = 1
+    a.mov_ri(9, 0)        # V9 = 0
+
+    # 循环
+    a.label('loop')
+    a.cmp(2, 9)           # remaining == 0?
+    a.jz('done')
+
+    # 加载并 XOR
+    a.load8(5, 0, 0)      # V5 = *buf_ptr
+    a.load8(6, 10, 0)     # V6 = *key_current
+    a.xor(7, 5, 6)        # V7 = enc ^ key
+    a.store8(0, 7, 0)     # *buf_ptr = V7
+
+    # 递进 buf
+    a.add(0, 0, 8)        # buf_ptr++
+
+    # 递进 key + 回绕
+    a.add(10, 10, 8)      # key_current++
+    a.add(4, 4, 8)        # key_idx++
+    a.cmp(4, 3)           # key_idx == key_len?
+    a.jnz('skip_reset')
+    a.mov_rr(10, 1)       # key_current = key_base (回绕)
+    a.mov_ri(4, 0)        # key_idx = 0
+    a.label('skip_reset')
+
+    # 递减 remaining
+    a.sub(2, 2, 8)        # remaining--
+    a.jmp('loop')
+
+    # 完成
+    a.label('done')
+    a.mov_rr(0, 11)       # V0 = 原始 buf_ptr (返回)
+    a.ret()
+
+    return a.get_bytecode()
+
+
+def generate_header(verify_hash_bc, xor_decrypt_bc):
     """生成 C 头文件"""
     lines = []
     lines.append('/**')
@@ -247,6 +320,18 @@ def generate_header(verify_hash_bc):
     lines.append('};')
     lines.append(f'static const size_t VM_BC_verify_hash_size = {len(verify_hash_bc)};')
     lines.append('')
+
+    # xor_decrypt 字节码(T2)
+    lines.append(f'/* XOR 字符串解密 VMP 字节码 ({len(xor_decrypt_bc)} bytes) - T2 */')
+    lines.append(f'static const uint8_t VM_BC_xor_decrypt[{len(xor_decrypt_bc)}] = {{')
+    for i in range(0, len(xor_decrypt_bc), 16):
+        chunk = xor_decrypt_bc[i:i+16]
+        hex_str = ', '.join(f'0x{b:02X}' for b in chunk)
+        comma = ',' if i + 16 < len(xor_decrypt_bc) else ''
+        lines.append(f'    {hex_str}{comma}')
+    lines.append('};')
+    lines.append(f'static const size_t VM_BC_xor_decrypt_size = {len(xor_decrypt_bc)};')
+    lines.append('')
     lines.append('#endif /* VM_BYTECODE_H */')
 
     return '\n'.join(lines) + '\n'
@@ -259,8 +344,12 @@ def main():
     verify_hash_bc = assemble_verify_hash()
     print(f"inner_verify_hash VMP 字节码: {len(verify_hash_bc)} bytes")
 
+    # 汇编 XOR 字符串解密(T2)
+    xor_decrypt_bc = assemble_xor_decrypt()
+    print(f"XOR decrypt VMP 字节码: {len(xor_decrypt_bc)} bytes")
+
     # 生成头文件
-    header = generate_header(verify_hash_bc)
+    header = generate_header(verify_hash_bc, xor_decrypt_bc)
     output_path = os.path.join(os.path.dirname(__file__), '..', 'src', 'main', 'cpp', 'vm_bytecode.h')
     with open(output_path, 'w') as f:
         f.write(header)

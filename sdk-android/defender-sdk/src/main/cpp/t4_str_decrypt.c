@@ -15,6 +15,8 @@
 /* 构建期生成的密钥头文件(由 injector encrypt-strings --key-header 产出) */
 #ifdef T4_ENABLED
 #include "t4_str_key.h"
+#include "vm_engine.h"
+#include "vm_bytecode.h"
 #endif
 
 #define DEFENDER_TAG "T4StrDecrypt"
@@ -70,7 +72,7 @@ static jstring t4_get(JNIEnv *env, jclass clazz, jint index) {
         return (*env)->NewStringUTF(env, "");
     }
 
-    /* 4. XOR 解密 */
+    /* 4. VMP 解密(T2:通过 VM 引擎执行 XOR,IDA 只看到 dispatch loop) */
     jbyte *encData = (*env)->GetByteArrayElements(env, encBytes, NULL);
     char *plain = (char *)malloc((size_t)byteLen + 1);
     if (!plain) {
@@ -79,9 +81,17 @@ static jstring t4_get(JNIEnv *env, jclass clazz, jint index) {
         return (*env)->NewStringUTF(env, "");
     }
 
-    for (jsize i = 0; i < byteLen; i++) {
-        plain[i] = (char)((uint8_t)encData[i] ^ T4_XOR_KEY[i % T4_XOR_KEY_LEN]);
-    }
+    /* 复制密文到 plain 缓冲,VM 原地解密 */
+    memcpy(plain, encData, (size_t)byteLen);
+
+    vm_context_t vm;
+    vm_init(&vm, VM_BC_xor_decrypt, VM_BC_xor_decrypt_size);
+    vm_set_arg(&vm, 0, (uint64_t)(uintptr_t)plain);              /* buf_ptr */
+    vm_set_arg(&vm, 1, (uint64_t)(uintptr_t)T4_XOR_KEY);        /* key_ptr */
+    vm_set_arg(&vm, 2, (uint64_t)(uint32_t)byteLen);            /* len */
+    vm_set_arg(&vm, 3, (uint64_t)T4_XOR_KEY_LEN);              /* key_len */
+    vm_execute(&vm);
+
     plain[byteLen] = '\0';
 
     /* 5. 清理加密数据引用 */
