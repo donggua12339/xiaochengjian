@@ -31,10 +31,8 @@
 
 #include "obfstr_poly.h"   /* X1 字符串多态加密:OBF() / obf_poly_decode */
 
-#define TAG "DefenderMmapReader"
-#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
-#define LOGW(...) __android_log_print(ANDROID_LOG_WARN, TAG, __VA_ARGS__)
-#define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, TAG, __VA_ARGS__)
+#define DEFENDER_TAG "DefenderMmapReader"
+#include "defender_log.h"
 
 /* ============= inline syscall(复用 sig_verify.c 模式) ============= */
 

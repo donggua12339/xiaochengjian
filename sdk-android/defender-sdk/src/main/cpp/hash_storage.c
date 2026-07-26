@@ -21,10 +21,8 @@
 #include <stdint.h>
 #include <android/log.h>
 
-#define TAG "DefenderHashStorage"
-#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
-#define LOGW(...) __android_log_print(ANDROID_LOG_WARN, TAG, __VA_ARGS__)
-#define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, TAG, __VA_ARGS__)
+#define DEFENDER_TAG "DefenderHashStorage"
+#include "defender_log.h"
 
 #define OBF_KEY 0x5A
 

@@ -23,10 +23,8 @@
 #include <pthread.h>
 #include <android/log.h>
 
-#define TAG "DefenderResponse"
-#define LOGI(...) __android_log_print(ANDROID_LOG_INFO,  TAG, __VA_ARGS__)
-#define LOGW(...) __android_log_print(ANDROID_LOG_WARN,  TAG, __VA_ARGS__)
-#define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, TAG, __VA_ARGS__)
+#define DEFENDER_TAG "DefenderResponse"
+#include "defender_log.h"
 
 /* ============= kill 响应 ============= */
 

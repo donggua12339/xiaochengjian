@@ -23,10 +23,8 @@
 #include <stdint.h>
 #include <android/log.h>
 
-#define TAG "DefenderSigBlockParser"
-#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
-#define LOGW(...) __android_log_print(ANDROID_LOG_WARN, TAG, __VA_ARGS__)
-#define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, TAG, __VA_ARGS__)
+#define DEFENDER_TAG "DefenderSigBlockParser"
+#include "defender_log.h"
 
 /* V2/V3 block ID(AOSP 官方) */
 #define APK_SIG_BLOCK_V2_ID  0x7109871a

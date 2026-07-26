@@ -33,10 +33,8 @@
 #include <link.h>
 #include <android/log.h>
 
-#define TAG "DefenderPatchEnv"
-#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
-#define LOGW(...) __android_log_print(ANDROID_LOG_WARN, TAG, __VA_ARGS__)
-#define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, TAG, __VA_ARGS__)
+#define DEFENDER_TAG "DefenderPatchEnv"
+#include "defender_log.h"
 
 /* ============= inline syscall(复用 mmap_reader.c 的模式) ============= */
 

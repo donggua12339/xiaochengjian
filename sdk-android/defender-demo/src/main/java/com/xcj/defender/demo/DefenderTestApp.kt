@@ -22,7 +22,8 @@ class DefenderTestApp : Application() {
             val rc = com.xcj.defender.DefenderX0Test.bootstrap(packageCodePath)
             Log.i(TAG, "[X0] bootstrap rc=$rc(0=外壳经 stub 加密加载成功)")
         } catch (e: UnsatisfiedLinkError) {
-            Log.w(TAG, "[X0] 加载失败(可能已加载): ${e.message}")
+            // 不用字符串字面量(attachBaseContext 阶段 XcjObfStr 尚未注册)
+            Log.w(TAG, e.toString())
         }
     }
 
@@ -36,7 +37,31 @@ class DefenderTestApp : Application() {
         } catch (e: Throwable) {
             Log.e(TAG, "[X0] DefenderNative 调用失败: ${e.message}", e)
         }
-        /* X4-1 L1 反注入验证(native + Java 交叉) */
+
+        /* X4 响应链初始化:启动守护线程 + 三通道决策(强证据/有效分/存在感)
+         *
+         * 传 null config_path → 走 native 默认 config(enabled=true, onViolation=KILL,
+         * dryRun=false, strong_switches 全 true)。这意味着:
+         *   - 强证据 5 条任一命中 → 即时 kill(真杀进程,SIGABRT)
+         *   - 有效分超 70 → kill
+         *   - 守护线程每 3-15s 随机触发一轮
+         *
+         * expected_hash 传空 → 强证据 ①(签名 hash)不校验,其他 4 条可测。
+         * 强证据 ① 的验证由 patch_x0.py 注入 expected_hash 后单独测。 */
+        try {
+            com.xcj.defender.X4Native.x4Init(
+                /* configPath = */ null,
+                /* selfPkg    = */ packageName,
+                /* apkPath    = */ packageCodePath,
+                /* expectedHash = */ ""
+            )
+            Log.i(TAG, "[X4] 响应链已启动,守护线程运行中(dryRun=false=enforce)")
+        } catch (e: Throwable) {
+            Log.e(TAG, "[X4] x4Init 失败: ${e.message}", e)
+        }
+
+        /* 以下各检测器仅用于诊断打印单点分数;真正 kill 决策已在 x4Init 启动的
+         * 守护线程里走三通道响应链。保留这些调用方便观测单层 score。 */
         try {
             val nativeScore = com.xcj.defender.X4Native.antiInjectCheck()
             val javaScore = com.xcj.defender.X4InjectionDetector.check(
@@ -45,14 +70,12 @@ class DefenderTestApp : Application() {
         } catch (e: Throwable) {
             Log.e(TAG, "[X4-1] 检测失败: ${e.message}", e)
         }
-        /* X4-3 L2 反调试验证(stat state + 时间差 + 断点扫描 + Frida 端口) */
         try {
             val l2Score = com.xcj.defender.X4Native.antiDebugCheck()
             Log.i(TAG, "[X4-3] L2 反调试: score=$l2Score(0=干净)")
         } catch (e: Throwable) {
             Log.e(TAG, "[X4-3] 检测失败: ${e.message}", e)
         }
-        /* X4-4 L3 反 dump 验证(rwx 段 + anon:dalvik + memfd + inotify) */
         try {
             com.xcj.defender.X4Native.antiDumpInit()
             val l3Score = com.xcj.defender.X4Native.antiDumpCheck()
@@ -60,7 +83,6 @@ class DefenderTestApp : Application() {
         } catch (e: Throwable) {
             Log.e(TAG, "[X4-4] 检测失败: ${e.message}", e)
         }
-        /* X4-5 L5 SMC 验证(加密机器码→沙箱页执行→擦除 + 零 rwx 纪律) */
         try {
             val st = com.xcj.defender.X4Native.smcSelftest()
             val sum = com.xcj.defender.X4Native.smcAdd(30, 12)
@@ -69,7 +91,6 @@ class DefenderTestApp : Application() {
         } catch (e: Throwable) {
             Log.e(TAG, "[X4-5] SMC 失败: ${e.message}", e)
         }
-        /* X4-2 L4 运行时完整性验证(libc CRC + inline hook + svc 签名块) */
         try {
             com.xcj.defender.X4Native.integrityInit(packageCodePath)
             val l4Score = com.xcj.defender.X4Native.integrityCheck(packageCodePath)

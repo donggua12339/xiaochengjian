@@ -10,8 +10,8 @@
 #include <jni.h>
 #include <android/log.h>
 
-#define TAG "X0TestPayload"
-#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
+#define DEFENDER_TAG "X0TestPayload"
+#include "defender_log.h"
 
 static jstring native_ping(JNIEnv *env, jclass clazz) {
     (void)clazz;

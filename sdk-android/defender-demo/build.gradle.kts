@@ -3,6 +3,18 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+val pythonExec: String = (providers.gradleProperty("xcjPythonExec").orNull) ?: run {
+    try {
+        val proc = ProcessBuilder("python", "-c", "import sys; print(sys.executable)")
+            .redirectErrorStream(true).start()
+        val path = proc.inputStream.bufferedReader().readText().trim()
+        proc.waitFor()
+        path.replace("\\", "/").ifEmpty { "python" }
+    } catch (e: Exception) {
+        "python"
+    }
+}
+
 android {
     namespace = "com.xcj.defender.demo"
     compileSdk = 35
@@ -31,6 +43,13 @@ android {
         jvmTarget = "17"
     }
 
+    // Hikari Java 字符串加密(ADR 0094):demo 模块也加密,XcjObfStr 来自 sdk AAR
+    sourceSets {
+        getByName("main") {
+            java.setSrcDirs(listOf("build/hikari/java"))
+        }
+    }
+
     buildFeatures {
         viewBinding = false
     }
@@ -56,4 +75,20 @@ dependencies {
     implementation("androidx.constraintlayout:constraintlayout:2.1.4")
     /* 接入真实 xcj-defender-sdk(需先编译 defender-sdk 生成 .aar) */
     implementation(files("../defender-sdk/build/outputs/aar/xcj-defender-sdk-release.aar"))
+}
+
+// === Hikari Java 字符串加密(ADR 0094) — demo 模块 ===
+val hikariJavaObf by tasks.registering(Exec::class) {
+    val srcDir = "src/main/java/com/xcj/defender/demo"
+    val dstDir = "build/hikari/java/com/xcj/defender/demo"
+    val script = "../defender-sdk/scripts/java_obf.py"
+    inputs.dir(srcDir)
+    outputs.dir(dstDir)
+    commandLine(pythonExec, script, "--transform", srcDir, dstDir,
+        "--class-name", "com.xcj.defender.XcjObfStr")
+    workingDir = projectDir
+}
+
+tasks.matching { it.name.startsWith("compile") && it.name.endsWith("Kotlin") }.configureEach {
+    dependsOn(hikariJavaObf)
 }

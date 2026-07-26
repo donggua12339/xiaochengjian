@@ -197,6 +197,24 @@ def patch_x0(apk_path, so_path, key, ks_path, ks_pass):
     else:
         print("哈希不匹配,需排查(Signing Block 稳定性)")
         sys.exit(1)
+    return final_H
+
+
+def upload_hash_to_server(api_url, api_token, app_id, hash_hex):
+    """方案 C 白名单自动上报:PATCH /apps/:id { signHashAllowList }"""
+    import json
+    import urllib.request
+    url = f"{api_url.rstrip('/')}/apps/{app_id}"
+    body = json.dumps({"signHashAllowList": [f"sha256:{hash_hex}"]}).encode()
+    req = urllib.request.Request(url, data=body, method='PATCH', headers={
+        'Authorization': f'Bearer {api_token}',
+        'Content-Type': 'application/json',
+    })
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            print(f"[方案C] 白名单已上报: {url} -> {resp.status}")
+    except Exception as e:
+        print(f"[方案C] 白名单上报失败(不影响方案A/B): {e}")
 
 
 def main():
@@ -207,11 +225,22 @@ def main():
     ap.add_argument('--key-hex', required=True, help='RC4 密钥 hex(= x0_key.h 的密钥)')
     ap.add_argument('--ks', default=os.path.expanduser('~/.android/debug.keystore'))
     ap.add_argument('--ks-pass', default='android')
+    ap.add_argument('--upload-hash', action='store_true',
+                    help='上报 hash 到服务端白名单(方案 C)')
+    ap.add_argument('--api-url', default='https://xcj-api.winmelon.cn')
+    ap.add_argument('--api-token', default=os.environ.get('XCJ_API_TOKEN', ''),
+                    help='API JWT token(或设 XCJ_API_TOKEN 环境变量)')
+    ap.add_argument('--app-id', default='com.xcj.defender.demo')
     args = ap.parse_args()
 
     print("Pass 0: DEX CRC 注入...")
     pah.inject_dex_crc(args.apk, args.ks, args.ks_pass)
-    patch_x0(args.apk, args.so, bytes.fromhex(args.key_hex), args.ks, args.ks_pass)
+    final_H = patch_x0(args.apk, args.so, bytes.fromhex(args.key_hex), args.ks, args.ks_pass)
+
+    if args.upload_hash and args.api_token:
+        upload_hash_to_server(args.api_url, args.api_token, args.app_id, final_H.hex())
+    elif args.upload_hash:
+        print("[方案C] 跳过上报:未提供 --api-token 或 XCJ_API_TOKEN")
 
 
 if __name__ == '__main__':

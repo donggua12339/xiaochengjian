@@ -27,10 +27,8 @@
 #include <pthread.h>
 #include <android/log.h>
 
-#define TAG "DefenderServerGate"
-#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
-#define LOGW(...) __android_log_print(ANDROID_LOG_WARN, TAG, __VA_ARGS__)
-#define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, TAG, __VA_ARGS__)
+#define DEFENDER_TAG "DefenderServerGate"
+#include "defender_log.h"
 
 /* ============= token 缓存(线程安全) ============= */
 

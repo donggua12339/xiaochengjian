@@ -1,0 +1,20 @@
+{
+  "_comment": "Hikari 混淆配置(ADR 0094)。native_cff.py 构建期读取。",
+  "cff": {
+    "functions": [
+      "xcj_derive_key_pad",
+      "xcj_check_abi_compat",
+      "xcj_init_log_seed",
+      "locate_and_decrypt"
+    ],
+    "state_count": 16,
+    "nesting_depth": 2,
+    "bogus_block_ratio": 0.3
+  },
+  "number_obf": {
+    "constants": ["X0_KEY_LEN", "SO_CIPHER_MAGIC_LEN", "SO_CIPHER_TAILER_LEN"],
+    "mode": "expression"
+  },
+  "string_enc": true,
+  "salt_bytes": 32
+}

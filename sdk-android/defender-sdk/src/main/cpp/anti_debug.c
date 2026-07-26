@@ -18,10 +18,8 @@
 #include <fcntl.h>
 #include <android/log.h>
 
-#define TAG "DefenderAntiDebug"
-#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
-#define LOGW(...) __android_log_print(ANDROID_LOG_WARN, TAG, __VA_ARGS__)
-#define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, TAG, __VA_ARGS__)
+#define DEFENDER_TAG "DefenderAntiDebug"
+#include "defender_log.h"
 
 /* ============= inline syscall 封装(复用 sig_verify.c 的逻辑) ============= */
 

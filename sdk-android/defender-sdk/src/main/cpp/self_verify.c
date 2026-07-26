@@ -29,10 +29,8 @@
 #include <dlfcn.h>
 #include <android/log.h>
 
-#define TAG "DefenderSelfVerify"
-#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
-#define LOGW(...) __android_log_print(ANDROID_LOG_WARN, TAG, __VA_ARGS__)
-#define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, TAG, __VA_ARGS__)
+#define DEFENDER_TAG "DefenderSelfVerify"
+#include "defender_log.h"
 
 /* ============= SHA-256 简化实现 ============= */
 /* 注:为避免外部依赖,使用简化 SHA-256。

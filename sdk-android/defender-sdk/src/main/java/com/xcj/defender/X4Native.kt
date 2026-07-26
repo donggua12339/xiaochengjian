@@ -33,4 +33,17 @@ object X4Native {
 
     /** L4 运行时完整性综合检测(libc 四入口 CRC + inline hook 指纹 + svc 签名块)。返回可疑计数,0=干净。 */
     external fun integrityCheck(apkPath: String): Int
+
+    /**
+     * X4 响应链初始化(ADR 0093):启动守护线程 + 三通道决策(强证据 / 有效分 / 存在感)。
+     *
+     * 调用后,守护线程每 3-15s 随机间隔触发一轮 check,命中强证据或有效分超阈值时
+     * 按 onViolation 响应(dryRun=false 时真杀,dryRun=true 时只 log)。
+     *
+     * @param configPath    defender-config.json 解压后的 cache 路径;null 用默认值
+     * @param selfPkg       本 APP 包名(供 exempt 检查)
+     * @param apkPath       本 APK 路径(供强证据 ① 签名 hash 校验)
+     * @param expectedHash  预期签名 hash(64 字符 hex;空表示不校验)
+     */
+    external fun x4Init(configPath: String?, selfPkg: String, apkPath: String, expectedHash: String)
 }

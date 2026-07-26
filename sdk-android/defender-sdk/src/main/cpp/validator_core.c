@@ -20,12 +20,11 @@
 #include <string.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <signal.h>
 #include <android/log.h>
 
-#define TAG "DefenderValidatorCore"
-#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
-#define LOGW(...) __android_log_print(ANDROID_LOG_WARN, TAG, __VA_ARGS__)
-#define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, TAG, __VA_ARGS__)
+#define DEFENDER_TAG "DefenderValidatorCore"
+#include "defender_log.h"
 
 /* ============= 外部函数声明 ============= */
 
@@ -255,6 +254,19 @@ extern void trigger_scheduler_start(void);
 void validator_core_init_guard(const char *apk_path, const char *expected_dex_crcs) {
     g_apk_path = apk_path;
     g_expected_dex_crcs = expected_dex_crcs;
+
+    /* === 同步首轮校验(2026-07-26 加固)==
+     * 守护线程首轮有 3-8s 初始延迟,MT 加强版在这窗口内完成字符串解密后 exit。
+     * 在 JNI_OnLoad 同步跑一次方案 A+B,失败直接 _exit(137),不给 MT 窗口。
+     * 真 app:APK 未被篡改 → 校验通过 → 继续启动。 */
+    int sync_result = guard_verify_callback();
+    if (sync_result != 0) {
+        LOGE("同步首轮校验失败: result=%d,立即终止(不给分析窗口)", sync_result);
+        raise(SIGABRT);
+        _exit(137);
+    }
+    LOGI("同步首轮校验通过");
+
     trigger_scheduler_set_callback(guard_verify_callback);
     trigger_scheduler_start();
 }

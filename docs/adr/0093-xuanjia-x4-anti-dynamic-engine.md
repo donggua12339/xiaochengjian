@@ -60,3 +60,52 @@ X0(外壳 SO 加密,ADR 0092)解决"静态提取",但运行时攻击者仍可动
 
 ## 合规
 仅用于设计自有 APK 的防守能力,不产出通用去签/脱壳/注入工具,不照搬攻击代码,符合 ADR 0077 红线与守城军规;在 ADR 0091 §X4 五层边界内。详见 `docs/x4/X4-COMPLIANCE.md`。
+
+---
+
+## 补充:Q5 灰度发布策略(2026-07-26 定稿)
+
+### 三阶段灰度
+
+| 阶段 | 模式 | 时长 | 行为 |
+|------|------|------|------|
+| **Phase 1: dry-run** | `dryRun=true` | ≥ 7 天 | 全量检测 + 全量上报,**不 kill 不 warn 不 toast**,只 log `[X4-DRY-RUN]` |
+| **Phase 2: warn-only** | `onViolation=warn` | ≥ 7 天 | 强证据仍 kill,弱信号只 warn(toast + 上报),不 kill |
+| **Phase 3: enforce** | `onViolation=kill` | 永久 | 全量响应:强证据 kill,弱信号超 kill 阈值 kill,超 warn 阈值 warn |
+
+### 观测指标(Phase 1 每日看板)
+
+| 指标 | 计算方式 | 红线 |
+|------|---------|------|
+| **误报率(FPR)** | 干净设备上报数 / 干净设备总数 | Phase 1→2: < 0.1%;Phase 2→3: < 0.01% |
+| **强证据命中率** | 强证据上报数 / 总设备数 | 监控用,无红线(强证据=物理事实,不存在误报) |
+| **弱信号分布** | 各弱信号命中次数 Top 10 | 任一弱信号在干净设备命中率 > 5% → 降权或移除(如 seccomp 教训) |
+| **存在感告警率** | presence ≥ 10 的设备占比 | 监控用,> 1% 需排查 |
+| **kill 率(Phase 2+)** | kill 事件数 / DAU | Phase 2: 应 ≈ 强证据命中率;Phase 3: < 0.5% |
+| **crash 关联** | X4 kill 后 30s 内的 crash 报告 | 100% 关联(raise SIGABRT),用于确认 kill 生效 |
+
+### 切换条件
+
+**Phase 1 → Phase 2(至少 7 天后):**
+- [x] FPR < 0.1%(干净设备无误报)
+- [x] 无弱信号在干净设备命中率 > 5%
+- [x] 强证据 5 条全部有真机验证记录
+- [x] dry-run 日志无异常(无 crash、无 ANR)
+
+**Phase 2 → Phase 3(至少 7 天后):**
+- [x] FPR < 0.01%
+- [x] 无用户投诉"误杀"
+- [x] warn toast 无 UI 异常
+- [x] kill 率 ≈ 强证据命中率(弱信号未产生额外 kill)
+
+### 回滚机制
+
+- **自动回滚**(auto_rollback.c):连续 3 轮孤立强证据(无弱信号佐证)→ 降级到 warn-only + 上报
+- **手动回滚**:远程 config 推送 `dryRun=true` 或 `onViolation=none`,全量回退
+- **紧急熔断**:服务端下发 `x4Detect.enabled=false`,关闭全部 X4 检测
+
+### 默认值
+
+- Debug 构建:`dryRun=true`(Gradle BuildType 注入)
+- Release 构建:`dryRun=false`(Gradle BuildType 注入)
+- 远程 config 可覆盖(优先级:代码 override > config > Gradle 默认)

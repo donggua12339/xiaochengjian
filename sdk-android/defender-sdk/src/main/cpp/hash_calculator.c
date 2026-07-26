@@ -30,10 +30,8 @@
 #include <stdint.h>
 #include <android/log.h>
 
-#define TAG "DefenderHashCalc"
-#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
-#define LOGW(...) __android_log_print(ANDROID_LOG_WARN, TAG, __VA_ARGS__)
-#define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, TAG, __VA_ARGS__)
+#define DEFENDER_TAG "DefenderHashCalc"
+#include "defender_log.h"
 
 /* 1MB 分块(2^20) */
 #define CHUNK_SIZE (1 << 20)

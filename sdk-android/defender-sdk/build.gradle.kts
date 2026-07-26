@@ -77,6 +77,30 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
+
+    // Hikari Java 字符串加密(ADR 0094):构建期变换源码,JADX 静态搜索失效。
+    // 构建用 build/hikari/java(变换后),IDE 用 src/main/java(原始)。
+    sourceSets {
+        getByName("main") {
+            java.setSrcDirs(listOf("build/hikari/java"))
+        }
+    }
+}
+
+// === Hikari Java 字符串加密任务(ADR 0094)== =
+val hikariJavaObf by tasks.registering(Exec::class) {
+    val srcDir = "src/main/java/com/xcj/defender"
+    val dstDir = "build/hikari/java/com/xcj/defender"
+    val script = "scripts/java_obf.py"
+    inputs.dir(srcDir)
+    outputs.dir(dstDir)
+    commandLine(pythonExec, script, "--all", srcDir, dstDir)
+    workingDir = projectDir
+}
+
+// 编译前跑 Hikari 变换
+tasks.matching { it.name.startsWith("compile") && it.name.endsWith("Kotlin") }.configureEach {
+    dependsOn(hikariJavaObf)
 }
 
 dependencies {

@@ -23,10 +23,8 @@
 #include <stdint.h>
 #include <android/log.h>
 
-#define TAG "DefenderDexIntegrity"
-#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
-#define LOGW(...) __android_log_print(ANDROID_LOG_WARN, TAG, __VA_ARGS__)
-#define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, TAG, __VA_ARGS__)
+#define DEFENDER_TAG "DefenderDexIntegrity"
+#include "defender_log.h"
 
 extern void defender_sha256(const unsigned char *data, size_t len, unsigned char *out);
 

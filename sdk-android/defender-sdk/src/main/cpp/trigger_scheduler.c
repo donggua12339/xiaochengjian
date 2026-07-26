@@ -21,10 +21,8 @@
 #include <time.h>
 #include <android/log.h>
 
-#define TAG "DefenderTriggerScheduler"
-#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
-#define LOGW(...) __android_log_print(ANDROID_LOG_WARN, TAG, __VA_ARGS__)
-#define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, TAG, __VA_ARGS__)
+#define DEFENDER_TAG "DefenderTriggerScheduler"
+#include "defender_log.h"
 
 /* ============= 校验回调(由 validator_core.c 注册) ============= */
 
@@ -55,17 +53,18 @@ static void *guard_thread(void *arg) {
     (void)arg;
     LOGI("守护线程启动(5-15s 随机间隔)");
 
-    /* 初始延迟 3-8 秒(避免与启动阶段冲突) */
+    /* 初始延迟 0-1 秒(2026-07-26 加固:原 3-8s 给 MT 留了解密窗口) */
     unsigned int seed = (unsigned int)time(NULL) ^ (unsigned int)getpid();
-    sleep(3 + rand_r(&seed) % 6);
+    sleep(rand_r(&seed) % 2);
 
     while (g_scheduler_running) {
         if (g_callback) {
             int result = g_callback();
             if (result != 0) {
                 LOGE("守护线程校验失败: result=%d,触发 kill", result);
-                /* 直接 native kill(不依赖 Java 层,防 MT patch DEX 绕过) */
-                defender_kill(3000, 15000, "sigabrt");
+                /* 直接 native kill(不依赖 Java 层,防 MT patch DEX 绕过)
+                 * 2026-07-26: delay 从 3-15s 改为 0-1s,不给 MT exit 窗口 */
+                defender_kill(0, 1000, "sigabrt");
             }
         }
 

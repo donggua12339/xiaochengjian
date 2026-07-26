@@ -60,6 +60,21 @@ set(DEFENDER_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/x4_smc.c
     ${CMAKE_CURRENT_SOURCE_DIR}/x4_integrity.c
     ${CMAKE_CURRENT_SOURCE_DIR}/x4_jni.c
+    # X4 响应链(ADR 0093,Q1-Q5 定稿):三通道 + 衰减 + dry-run + 回滚
+    ${CMAKE_CURRENT_SOURCE_DIR}/strong_evidence.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/strong_evidence_classloader.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/weak_detector.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/weak_detector_jni.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/score_engine.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/response_chain.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/config_loader.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/config_loader_jni.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/dry_run.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/telemetry.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/auto_rollback.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/x4_core.c
+    # X4 占位 stub(toast/telemetry,Q5 灰度期补真机 JNI 实现)
+    ${CMAKE_CURRENT_SOURCE_DIR}/x4_stubs.c
 )
 
 # ============= X1 字符串多态加密(构建期代码生成)=============
@@ -84,18 +99,22 @@ set(OBF_SEED "" CACHE STRING "X1 字符串加密随机种子(空=每构建 os.ur
 if(Python3_Interpreter_FOUND AND EXISTS ${OBF_SCRIPT})
     file(MAKE_DIRECTORY ${OBF_GEN_DIR})
     set(DEFENDER_SOURCES_FINAL "")
+    set(HIKARI_SCRIPT ${CMAKE_CURRENT_SOURCE_DIR}/../../../scripts/native_cff.py)
     foreach(src ${DEFENDER_SOURCES})
         get_filename_component(fname ${src} NAME)
         set(gen ${OBF_GEN_DIR}/${fname})
-        set(_obf_cmd ${Python3_EXECUTABLE} ${OBF_SCRIPT} --transform ${src} ${gen})
+        set(num_obf_tmp ${OBF_GEN_DIR}/${fname}.num_obf)
+        # Hikari 数字混淆(ADR 0094)→ X1 字符串加密,两步串联
+        set(_obf_cmd ${Python3_EXECUTABLE} ${OBF_SCRIPT} --transform ${num_obf_tmp} ${gen})
         if(OBF_SEED)
             list(APPEND _obf_cmd --seed ${OBF_SEED})
         endif()
         add_custom_command(
             OUTPUT ${gen}
+            COMMAND ${Python3_EXECUTABLE} ${HIKARI_SCRIPT} --number-obf ${src} ${num_obf_tmp}
             COMMAND ${_obf_cmd}
-            DEPENDS ${src} ${OBF_SCRIPT}
-            COMMENT "X1 obfstr transform: ${fname}"
+            DEPENDS ${src} ${OBF_SCRIPT} ${HIKARI_SCRIPT}
+            COMMENT "Hikari+X1 transform: ${fname}"
             VERBATIM
         )
         list(APPEND DEFENDER_SOURCES_FINAL ${gen})
@@ -125,9 +144,35 @@ target_include_directories(xcj_defender PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
-# ============= X0-3 stub loader(原型,不加密的小 .so)=============
+# ============= Hikari CFF 参数生成(ADR 0094,每构建随机化)=============
+# native_cff.py --gen-params 生成 cff_params.h(CFF 状态表+LCG) + x0_derive.h(密钥派生材料)。
+# 依赖 x0_key.h(密钥)和 hikari.json(配置)。每构建随机,二进制不可复现。
+set(HIKARI_SCRIPT ${CMAKE_CURRENT_SOURCE_DIR}/../../../scripts/native_cff.py)
+set(HIKARI_JSON   ${CMAKE_CURRENT_SOURCE_DIR}/../../../scripts/hikari.json)
+set(CFF_PARAMS_H  ${CMAKE_CURRENT_SOURCE_DIR}/cff_params.h)
+set(X0_DERIVE_H   ${CMAKE_CURRENT_SOURCE_DIR}/x0_derive.h)
+set(X0_KEY_H      ${CMAKE_CURRENT_SOURCE_DIR}/x0_key.h)
+
+if(Python3_Interpreter_FOUND AND EXISTS ${HIKARI_SCRIPT})
+    add_custom_command(
+        OUTPUT ${CFF_PARAMS_H} ${X0_DERIVE_H}
+        COMMAND ${Python3_EXECUTABLE} ${HIKARI_SCRIPT} --gen-params --config ${HIKARI_JSON}
+        DEPENDS ${HIKARI_SCRIPT} ${HIKARI_JSON} ${X0_KEY_H}
+        COMMENT "Hikari: 生成 CFF 随机参数 + 密钥派生材料"
+        VERBATIM
+    )
+else()
+    message(WARNING "Hikari: 未找到 Python3 或 native_cff.py,CFF 参数不重新生成(使用已有)")
+endif()
+
+# ============= X0-3 stub loader(CFF 保护密钥派生,ADR 0094)=============
 # 正常 System.loadLibrary 加载;JNI_OnLoad 里自举:解密嵌入载荷 → memfd →
-# android_dlopen_ext → 手动调载荷 JNI_OnLoad。原型载荷为 x0test(见 x0test_enc.h)。
+# android_dlopen_ext → 手动调载荷 JNI_OnLoad。
+# 密钥不再明文存储,改为 CFF 保护的运行时派生(xcj_check_abi_compat)。
 add_library(xcj_loader SHARED ${CMAKE_CURRENT_SOURCE_DIR}/xcj_loader.c)
 target_link_libraries(xcj_loader log android dl)
 target_include_directories(xcj_loader PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+if(Python3_Interpreter_FOUND AND EXISTS ${HIKARI_SCRIPT})
+    add_dependencies(xcj_loader cff_params_gen)
+    add_custom_target(cff_params_gen DEPENDS ${CFF_PARAMS_H} ${X0_DERIVE_H})
+endif()

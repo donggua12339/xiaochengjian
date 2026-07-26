@@ -56,6 +56,7 @@ playwright-report/
 
 # Claude / AI
 .claude/
+.learnings/
 
 # Cache
 .cache/
@@ -78,3 +79,10 @@ __pycache__/
 # X0 生成物(含密钥/密文,勿入库;由 build_x0_pack.py 生成)
 sdk-android/defender-sdk/src/main/cpp/x0_key.h
 sdk-android/defender-demo/src/main/assets/xcj_payload.bin
+
+# Hikari/X0 构建期生成物(含密钥碎片/随机混淆参数,明文可还原密钥,绝勿入库;由 native_cff.py 生成)
+sdk-android/defender-sdk/src/main/cpp/x0_derive.h
+sdk-android/defender-sdk/src/main/cpp/x0_str_key.h
+sdk-android/defender-sdk/src/main/cpp/x0_str_key_hex.txt
+sdk-android/defender-sdk/src/main/cpp/x0_jni_names.h
+sdk-android/defender-sdk/src/main/cpp/cff_params.h

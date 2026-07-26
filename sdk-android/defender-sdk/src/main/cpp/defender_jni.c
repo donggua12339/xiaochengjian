@@ -9,12 +9,13 @@
 #include <jni.h>
 #include <string.h>
 #include <stdlib.h>
+#include <signal.h>
+#include <unistd.h>
+#include <fcntl.h>
 #include <android/log.h>
 
-#define TAG "DefenderJNI"
-#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
-#define LOGW(...) __android_log_print(ANDROID_LOG_WARN, TAG, __VA_ARGS__)
-#define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, TAG, __VA_ARGS__)
+#define DEFENDER_TAG "DefenderJNI"
+#include "defender_log.h"
 
 /* ============= Batch 1:self_verify + getVersion ============= */
 
@@ -428,6 +429,50 @@ JNIEXPORT jint JNICALL
 JNI_OnLoad(JavaVM *vm, void *reserved) {
     (void)reserved;
     LOGI("JNI_OnLoad: xcj_defender.so 已加载");
+
+    /* === LSPlant / MT 沙箱 / 第三方工具加载检测(2026-07-26 加固)==
+     * 昨晚实测:MT 加强版解密时 fork 子进程 bin.mt.plus:d,把我们的 so 复制到
+     * /data/data/bin.mt.plus/cache/decrypt/lib/ 然后加载;用 LSPlant hook ART。
+     * 真 app 的 so 路径在 /data/app/ 下;第三方工具加载时在 /data/data/<工具包名>/cache/ 下。
+     * maps 里还会出现 liblsplant 等 ART hook 框架特征。
+     * 在 JNI_OnLoad 最早期检测,命中即 _exit(137),不给解密窗口。 */
+    {
+        char mbuf[131072]; /* 128KB,足够覆盖大多数 maps */
+        int mfd = open("/proc/self/maps", O_RDONLY);
+        if (mfd >= 0) {
+            ssize_t mn = read(mfd, mbuf, sizeof(mbuf) - 1);
+            close(mfd);
+            if (mn > 0) {
+                mbuf[mn] = 0;
+                /* 检查 1:lsplant / LSPosed ART hook 框架 */
+                if (strstr(mbuf, "lsplant") || strstr(mbuf, "liblsplant")) {
+                    LOGE("检测到 LSPlant/LSPosed ART hook 框架,立即终止");
+                    raise(SIGABRT); _exit(137);
+                }
+                /* 检查 2:so 被第三方工具 cache 加载(非 /data/app/ 路径)
+                 * 找 libxcj_loader 或 libxcj_defender 的映射行,看路径前缀 */
+                char *p = mbuf;
+                while (p && *p) {
+                    char *nl = strchr(p, '\n');
+                    if (nl) *nl = 0;
+                    if (strstr(p, "libxcj_loader") || strstr(p, "libxcj_defender")) {
+                        /* 真 app:路径含 /data/app/ ; MT:路径含 /data/data/bin.mt.../cache/ */
+                        if (strstr(p, "/data/data/") && !strstr(p, "/data/app/")) {
+                            LOGE("检测到 so 从第三方 cache 加载: %.200s", p);
+                            raise(SIGABRT); _exit(137);
+                        }
+                    }
+                    /* 检查 3:maps 里出现已知逆向工具包路径 */
+                    if (strstr(p, "bin.mt") || strstr(p, ".mt.plus") ||
+                        strstr(p, "com.liaoin") || strstr(p, "cache/decrypt")) {
+                        LOGE("检测到逆向工具特征路径: %.200s", p);
+                        raise(SIGABRT); _exit(137);
+                    }
+                    if (nl) { *nl = '\n'; p = nl + 1; } else break;
+                }
+            }
+        }
+    }
 
     /* 主线程初始化 .text 段缓存(守护线程 dladdr 可能失败) */
     self_integrity_init();
