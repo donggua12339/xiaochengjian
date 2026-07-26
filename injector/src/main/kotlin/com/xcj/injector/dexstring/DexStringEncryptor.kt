@@ -8,9 +8,10 @@ import com.android.tools.smali.dexlib2.iface.instruction.formats.Instruction21c
 import com.android.tools.smali.dexlib2.immutable.ImmutableClassDef
 import com.android.tools.smali.dexlib2.immutable.ImmutableDexFile
 import com.android.tools.smali.dexlib2.immutable.instruction.ImmutableInstruction
-import com.android.tools.smali.dexlib2.immutable.instruction.ImmutableInstruction11n
-import com.android.tools.smali.dexlib2.immutable.instruction.ImmutableInstruction21c
+import com.android.tools.smali.dexlib2.immutable.instruction.ImmutableInstruction11x
+import com.android.tools.smali.dexlib2.immutable.instruction.ImmutableInstruction21s
 import com.android.tools.smali.dexlib2.immutable.instruction.ImmutableInstruction35c
+import com.android.tools.smali.dexlib2.immutable.instruction.ImmutableInstruction3rc
 import com.android.tools.smali.dexlib2.iface.reference.StringReference
 import com.android.tools.smali.dexlib2.immutable.reference.ImmutableMethodReference
 import com.android.tools.smali.dexlib2.immutable.reference.ImmutableStringReference
@@ -68,7 +69,11 @@ class DexStringEncryptor(private val xorKey: ByteArray) {
             }
 
             val modifiedMethods = classDef.methods.map { method ->
-                val instructions = method.instructions
+                val impl = method.implementation
+                if (impl == null) {
+                    return@map com.android.tools.smali.dexlib2.immutable.ImmutableMethod.of(method)
+                }
+                val instructions = impl.instructions
                 val newInstructions = mutableListOf<ImmutableInstruction>()
                 var modified = false
 
@@ -89,24 +94,27 @@ class DexStringEncryptor(private val xorKey: ByteArray) {
 
                         // const/16 vX, INDEX
                         newInstructions.add(
-                            ImmutableInstruction11n(Opcode.CONST_16, register, index and 0xFFFF)
+                            ImmutableInstruction21s(Opcode.CONST_16, register, index)
                         )
-                        // invoke-static {vX}, DexStringDecryptor.get(I)
-                        newInstructions.add(
-                            ImmutableInstruction35c(
-                                Opcode.INVOKE_STATIC,
-                                1, register, 0, 0, 0, 0,
-                                ImmutableMethodReference(
-                                    DECRYPTOR_CLASS,
-                                    DECRYPTOR_METHOD,
-                                    listOf("I"),
-                                    "Ljava/lang/String;"
-                                )
+                        // invoke-static {vX} or {vX..vX}, DexStringDecryptor.get(I)
+                        val methodRef = ImmutableMethodReference(
+                            DECRYPTOR_CLASS,
+                            DECRYPTOR_METHOD,
+                            listOf("I"),
+                            "Ljava/lang/String;"
+                        )
+                        if (register <= 15) {
+                            newInstructions.add(
+                                ImmutableInstruction35c(Opcode.INVOKE_STATIC, 1, register, 0, 0, 0, 0, methodRef)
                             )
-                        )
+                        } else {
+                            newInstructions.add(
+                                ImmutableInstruction3rc(Opcode.INVOKE_STATIC_RANGE, register, 1, methodRef)
+                            )
+                        }
                         // move-result-object vX
                         newInstructions.add(
-                            ImmutableInstruction11n(Opcode.MOVE_RESULT_OBJECT, register, 0)
+                            ImmutableInstruction11x(Opcode.MOVE_RESULT_OBJECT, register)
                         )
                         modified = true
                     } else {
@@ -115,28 +123,23 @@ class DexStringEncryptor(private val xorKey: ByteArray) {
                 }
 
                 if (modified) {
-                    // 重建 method(增加 registers 以容纳 invoke 需要)
-                    val impl = method.implementation
-                    if (impl != null) {
-                        val newImpl = com.android.tools.smali.dexlib2.immutable.ImmutableMethodImplementation(
-                            impl.registerCount.coerceAtLeast(impl.registerCount),
-                            newInstructions,
-                            impl.tryBlocks,
-                            impl.debugItems
-                        )
-                        com.android.tools.smali.dexlib2.immutable.ImmutableMethod(
-                            classDef.type,
-                            method.name,
-                            method.parameters,
-                            method.returnType,
-                            method.accessFlags,
-                            method.annotations,
-                            method.hiddenApiRestrictions,
-                            newImpl
-                        )
-                    } else {
-                        com.android.tools.smali.dexlib2.immutable.ImmutableMethod.of(method)
-                    }
+                    // 重建 method
+                    val newImpl = com.android.tools.smali.dexlib2.immutable.ImmutableMethodImplementation(
+                        impl.registerCount,
+                        newInstructions,
+                        impl.tryBlocks,
+                        impl.debugItems
+                    )
+                    com.android.tools.smali.dexlib2.immutable.ImmutableMethod(
+                        classDef.type,
+                        method.name,
+                        method.parameters,
+                        method.returnType,
+                        method.accessFlags,
+                        method.annotations,
+                        method.hiddenApiRestrictions,
+                        newImpl
+                    )
                 } else {
                     com.android.tools.smali.dexlib2.immutable.ImmutableMethod.of(method)
                 }
