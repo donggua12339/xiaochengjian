@@ -1,6 +1,6 @@
 # ADR 0090 · 加固流程中的 DEX 保护性修改授权（语义保持型混淆例外）
 
-- 状态:**proposed**（待知识产权律师预审，代码未实现；预审通过前禁止写天衍 T4 / 玄甲 X14 代码，CLAUDE.md §2 红线第 6 条）
+- 状态:**superseded by 0090-protective-obfuscation-authorization.md**（2026-07-26 律师意见书已出具,授权范围与本 ADR 一致,新文件含完整法律条款,状态 accepted）
 - 日期:2026-07-24
 - 决策者:小城笺项目
 - 层次:功能 / 安全 / 合规
