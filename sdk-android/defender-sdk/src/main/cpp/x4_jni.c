@@ -12,6 +12,12 @@
 #include "x4_smc.h"
 #include "x4_core.h"
 
+/* X8/X9 */
+extern void x8_init(const char *pkg_name);
+extern int x8_anti_fart_check(void);
+extern void x9_init(const char *apk_path);
+extern int x9_odex_check(void);
+
 static jint x4_anti_inject_check_jni(JNIEnv *env, jobject thiz) {
     (void)env; (void)thiz;
     return (jint)x4_anti_inject_check();
@@ -78,6 +84,32 @@ static void x4_init_jni(JNIEnv *env, jobject thiz,
     if (expected_hash_j) (*env)->ReleaseStringUTFChars(env, expected_hash_j, expected);
 }
 
+/* X8 FART 脱壳扫描 */
+static void x8_init_jni(JNIEnv *env, jobject thiz, jstring pkg_j) {
+    (void)thiz;
+    const char *p = pkg_j ? (*env)->GetStringUTFChars(env, pkg_j, NULL) : NULL;
+    x8_init(p);
+    if (pkg_j) (*env)->ReleaseStringUTFChars(env, pkg_j, p);
+}
+
+static jint x8_check_jni(JNIEnv *env, jobject thiz) {
+    (void)env; (void)thiz;
+    return (jint)x8_anti_fart_check();
+}
+
+/* X9 ODEX 修补检测 */
+static void x9_init_jni(JNIEnv *env, jobject thiz, jstring apk_path_j) {
+    (void)thiz;
+    const char *p = apk_path_j ? (*env)->GetStringUTFChars(env, apk_path_j, NULL) : NULL;
+    x9_init(p);
+    if (apk_path_j) (*env)->ReleaseStringUTFChars(env, apk_path_j, p);
+}
+
+static jint x9_check_jni(JNIEnv *env, jobject thiz) {
+    (void)env; (void)thiz;
+    return (jint)x9_odex_check();
+}
+
 int x4_register_natives(JNIEnv *env) {
     jclass clazz = (*env)->FindClass(env, "com/xcj/defender/X4Native");
     if (clazz == NULL) {
@@ -96,8 +128,12 @@ int x4_register_natives(JNIEnv *env) {
         {"integrityCheck",   "(Ljava/lang/String;)I",    (void *)x4_integrity_check_jni},
         {"x4Init",           "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V",
                                                          (void *)x4_init_jni},
+        {"antiFartInit",     "(Ljava/lang/String;)V",    (void *)x8_init_jni},
+        {"antiFartCheck",    "()I",                      (void *)x8_check_jni},
+        {"odexInit",         "(Ljava/lang/String;)V",    (void *)x9_init_jni},
+        {"odexCheck",        "()I",                      (void *)x9_check_jni},
     };
-    jint rc = (*env)->RegisterNatives(env, clazz, methods, 10);
+    jint rc = (*env)->RegisterNatives(env, clazz, methods, 14);
     (*env)->DeleteLocalRef(env, clazz);
     return (rc == JNI_OK) ? 0 : -1;
 }

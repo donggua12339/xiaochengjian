@@ -46,4 +46,16 @@ object X4Native {
      * @param expectedHash  预期签名 hash(64 字符 hex;空表示不校验)
      */
     external fun x4Init(configPath: String?, selfPkg: String, apkPath: String, expectedHash: String)
+
+    /** X8 FART 脱壳扫描初始化(传入包名)。 */
+    external fun antiFartInit(packageName: String)
+
+    /** X8 FART 脱壳扫描综合检测。返回可疑计数,0=干净。 */
+    external fun antiFartCheck(): Int
+
+    /** X9 ODEX 修补检测初始化(传入 APK 路径)。 */
+    external fun odexInit(apkPath: String)
+
+    /** X9 ODEX 修补检测综合检测。返回可疑计数,0=干净。 */
+    external fun odexCheck(): Int
 }
