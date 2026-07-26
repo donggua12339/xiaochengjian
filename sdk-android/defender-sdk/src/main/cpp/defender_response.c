@@ -49,7 +49,7 @@ void defender_kill(int delay_min_ms, int delay_max_ms, const char *method) {
         delay_ms = delay_min_ms + (int)(rand_r(&seed) % (unsigned int)(delay_max_ms - delay_min_ms + 1));
     }
 
-    LOGE("defender_kill: 延迟 %d ms 后触发(method=%s)", delay_ms, method ? method : "sigabrt");
+    LOGE("defender_kill: triggered");
 
     /* 延迟 */
     if (delay_ms > 0) {

@@ -151,8 +151,7 @@ int dex_integrity_check(const char *apk_path, const char *expected_crcs_json) {
         uint32_t expected_crc = (uint32_t)strtoul(expected_hex, NULL, 16);
 
         if (actual_crcs[i] != expected_crc) {
-            LOGE("%s CRC 不匹配: expected=0x%08x actual=0x%08x",
-                 dex_name, expected_crc, actual_crcs[i]);
+            LOGE("%s CRC 不匹配", dex_name);
             mismatch++;
         } else {
             LOGI("%s CRC 匹配", dex_name);

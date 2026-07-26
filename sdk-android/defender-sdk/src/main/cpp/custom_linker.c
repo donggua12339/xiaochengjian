@@ -301,7 +301,7 @@ static int cl_relocate_one(struct cl_soinfo *si, uintptr_t reloc_addr,
         const char *name = cl_strtab_get(si, si->symtab[r_sym].st_name);
         void *sym_addr = dlsym(RTLD_DEFAULT, name);
         if (!sym_addr) {
-            LOGE("重定位: 符号未找到: %s", name);
+            LOGE("重定位: 符号未找到");
             return -1;
         }
         *(uintptr_t *)reloc_addr = (uintptr_t)sym_addr;
@@ -311,7 +311,7 @@ static int cl_relocate_one(struct cl_soinfo *si, uintptr_t reloc_addr,
         const char *name = cl_strtab_get(si, si->symtab[r_sym].st_name);
         void *sym_addr = dlsym(RTLD_DEFAULT, name);
         if (!sym_addr) {
-            LOGE("重定位 ABS64: 符号未找到: %s", name);
+            LOGE("重定位 ABS64: 符号未找到");
             return -1;
         }
         *(uintptr_t *)reloc_addr = (uintptr_t)sym_addr + addend;
@@ -326,7 +326,7 @@ static int cl_relocate_one(struct cl_soinfo *si, uintptr_t reloc_addr,
         const char *name = cl_strtab_get(si, si->symtab[r_sym].st_name);
         void *sym_addr = dlsym(RTLD_DEFAULT, name);
         if (!sym_addr) {
-            LOGE("重定位: 符号未找到: %s", name);
+            LOGE("重定位: 符号未找到");
             return -1;
         }
         *(uintptr_t *)reloc_addr = (uintptr_t)sym_addr;
@@ -336,7 +336,7 @@ static int cl_relocate_one(struct cl_soinfo *si, uintptr_t reloc_addr,
         const char *name = cl_strtab_get(si, si->symtab[r_sym].st_name);
         void *sym_addr = dlsym(RTLD_DEFAULT, name);
         if (!sym_addr) {
-            LOGE("重定位 ABS32: 符号未找到: %s", name);
+            LOGE("重定位 ABS32: 符号未找到");
             return -1;
         }
         *(uintptr_t *)reloc_addr = (uintptr_t)sym_addr + addend;

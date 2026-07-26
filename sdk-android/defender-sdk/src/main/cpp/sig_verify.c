@@ -518,7 +518,7 @@ int sig_verify_check_d(const char *apk_path, const char *expected_hash) {
         return 0;
     }
 
-    LOGE("D 层校验失败: expected=%s actual=%s", expected_hash, actual_hash);
+    LOGE("D 层校验失败(签名 hash 不匹配)");
     return 1;
 }
 

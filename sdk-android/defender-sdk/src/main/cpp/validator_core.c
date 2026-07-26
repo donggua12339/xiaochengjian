@@ -150,7 +150,7 @@ int validator_core_check_all(const char *apk_path, const char *expected_dex_crcs
 
             int env_score = inner_loader_env_check(mbuf, mtotal);
             if (env_score >= 40) {
-                LOGE("inner 环境检测异常: score=%d (Frida/Xposed/SRPatch)", env_score);
+                LOGE("inner 环境检测异常(Frida/Xposed/SRPatch)");
                 return 1;
             }
         }

@@ -299,7 +299,7 @@ static int bootstrap(const char *apk_path) {
     void *handle = load_so_from_mem(so, so_len, "libxcj_payload.so");
     memset(so, 0, so_len);                            /* 清理解密缓冲 */
     free(so);
-    if (!handle) { LOGE("android_dlopen_ext 失败:%s", dlerror()); return -1; }
+    if (!handle) { LOGE("android_dlopen_ext 失败"); return -1; }
     LOGI("android_dlopen_ext 成功 handle=%p", handle);
 
     typedef jint (*jni_onload_t)(JavaVM *, void *);
@@ -469,8 +469,7 @@ Java_com_xcj_defender_DefenderX0Test_bootstrap(JNIEnv *env, jclass clazz, jstrin
             (void *)native_str_decrypt
         };
         jint orc = (*env)->RegisterNatives(env, obf_clazz, &obf_method, 1);
-        if (orc != JNI_OK) { LOGE("RegisterNatives(str_decrypt) 失败:%d", orc); }
-        else { LOGE("XcjObfStr native 注册成功: %s", X0_JNI_STR_DECRYPT_NAME); }
+        if (orc != JNI_OK) { LOGE("RegisterNatives(str_decrypt) 失败"); }
         (*env)->DeleteLocalRef(env, obf_clazz);
     } else {
         LOGE("FindClass XcjObfStr 失败");

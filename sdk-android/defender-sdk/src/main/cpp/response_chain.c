@@ -119,7 +119,7 @@ void x4_response_evaluate(bool strong_hit, int score, int presence) {
 /* trigger_kill:随机延迟 + 上报 + SIGABRT(Q1 锁定)                       */
 /* ===================================================================== */
 void x4_trigger_kill(const char *reason) {
-    LOGE("[X4] KILL triggered: %s", reason);
+    LOGE("[X4] KILL triggered");
 
     /* 上报(在自毁前发) */
     x4_telemetry_report_kill(reason);

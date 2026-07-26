@@ -210,7 +210,7 @@ static int check_maps_frida(void) {
             overlap[tail_len + head_len] = '\0';
             for (int i = 0; i < 4; i++) {
                 if (strstr(overlap, keywords[i]) != NULL) {
-                    LOGE("maps 检测到 Frida 特征(跨边界): %s", keywords[i]);
+                    LOGE("maps 检测到 Frida 特征(跨边界)");
                     detected = 1;
                     break;
                 }
@@ -221,7 +221,7 @@ static int check_maps_frida(void) {
         if (!detected) {
             for (int i = 0; i < 4; i++) {
                 if (strstr(buf, keywords[i]) != NULL) {
-                    LOGE("maps 检测到 Frida 特征: %s", keywords[i]);
+                    LOGE("maps 检测到 Frida 特征");
                     detected = 1;
                     break;
                 }
@@ -269,7 +269,7 @@ static int check_frida_port(void) {
         close(sock);
 
         if (ret == 0) {
-            LOGE("端口 %d 可连接(Frida 在监听)", frida_ports[i]);
+            LOGE("Frida 端口可连接");
             return 1;
         }
     }
@@ -321,7 +321,7 @@ static int check_thread_names(void) {
 
         if (strstr(comm, kw_gum) != NULL ||
             strstr(comm, kw_gmain) != NULL) {
-            LOGE("线程名检测到 Frida: %s (tid=%s)", comm, ent->d_name);
+            LOGE("线程名检测到 Frida");
             detected = 1;
             break;
         }
@@ -492,7 +492,7 @@ static int check_frida_files(void) {
     };
     for (int i = 0; i < 6; i++) {
         if (af_access(paths[i], 0) == 0) {  /* F_OK=0 */
-            LOGE("文件路径检测到 Frida: %s", paths[i]);
+            LOGE("文件路径检测到 Frida");
             return 1;
         }
     }

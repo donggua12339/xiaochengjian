@@ -292,9 +292,7 @@ int defender_self_verify(void) {
     }
 
     /* 4. 不匹配 -> 判断是占位还是真篡改 */
-    LOGE(".text hash 校验失败!");
-    LOGE("预期: %s", EXPECTED_TEXT_HASH);
-    LOGE("实际: %s", actual_hash);
+    LOGE(".text hash 校验失败(预期与实际不符)");
 
     /* H1 修复:用完整字符串比对检测占位(而非只看前 2 字符,
      * 避免真实 hash 恰好以 "00" 开头时被误判为占位而跳过校验) */

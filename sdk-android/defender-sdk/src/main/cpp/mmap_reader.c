@@ -348,7 +348,7 @@ int mmap_apk(const char *apk_path, void **out_mapped, size_t *out_size) {
     /* 优先使用 .init_array 缓存的 fd(绕过 SRPatch SVC hook 重定向 openat) */
     int fd = get_valid_apk_fd(effective_path);
     if (fd < 0) {
-        LOGE("打开 APK 失败: %s (cached_fd=%d)", effective_path, g_cached_apk_fd);
+        LOGE("打开 APK 失败(cached_fd=%d)", g_cached_apk_fd);
         return -1;
     }
     if (fd == g_cached_apk_fd) {

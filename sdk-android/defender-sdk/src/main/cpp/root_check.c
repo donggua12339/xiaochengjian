@@ -137,7 +137,7 @@ static int check_su_paths(void) {
     };
     for (int i = 0; i < 8; i++) {
         if (rc_access(paths[i], 0) == 0) {  /* F_OK=0 */
-            LOGE("检测到 su: %s", paths[i]);
+            LOGE("检测到 su");
             return 1;
         }
     }
@@ -155,7 +155,7 @@ static int check_busybox(void) {
     };
     for (int i = 0; i < 6; i++) {
         if (rc_access(paths[i], 0) == 0) {
-            LOGE("检测到 busybox: %s", paths[i]);
+            LOGE("检测到 busybox");
             return 1;
         }
     }
@@ -174,7 +174,7 @@ static int check_magisk_paths(void) {
     };
     for (int i = 0; i < 8; i++) {
         if (rc_access(paths[i], 0) == 0) {
-            LOGE("检测到 Magisk: %s", paths[i]);
+            LOGE("检测到 Magisk");
             return 1;
         }
     }
@@ -204,7 +204,7 @@ static int check_test_keys(void) {
     char value[64] = {0};
     __system_property_get("ro.build.tags", value);
     if (strstr(value, "test-keys") != NULL) {
-        LOGE("检测到 test-keys(ro.build.tags=%s)", value);
+        LOGE("检测到 test-keys");
         return 1;
     }
     return 0;
@@ -246,7 +246,7 @@ static int check_mounts(void) {
             int writable = (strstr(p, " rw,") != NULL || strstr(p, " rw ") != NULL);
             if (end) *end = saved;
             if (writable) {
-                LOGE("系统分区可写(root remount):%s", mount_points[i]);
+                LOGE("系统分区可写(root remount)");
                 return 1;
             }
         }
@@ -263,7 +263,7 @@ static int check_verified_boot(void) {
     char buf[32] = {0};
     __system_property_get("ro.boot.verifiedbootstate", buf);
     if (strcmp(buf, "orange") == 0 || strcmp(buf, "red") == 0) {
-        LOGE("BL 解锁: verifiedbootstate=%s", buf);
+        LOGE("BL 解锁(verifiedbootstate 异常)");
         return 1;
     }
     return 0;
@@ -348,7 +348,7 @@ static int check_kernel_version(void) {
     }
     if (strstr(buf, "KernelSU") || strstr(buf, "APatch") ||
         strstr(buf, "MAGIC") || strstr(buf, "kernelsu")) {
-        LOGE("内核版本含 root 痕迹: %s", buf);
+        LOGE("内核版本含 root 痕迹");
         return 1;
     }
     return 0;
@@ -371,7 +371,7 @@ static int check_kernel_modules(void) {
     while ((ent = readdir(d)) != NULL) {
         for (int i = 0; i < 7; i++) {
             if (strcmp(ent->d_name, suspicious[i]) == 0) {
-                LOGE("检测到异常内核模块: %s", ent->d_name);
+                LOGE("检测到异常内核模块");
                 detected = 1;
                 break;
             }
@@ -404,7 +404,7 @@ static int check_zygisk_maps(void) {
         buf[n] = '\0';
         for (int i = 0; i < 5; i++) {
             if (strstr(buf, keywords[i]) != NULL) {
-                LOGE("maps 检测到 Zygisk/Magisk: %s", keywords[i]);
+                LOGE("maps 检测到 Zygisk/Magisk");
                 detected = 1;
                 break;
             }

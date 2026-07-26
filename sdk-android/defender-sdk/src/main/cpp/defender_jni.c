@@ -458,14 +458,14 @@ JNI_OnLoad(JavaVM *vm, void *reserved) {
                     if (strstr(p, "libxcj_loader") || strstr(p, "libxcj_defender")) {
                         /* 真 app:路径含 /data/app/ ; MT:路径含 /data/data/bin.mt.../cache/ */
                         if (strstr(p, "/data/data/") && !strstr(p, "/data/app/")) {
-                            LOGE("检测到 so 从第三方 cache 加载: %.200s", p);
+                            LOGE("检测到 so 从第三方 cache 加载");
                             raise(SIGABRT); _exit(137);
                         }
                     }
                     /* 检查 3:maps 里出现已知逆向工具包路径 */
                     if (strstr(p, "bin.mt") || strstr(p, ".mt.plus") ||
                         strstr(p, "com.liaoin") || strstr(p, "cache/decrypt")) {
-                        LOGE("检测到逆向工具特征路径: %.200s", p);
+                        LOGE("检测到逆向工具特征路径");
                         raise(SIGABRT); _exit(137);
                     }
                     if (nl) { *nl = '\n'; p = nl + 1; } else break;

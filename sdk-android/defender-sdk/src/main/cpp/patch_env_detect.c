@@ -183,7 +183,7 @@ static void scan_maps_for_apk(void) {
                         g_result.maps_apk_anomaly = 1;
                         strncpy(g_result.maps_apk_path, path_start,
                                 sizeof(g_result.maps_apk_path) - 1);
-                        LOGE("maps 异常 .apk 映射(私有目录): %s", path_start);
+                        LOGE("maps 异常 .apk 映射(私有目录)");
                         g_result.score += 30;
                     }
                     /* 其他路径(/system/ /product/ /dalvik-cache/ 等)不标记 */
@@ -214,10 +214,7 @@ static void scan_maps_for_apk(void) {
     pe_close(fd);
 
     if (g_result.suspicious_so_count > 0) {
-        LOGE("maps 中发现 %d 个可疑 .so(应用私有目录):", g_result.suspicious_so_count);
-        for (int i = 0; i < g_result.suspicious_so_count; i++) {
-            LOGE("  %s", g_result.suspicious_so[i]);
-        }
+        LOGE("maps 中发现 %d 个可疑 .so(应用私有目录)", g_result.suspicious_so_count);
         g_result.score += 20 * g_result.suspicious_so_count;
     }
 }
@@ -234,7 +231,7 @@ static int dl_callback(struct dl_phdr_info *info, size_t size, void *data) {
 
     /* 只检测应用私有目录下的 .apk(正向匹配,无需排除列表) */
     if (strstr(name, ".apk") && is_in_app_private_dir(name)) {
-        LOGE("dl_iterate_phdr 异常 .apk(私有目录): %s", name);
+        LOGE("dl_iterate_phdr 异常 .apk(私有目录)");
         g_result.dl_apk_anomaly = 1;
         g_result.score += 30;
     }
@@ -275,7 +272,7 @@ static void scan_proc_fd(void) {
 
                         /* 检查是否在 /data/app/ 下 */
                         if (strncmp(link_path, "/data/app/", 10) != 0) {
-                            LOGE("/proc/self/fd 中 base.apk 路径异常: %s", link_path);
+                            LOGE("/proc/self/fd 中 base.apk 路径异常");
                             g_result.fd_apk_anomaly = 1;
                             g_result.score += 25;
                         } else {
@@ -321,7 +318,7 @@ int patch_env_detect(void) {
             if (bang) *bang = '\0';
 
             if (strcmp(maps_clean, g_result.fd_apk_path) != 0) {
-                LOGE("路径不一致! maps=%s vs fd=%s", maps_clean, g_result.fd_apk_path);
+                LOGE("路径不一致(maps vs fd)");
                 g_result.score += 20;
             }
         }

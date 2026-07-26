@@ -180,7 +180,7 @@ void self_integrity_init(void) {
         g_text_inited = 1;
         LOGI(".text 段缓存: base=0x%lx size=%zu", (unsigned long)g_text_base, g_text_size);
     } else {
-        LOGE(".text 段查找失败(so_base=0x%lx)", (unsigned long)so_base);
+        LOGE(".text 段查找失败");
     }
 }
 
@@ -196,7 +196,7 @@ int self_integrity_check(void) {
 
     /* 路径合法性检测(防 SRPatch/LSPatch 路径重定向) */
     if (g_path_valid == 0) {
-        LOGE(".so 从非标准路径加载: %s (SRPatch/LSPatch 重定向)", g_so_path);
+        LOGE(".so 从非标准路径加载(SRPatch/LSPatch 重定向)");
         return 1;
     }
 
@@ -237,8 +237,7 @@ int self_integrity_check(void) {
         return 0;
     }
 
-    LOGE(".text CRC 校验失败! 预期=0x%08x 实际=0x%08x", expected_crc, actual_crc);
-    LOGE(".text 被篡改(可能 IDA Pro 改返回指令)");
+    LOGE(".text CRC 校验失败(值不符,可能被篡改)");
     return 1;
 }
 

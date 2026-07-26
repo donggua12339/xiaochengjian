@@ -92,8 +92,7 @@ static int inner_loader_load(void) {
     /* 验证 ELF magic */
     if (decrypted[0] != 0x7f || decrypted[1] != 'E' ||
         decrypted[2] != 'L' || decrypted[3] != 'F') {
-        LOGE("inner_loader: 解密后非 ELF(magic=0x%02x%02x%02x%02x)",
-             decrypted[0], decrypted[1], decrypted[2], decrypted[3]);
+        LOGE("inner_loader: 解密后非 ELF");
         memset(decrypted, 0, INNER_ENC_SIZE);
         free(decrypted);
         return -1;
@@ -125,8 +124,7 @@ static int inner_loader_load(void) {
     g_inner_self_check = (fn_inner_self_check)cl_dlsym(g_inner_handle, "inner_self_check");
 
     if (!g_inner_version || !g_inner_verify_hash) {
-        LOGE("inner_loader: cl_dlsym 失败(version=%p verify=%p)",
-             (void *)g_inner_version, (void *)g_inner_verify_hash);
+        LOGE("inner_loader: cl_dlsym 失败");
         cl_dlclose(g_inner_handle);
         g_inner_handle = NULL;
         return -1;
