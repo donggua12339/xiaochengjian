@@ -56,12 +56,20 @@ class EncryptStringsCommand : CliktCommand(
                     if (entry.name.matches(Regex("classes\\d*\\.dex"))) {
                         logger.info("处理: ${entry.name} (${data.size} bytes)")
                         val modified = processDexEntry(data, encryptor)
-                        zos.putNextEntry(ZipEntry(entry.name))
+                        val newEntry = ZipEntry(entry.name)
+                        zos.putNextEntry(newEntry)
                         zos.write(modified)
                         zos.closeEntry()
                     } else {
-                        // 原样复制
-                        zos.putNextEntry(ZipEntry(entry.name))
+                        // 原样复制(保留 STORED 压缩方式,bin 文件不可 DEFLATE)
+                        val newEntry = ZipEntry(entry.name)
+                        if (entry.method == ZipEntry.STORED) {
+                            newEntry.method = ZipEntry.STORED
+                            newEntry.size = data.size.toLong()
+                            newEntry.compressedSize = data.size.toLong()
+                            newEntry.crc = entry.crc
+                        }
+                        zos.putNextEntry(newEntry)
                         zos.write(data)
                         zos.closeEntry()
                     }
@@ -78,12 +86,16 @@ class EncryptStringsCommand : CliktCommand(
     }
 
     private fun processDexEntry(dexBytes: ByteArray, encryptor: DexStringEncryptor): ByteArray {
-        val dexFile = DexBackedDexFile(Opcodes.forApi(28), dexBytes)
+        // 读取用原始版本,写出用 039(dexlib2 3.0.7 的 writer 对 037 有 debug_info 兼容 bug)
+        val dexVersion = String(dexBytes, 4, 3).toIntOrNull() ?: 37
+        val readOpcodes = Opcodes.forDexVersion(dexVersion)
+        val writeOpcodes = Opcodes.forDexVersion(39)
+        val dexFile = DexBackedDexFile(readOpcodes, dexBytes)
         val modifiedClasses = encryptor.processDex(dexFile)
 
-        // 写入修改后的 DEX
+        // 写入修改后的 DEX(升级到 dex 039,ART 向下兼容)
         val outputDex = com.android.tools.smali.dexlib2.immutable.ImmutableDexFile(
-            Opcodes.forApi(28),
+            writeOpcodes,
             modifiedClasses
         )
 

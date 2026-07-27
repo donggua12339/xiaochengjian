@@ -52,8 +52,9 @@ set(DEFENDER_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/patch_env_detect.c
     ${CMAKE_CURRENT_SOURCE_DIR}/inner_loader.c
     ${CMAKE_CURRENT_SOURCE_DIR}/custom_linker.c
-    # T4 DEX 字符串解密(ADR 0090)
+    # T4 DEX 字符串解密(ADR 0090) + VM 引擎(T2 VMP)
     ${CMAKE_CURRENT_SOURCE_DIR}/t4_str_decrypt.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/vm_engine.c
     # X8 FART 脱壳扫描 + X9 ODEX 修补检测
     ${CMAKE_CURRENT_SOURCE_DIR}/x8_anti_fart.c
     ${CMAKE_CURRENT_SOURCE_DIR}/x9_odex_detect.c

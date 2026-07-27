@@ -70,8 +70,17 @@ class DexStringEncryptor(private val xorKey: ByteArray) {
 
             val modifiedMethods = classDef.methods.map { method ->
                 val impl = method.implementation
+                // Strip parameter names(dexlib2 重排 string table 后 parameter_name 索引失效)
+                val strippedParams = method.parameters.map { p ->
+                    com.android.tools.smali.dexlib2.immutable.ImmutableMethodParameter(
+                        p.type, p.annotations, null
+                    )
+                }
                 if (impl == null) {
-                    return@map com.android.tools.smali.dexlib2.immutable.ImmutableMethod.of(method)
+                    return@map com.android.tools.smali.dexlib2.immutable.ImmutableMethod(
+                        classDef.type, method.name, strippedParams, method.returnType,
+                        method.accessFlags, method.annotations, method.hiddenApiRestrictions, null
+                    )
                 }
                 val instructions = impl.instructions
                 val newInstructions = mutableListOf<ImmutableInstruction>()
@@ -128,12 +137,12 @@ class DexStringEncryptor(private val xorKey: ByteArray) {
                         impl.registerCount,
                         newInstructions,
                         impl.tryBlocks,
-                        impl.debugItems
+                        null  // strip debug info(修改指令后 debug 索引失效)
                     )
                     com.android.tools.smali.dexlib2.immutable.ImmutableMethod(
                         classDef.type,
                         method.name,
-                        method.parameters,
+                        strippedParams,
                         method.returnType,
                         method.accessFlags,
                         method.annotations,
@@ -141,7 +150,22 @@ class DexStringEncryptor(private val xorKey: ByteArray) {
                         newImpl
                     )
                 } else {
-                    com.android.tools.smali.dexlib2.immutable.ImmutableMethod.of(method)
+                    // 未修改指令,但仍需 strip debug info + parameter names
+                    val origImpl = method.implementation
+                    if (origImpl != null) {
+                        val strippedImpl = com.android.tools.smali.dexlib2.immutable.ImmutableMethodImplementation(
+                            origImpl.registerCount, origImpl.instructions, origImpl.tryBlocks, null
+                        )
+                        com.android.tools.smali.dexlib2.immutable.ImmutableMethod(
+                            classDef.type, method.name, strippedParams, method.returnType,
+                            method.accessFlags, method.annotations, method.hiddenApiRestrictions, strippedImpl
+                        )
+                    } else {
+                        com.android.tools.smali.dexlib2.immutable.ImmutableMethod(
+                            classDef.type, method.name, strippedParams, method.returnType,
+                            method.accessFlags, method.annotations, method.hiddenApiRestrictions, null
+                        )
+                    }
                 }
             }
 

@@ -44,9 +44,11 @@ android {
                     "-Wno-unused-parameter"
                 )
                 // 传递版本号给 C 代码
+                val t4Enabled = providers.gradleProperty("T4_ENABLED").orNull ?: "OFF"
                 arguments(
                     "-DDEFENDER_VERSION=\\\"1.0.0\\\"",
                     "-DPython3_EXECUTABLE=$pythonExec",
+                    "-DT4_ENABLED=$t4Enabled",
                 )
             }
         }
