@@ -35,6 +35,13 @@
 
 #define DEFENDER_TAG "DefenderAntiFrida"
 #include "defender_log.h"
+#include "honeypot_strings.h"  /* 诱饵字符串(浪费攻击者静态分析时间) */
+
+/* 多态检测顺序:构建期随机 seed 决定检测执行顺序。
+ * 每次构建不同,通用 bypass 脚本无法覆盖所有顺序。 */
+#ifndef ANTI_FRIDA_POLY_SEED
+#define ANTI_FRIDA_POLY_SEED 0x5A3C  /* 默认值,CMake 构建时替换 */
+#endif
 
 /* ============= inline syscall 封装 ============= */
 
@@ -894,54 +901,47 @@ static int check_rwxp_anonymous(void) {
 static int g_seccomp_installed = 0;
 
 int anti_frida_check(void) {
-    LOGI("=== AntiFrida 检测(A-E + F/G + H + I + J) ===");
+    LOGI("=== AntiFrida 检测(A-J 多态顺序) ===");
 
     int strong_hit = 0;
 
-    /* A:maps 扫描 */
-    if (check_maps_frida()) {
-        LOGE("A 层检测到 Frida(maps)");
-        strong_hit = 1;
+    /* 多态检测顺序:用构建期 seed 的低 3 位选择排列。
+     * 6 种排列,每次构建不同,通用 bypass 脚本无法通杀。 */
+    int order = ANTI_FRIDA_POLY_SEED & 0x7;
+
+    /* 定义检测函数指针表 */
+    typedef int (*check_fn)(void);
+    /* 0=A maps, 1=B port, 2=C thread, 3=F+G dbus, 4=I cross, 5=J rwxp */
+    check_fn checks[] = {
+        check_maps_frida, check_frida_port, check_thread_names,
+        check_dbus_protocol, check_cross_process, check_rwxp_anonymous
+    };
+    const char *names[] = {"A", "B", "C", "F+G", "I", "J"};
+
+    /* 6 种排列(覆盖常见顺序 + 反转 + 交错) */
+    static const uint8_t perms[8][6] = {
+        {0,1,2,3,4,5}, {5,4,3,2,1,0}, {3,0,4,1,5,2},
+        {2,5,1,4,0,3}, {4,3,0,5,2,1}, {1,4,5,0,3,2},
+        {3,5,0,2,4,1}, {0,3,1,4,2,5},
+    };
+    const uint8_t *perm = perms[order & 0x7];
+
+    for (int i = 0; i < 6; i++) {
+        int idx = perm[i];
+        if (checks[idx]()) {
+            LOGE("%s 层检测到 Frida", names[idx]);
+            strong_hit = 1;
+            break;  /* 命中即停(多态顺序让攻击者无法预测哪个先触发) */
+        }
     }
 
-    /* B:端口 27042 */
-    if (check_frida_port()) {
-        LOGE("B 层检测到 Frida(端口 27042)");
-        strong_hit = 1;
-    }
-
-    /* C:线程名 */
-    if (check_thread_names()) {
-        LOGE("C 层检测到 Frida(线程名)");
-        strong_hit = 1;
-    }
-
-    /* E:通用文件特征扫描(降权) */
+    /* E:通用文件特征扫描(降权,不参与多态排列) */
     int e_score = check_frida_files();
     if (e_score > 0 && !strong_hit) {
         LOGW("E 层:可疑文件 score=%d(不单独触发)", e_score);
     }
 
-    /* F+G:D-Bus 协议探测(杀手锏) */
-    if (check_dbus_protocol()) {
-        LOGE("F+G 层:D-Bus 协议探测命中");
-        strong_hit = 1;
-    }
-
-    /* I:多进程交叉检测 */
-    if (check_cross_process()) {
-        LOGE("I 层:多进程交叉检测到异常");
-        strong_hit = 1;
-    }
-
-    /* J:rwxp 匿名映射检测 */
-    if (check_rwxp_anonymous()) {
-        LOGE("J 层:rwxp 匿名映射(inline hook?)");
-        strong_hit = 1;
-    }
-
-    /* H:seccomp-bpf(仅首次安装,内核级防线)
-     * 放在最后:确保自身 ptrace 互锁等操作已完成 */
+    /* H:seccomp-bpf(仅首次安装) */
     if (!g_seccomp_installed) {
         if (install_seccomp_filter() == 0) {
             g_seccomp_installed = 1;
@@ -949,10 +949,10 @@ int anti_frida_check(void) {
     }
 
     if (strong_hit) {
-        LOGE("AntiFrida:强信号命中");
+        LOGE("AntiFrida:强信号命中(order=%d)", order);
         return 1;
     }
 
-    LOGI("AntiFrida 检测通过(9 层全绿)");
+    LOGI("AntiFrida 检测通过(9 层全绿,order=%d)", order);
     return 0;
 }

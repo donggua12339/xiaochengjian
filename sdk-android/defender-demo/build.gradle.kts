@@ -43,12 +43,13 @@ android {
         jvmTarget = "17"
     }
 
-    // Hikari Java 字符串加密(ADR 0094):demo 模块也加密,XcjObfStr 来自 sdk AAR
-    sourceSets {
-        getByName("main") {
-            java.setSrcDirs(listOf("build/hikari/java"))
-        }
-    }
+    // Hikari Java 字符串加密(ADR 0094):demo 为测试 app,不做 java_obf 变换
+    // (demo 与 sdk 独立跑 java_obf.py 会生成不同随机 JNI 名,导致 NoSuchMethodError)
+    // sourceSets {
+    //     getByName("main") {
+    //         java.setSrcDirs(listOf("build/hikari/java"))
+    //     }
+    // }
 
     buildFeatures {
         viewBinding = false
@@ -77,18 +78,11 @@ dependencies {
     implementation(files("../defender-sdk/build/outputs/aar/xcj-defender-sdk-release.aar"))
 }
 
-// === Hikari Java 字符串加密(ADR 0094) — demo 模块 ===
-val hikariJavaObf by tasks.registering(Exec::class) {
-    val srcDir = "src/main/java/com/xcj/defender/demo"
-    val dstDir = "build/hikari/java/com/xcj/defender/demo"
-    val script = "../defender-sdk/scripts/java_obf.py"
-    inputs.dir(srcDir)
-    outputs.dir(dstDir)
-    commandLine(pythonExec, script, "--transform", srcDir, dstDir,
-        "--class-name", "com.xcj.defender.XcjObfStr")
-    workingDir = projectDir
-}
+// === Hikari Java 字符串加密(ADR 0094) — demo 模块已禁用 ===
+// demo 为测试 app,不做 java_obf(与 sdk 随机名不一致导致 crash)
+// val hikariJavaObf by tasks.registering(Exec::class) { ... }
+// tasks.matching { ... dependsOn(hikariJavaObf) }
 
 tasks.matching { it.name.startsWith("compile") && it.name.endsWith("Kotlin") }.configureEach {
-    dependsOn(hikariJavaObf)
+    // dependsOn(hikariJavaObf)  // 已禁用
 }

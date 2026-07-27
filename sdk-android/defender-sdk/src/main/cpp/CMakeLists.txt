@@ -4,6 +4,11 @@ project(xcj_defender C)
 # T4 DEX 字符串解密开关(ADR 0090):需先跑 injector encrypt-strings 生成 t4_str_key.h
 option(T4_ENABLED "Enable T4 DEX string decryption (requires t4_str_key.h)" OFF)
 
+# 多态检测 seed:每次构建随机,anti_frida 检测顺序随 seed 变化
+string(TIMESTAMP _ts "%S%M")
+math(EXPR _seed "0x${_ts} ^ 0x5A3C")
+add_compile_definitions(ANTI_FRIDA_POLY_SEED=${_seed})
+
 # ============= 编译选项 =============
 # -O2: 优化(体积 + 性能)
 # -fvisibility=hidden: 隐藏非导出符号(防逆向定位)
