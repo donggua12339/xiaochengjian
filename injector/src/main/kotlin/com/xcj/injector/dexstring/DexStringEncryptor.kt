@@ -7,14 +7,24 @@ import org.jf.dexlib2.dexbacked.DexBackedDexFile
 import org.jf.dexlib2.iface.instruction.formats.Instruction21c
 import org.jf.dexlib2.immutable.ImmutableClassDef
 import org.jf.dexlib2.immutable.ImmutableDexFile
+import org.jf.dexlib2.AccessFlags
+import org.jf.dexlib2.immutable.ImmutableField
+import org.jf.dexlib2.immutable.ImmutableMethod
+import org.jf.dexlib2.immutable.ImmutableMethodImplementation
 import org.jf.dexlib2.immutable.instruction.ImmutableInstruction
+import org.jf.dexlib2.immutable.instruction.ImmutableInstruction10x
 import org.jf.dexlib2.immutable.instruction.ImmutableInstruction11x
+import org.jf.dexlib2.immutable.instruction.ImmutableInstruction21c
 import org.jf.dexlib2.immutable.instruction.ImmutableInstruction21s
+import org.jf.dexlib2.immutable.instruction.ImmutableInstruction22c
+import org.jf.dexlib2.immutable.instruction.ImmutableInstruction23x
 import org.jf.dexlib2.immutable.instruction.ImmutableInstruction35c
 import org.jf.dexlib2.immutable.instruction.ImmutableInstruction3rc
 import org.jf.dexlib2.iface.reference.StringReference
+import org.jf.dexlib2.immutable.reference.ImmutableFieldReference
 import org.jf.dexlib2.immutable.reference.ImmutableMethodReference
 import org.jf.dexlib2.immutable.reference.ImmutableStringReference
+import org.jf.dexlib2.immutable.reference.ImmutableTypeReference
 import org.slf4j.LoggerFactory
 import java.io.File
 import java.security.SecureRandom
@@ -183,6 +193,11 @@ class DexStringEncryptor(private val xorKey: ByteArray) {
             )
         }
 
+        // 注入 XcjEncStringTable 类(持有加密数据表)
+        if (encryptedTable.isNotEmpty()) {
+            modifiedClasses.add(buildEncStringTableClassDef())
+        }
+
         return modifiedClasses
     }
 
@@ -211,6 +226,70 @@ class DexStringEncryptor(private val xorKey: ByteArray) {
 
     /** 获取统计信息 */
     fun getStats(): String = "加密 ${encryptedTable.size} 个唯一字符串"
+
+    /**
+     * 用 dexlib2 API 构建 XcjEncStringTable 类(加密数据表)。
+     * 使用 const-string + String.getBytes("ISO-8859-1") 方式存储加密字节,
+     * 避免 fill-array-data 的 ArrayPayload 构建复杂度。
+     */
+    private fun buildEncStringTableClassDef(): ImmutableClassDef {
+        val TYPE = "Lcom/xcj/defender/XcjEncStringTable;"
+        val instructions = mutableListOf<ImmutableInstruction>()
+
+        // v3 = "ISO-8859-1" (charset name, 复用)
+        instructions.add(ImmutableInstruction21c(
+            Opcode.CONST_STRING, 3, ImmutableStringReference("ISO-8859-1")
+        ))
+        // v0 = new Object[table_size][]
+        instructions.add(ImmutableInstruction21s(Opcode.CONST_16, 0, encryptedTable.size))
+        instructions.add(ImmutableInstruction22c(
+            Opcode.NEW_ARRAY, 0, 0, ImmutableTypeReference("[[B")
+        ))
+
+        for ((index, bytes) in encryptedTable) {
+            // v2 = const-string "<ISO-8859-1 encoded encrypted bytes>"
+            val isoStr = String(bytes, Charsets.ISO_8859_1)
+            instructions.add(ImmutableInstruction21c(
+                Opcode.CONST_STRING, 2, ImmutableStringReference(isoStr)
+            ))
+            // v2 = v2.getBytes("ISO-8859-1")
+            instructions.add(ImmutableInstruction35c(
+                Opcode.INVOKE_VIRTUAL, 2, 2, 3, 0, 0, 0,
+                ImmutableMethodReference("Ljava/lang/String;", "getBytes",
+                    listOf("Ljava/lang/String;"), "[B")
+            ))
+            instructions.add(ImmutableInstruction11x(Opcode.MOVE_RESULT_OBJECT, 2))
+            // DATA[index] = v2
+            instructions.add(ImmutableInstruction21s(Opcode.CONST_16, 1, index))
+            instructions.add(ImmutableInstruction23x(Opcode.APUT_OBJECT, 2, 0, 1))
+        }
+
+        // XcjEncStringTable.DATA = v0
+        instructions.add(ImmutableInstruction21c(
+            Opcode.SPUT_OBJECT, 0,
+            ImmutableFieldReference(TYPE, "DATA", "[[B")
+        ))
+        instructions.add(ImmutableInstruction10x(Opcode.RETURN_VOID))
+
+        val methodImpl = ImmutableMethodImplementation(4, instructions, null, null)
+        val clinit = ImmutableMethod(
+            TYPE, "<clinit>", emptyList(), "V",
+            AccessFlags.STATIC.value or AccessFlags.CONSTRUCTOR.value,
+            null, null, methodImpl
+        )
+        val dataField = ImmutableField(
+            TYPE, "DATA", "[[B",
+            AccessFlags.PUBLIC.value or AccessFlags.STATIC.value,
+            null as org.jf.dexlib2.iface.value.EncodedValue?,
+            emptySet<org.jf.dexlib2.iface.Annotation>(),
+            null
+        )
+
+        return ImmutableClassDef(
+            TYPE, AccessFlags.PUBLIC.value, "Ljava/lang/Object;",
+            null, null, null, listOf(dataField), listOf(clinit)
+        )
+    }
 
     /**
      * 生成 XcjEncStringTable.smali 内容(注入到 DEX 中)。
