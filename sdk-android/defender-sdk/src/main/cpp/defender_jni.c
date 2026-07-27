@@ -551,6 +551,12 @@ JNI_OnLoad(JavaVM *vm, void *reserved) {
         LOGW("T4 native 注册失败(非致命,DEX 字符串加密未启用)");
     }
 
+    /* L/M 层基线:记录初始 maps r-xp 数量和线程数(供后续对比) */
+    extern void anti_frida_set_maps_baseline(void);
+    extern void anti_frida_set_thread_baseline(void);
+    anti_frida_set_maps_baseline();
+    anti_frida_set_thread_baseline();
+
     LOGI("JNI_OnLoad 完成,native 方法已注册");
     return JNI_VERSION_1_6;
 }

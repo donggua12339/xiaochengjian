@@ -942,7 +942,140 @@ static int check_timing_sidechannel(void) {
     return 0;
 }
 
-/* ============= 组合检测(同步:A-K) ============= */
+/* ============= L 层:maps 快照对比(检测运行时注入) =============
+ *
+ * JNI_OnLoad 时保存 maps 中 r-xp 映射数量基线。
+ * 后续每轮检测时对比:新增 r-xp 映射 = 可疑注入。
+ * (inotify 对 procfs 不生效,改用快照对比)
+ */
+static int g_maps_rxp_baseline = -1;
+
+static int count_rxp_mappings(void) {
+    int fd = open("/proc/self/maps", O_RDONLY);
+    if (fd < 0) return 0;
+
+    char buf[65536];
+    ssize_t total = 0, n;
+    while ((n = read(fd, buf + total, sizeof(buf) - 1 - (size_t)total)) > 0) {
+        total += n;
+        if ((size_t)total >= sizeof(buf) - 1) break;
+    }
+    close(fd);
+    buf[total] = '\0';
+
+    int count = 0;
+    char *line = buf;
+    while (line && *line) {
+        char *nl = strchr(line, '\n');
+        if (nl) *nl = '\0';
+        if (strstr(line, "r-xp")) count++;
+        line = nl ? nl + 1 : NULL;
+    }
+    return count;
+}
+
+void anti_frida_set_maps_baseline(void) {
+    g_maps_rxp_baseline = count_rxp_mappings();
+}
+
+static int check_maps_delta(void) {
+    if (g_maps_rxp_baseline < 0) return 0;  /* 基线未设置 */
+    int current = count_rxp_mappings();
+    int delta = current - g_maps_rxp_baseline;
+    /* 允许少量增长(ART JIT/zygote fork 后的正常变化) */
+    if (delta > 5) {
+        LOGE("L 层:maps r-xp 增长 %d(%d→%d,疑似运行时注入)", delta, g_maps_rxp_baseline, current);
+        return 1;
+    }
+    return 0;
+}
+
+/* ============= M 层:线程行为启发式 =============
+ *
+ * 检测维度:
+ *  1. /proc/self/task/ 线程数异常增长(Frida 注入创建多个工作线程)
+ *  2. 线程 comm 为空或异常短(魔改 Frida 清空线程名)
+ *  3. 线程 comm 含可疑模式(gum/gmain/linjector)
+ */
+static int g_thread_baseline = -1;
+
+void anti_frida_set_thread_baseline(void) {
+    DIR *d = opendir("/proc/self/task");
+    if (!d) return;
+    int count = 0;
+    struct dirent *ent;
+    while ((ent = readdir(d)) != NULL) {
+        if (ent->d_name[0] != '.') count++;
+    }
+    closedir(d);
+    g_thread_baseline = count;
+}
+
+static int check_thread_behavior(void) {
+    DIR *d = opendir("/proc/self/task");
+    if (!d) return 0;
+
+    int count = 0;
+    int empty_comm = 0;
+    int suspicious = 0;
+    struct dirent *ent;
+
+    while ((ent = readdir(d)) != NULL) {
+        if (ent->d_name[0] == '.') continue;
+        count++;
+
+        /* 读 comm */
+        char comm_path[64];
+        snprintf(comm_path, sizeof(comm_path), "/proc/self/task/%s/comm", ent->d_name);
+        int cfd = open(comm_path, O_RDONLY);
+        if (cfd < 0) continue;
+        char comm[32] = {0};
+        ssize_t cn = read(cfd, comm, sizeof(comm) - 1);
+        close(cfd);
+        if (cn <= 0) continue;
+        /* 去掉尾部换行 */
+        if (cn > 0 && comm[cn - 1] == '\n') comm[cn - 1] = '\0';
+
+        size_t clen = strlen(comm);
+
+        /* 空 comm 或异常短(魔改 Frida 清空线程名) */
+        if (clen == 0 || clen == 1) {
+            empty_comm++;
+        }
+
+        /* 可疑模式 */
+        if (strstr(comm, "gum") || strstr(comm, "gmain") ||
+            strstr(comm, "linjector") || strstr(comm, "frida") ||
+            strstr(comm, "pool-frida") || strstr(comm, "gdbus")) {
+            suspicious++;
+        }
+    }
+    closedir(d);
+
+    int score = 0;
+
+    /* 线程数突增(超过基线 2 倍且 >10) */
+    if (g_thread_baseline > 0 && count > g_thread_baseline * 2 && count > g_thread_baseline + 10) {
+        LOGE("M 层:线程数突增(%d→%d)", g_thread_baseline, count);
+        score += 1;
+    }
+
+    /* 多个空 comm 线程 */
+    if (empty_comm >= 3) {
+        LOGE("M 层:%d 个空 comm 线程(魔改 Frida?)", empty_comm);
+        score += 1;
+    }
+
+    /* 可疑线程名 */
+    if (suspicious > 0) {
+        LOGE("M 层:%d 个可疑线程名", suspicious);
+        score += 1;
+    }
+
+    return score > 0 ? 1 : 0;
+}
+
+/* ============= 组合检测(同步:A-M) ============= */
 
 /**
  * AntiFrida 检测(同步:A-E + F/G + H + I + J)
@@ -962,23 +1095,23 @@ int anti_frida_check(void) {
 
     /* 定义检测函数指针表 */
     typedef int (*check_fn)(void);
-    /* 0=A maps, 1=B port, 2=C thread, 3=F+G dbus, 4=I cross, 5=J rwxp, 6=K timing */
+    /* 0=A 1=B 2=C 3=F+G 4=I 5=J 6=K 7=L 8=M */
     check_fn checks[] = {
         check_maps_frida, check_frida_port, check_thread_names,
         check_dbus_protocol, check_cross_process, check_rwxp_anonymous,
-        check_timing_sidechannel
+        check_timing_sidechannel, check_maps_delta, check_thread_behavior
     };
-    const char *names[] = {"A", "B", "C", "F+G", "I", "J", "K"};
+    const char *names[] = {"A", "B", "C", "F+G", "I", "J", "K", "L", "M"};
 
-    /* 8 种排列(7 层检测,每次构建不同) */
-    static const uint8_t perms[8][7] = {
-        {0,1,2,3,4,5,6}, {6,5,4,3,2,1,0}, {3,0,4,1,5,2,6},
-        {2,5,1,4,0,3,6}, {4,3,0,5,2,1,6}, {1,4,5,0,3,2,6},
-        {3,5,0,2,4,1,6}, {6,0,3,1,4,2,5},
+    /* 8 种排列(9 层检测,每次构建不同) */
+    static const uint8_t perms[8][9] = {
+        {0,1,2,3,4,5,6,7,8}, {8,7,6,5,4,3,2,1,0}, {3,0,4,1,5,2,6,7,8},
+        {2,5,1,4,0,3,6,8,7}, {4,3,0,5,2,1,6,7,8}, {1,4,5,0,3,2,6,8,7},
+        {7,8,3,5,0,2,4,1,6}, {6,8,0,3,7,1,4,2,5},
     };
     const uint8_t *perm = perms[order & 0x7];
 
-    for (int i = 0; i < 7; i++) {
+    for (int i = 0; i < 9; i++) {
         int idx = perm[i];
         if (checks[idx]()) {
             LOGE("%s 层检测到 Frida", names[idx]);
@@ -1005,6 +1138,6 @@ int anti_frida_check(void) {
         return 1;
     }
 
-    LOGI("AntiFrida 检测通过(10 层全绿,order=%d)", order);
+    LOGI("AntiFrida 检测通过(12 层全绿,order=%d)", order);
     return 0;
 }

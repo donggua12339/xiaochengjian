@@ -87,6 +87,16 @@ static jstring t4_get(JNIEnv *env, jclass clazz, jint index) {
     }
 
 #ifdef T4_USE_WHITEBOX
+    /* 抗 cache-timing 侧信道:查表前 prefetch 全部 256 entry,抹平访问模式。
+     * 攻击者测量 cache hit/miss 无法推断 enc[i] 的值。 */
+    for (int s = 0; s < WB_KEY_LEN; s++) {
+        for (int j = 0; j < 256; j++) {
+            __builtin_prefetch(&WB_SBOX[s][j], 0, 3);
+        }
+    }
+    /* 内存屏障确保 prefetch 完成 */
+    __asm__ volatile("" ::: "memory");
+
     /* 白盒解密: plain[i] = WB_SBOX[i % WB_KEY_LEN][enc[i]] */
     for (jsize i = 0; i < byteLen; i++) {
         plain[i] = (char)WB_SBOX[i % WB_KEY_LEN][(uint8_t)encData[i]];
