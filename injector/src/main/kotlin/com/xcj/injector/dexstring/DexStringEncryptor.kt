@@ -188,8 +188,9 @@ class DexStringEncryptor(private val xorKey: ByteArray) {
 
     /**
      * 获取或分配字符串索引,同时加密存入表。
+     * smali 管线调用此方法为每个 const-string 分配 index。
      */
-    private fun getOrAssignIndex(plaintext: String): Int {
+    fun getOrAssignIndex(plaintext: String): Int {
         stringIndexMap[plaintext]?.let { return it }
         val index = nextIndex++
         stringIndexMap[plaintext] = index
@@ -223,15 +224,15 @@ class DexStringEncryptor(private val xorKey: ByteArray) {
         sb.appendLine(".field public static DATA:[[B")
         sb.appendLine()
         sb.appendLine(".method static constructor <clinit>()V")
-        sb.appendLine("    .registers ${encryptedTable.size + 2}")
+        sb.appendLine("    .registers 3")
         sb.appendLine()
-        sb.appendLine("    const v0, ${encryptedTable.size}")
+        sb.appendLine("    const/16 v0, ${encryptedTable.size}")
         sb.appendLine("    new-array v0, v0, [[B")
         sb.appendLine()
 
         for ((index, bytes) in encryptedTable) {
-            sb.appendLine("    const v1, $index")
-            sb.appendLine("    const/4 v2, ${bytes.size}")
+            sb.appendLine("    const/16 v1, $index")
+            sb.appendLine("    const/16 v2, ${bytes.size}")
             sb.appendLine("    new-array v2, v2, [B")
             sb.appendLine("    fill-array-data v2, :str_$index")
             sb.appendLine("    aput-object v2, v0, v1")
@@ -241,15 +242,14 @@ class DexStringEncryptor(private val xorKey: ByteArray) {
         sb.appendLine("    sput-object v0, Lcom/xcj/defender/XcjEncStringTable;->DATA:[[B")
         sb.appendLine("    return-void")
 
-        // array data blocks
+        // array data blocks(after return-void,valid in smali)
         for ((index, bytes) in encryptedTable) {
             sb.appendLine()
             sb.appendLine("    :str_$index")
-            sb.append("    .array-data 1")
+            sb.appendLine("    .array-data 1")
             for (b in bytes) {
-                sb.append(" ${String.format("0x%02x", b.toInt() and 0xFF)}")
+                sb.appendLine("        ${String.format("0x%02x", b.toInt() and 0xFF)}")
             }
-            sb.appendLine()
             sb.appendLine("    .end array-data")
         }
 
