@@ -103,6 +103,8 @@ model Developer {
   deviceBindings DeviceBinding[]
   validationLogs ValidationLog[]
   membershipCodes MembershipCode[]
+  hardenConfigs  HardenConfig[]
+  qualityReports QualityReport[]
 
   @@map("developer")
 }
@@ -152,6 +154,8 @@ model Application {
   cardTemplates     CardTemplate[]
   validationLogs    ValidationLog[]
   packerLogs        PackerLog[]
+  hardenConfig      HardenConfig?
+  qualityReports    QualityReport[]
 
   @@unique([developerId, packageName])
   @@index([developerId])
@@ -435,4 +439,59 @@ model PackerLog {
   @@index([appId, createdAt])
   @@index([status])
   @@map("packer_log")
+}
+
+// ============= 加固配置(天衍 T5) =============
+
+model HardenConfig {
+  id            String   @id @default(uuid())
+  appId         String
+  developerId   String
+  // 加密选项
+  encryptStrings  Boolean @default(true)
+  vmpProtect      Boolean @default(true)
+  segmentStrings  Boolean @default(false)
+  soEncrypt       Boolean @default(true)
+  // 检测模块开关(JSON)
+  detectionModules Json    @default("{\"antiDebug\":true,\"antiFrida\":true,\"antiDump\":true,\"rootDetect\":true,\"xposedDetect\":true,\"emulatorDetect\":false,\"vpnDetect\":true,\"dualAppDetect\":true,\"fartDetect\":false,\"odexDetect\":false}")
+  // Kill 策略
+  killAction       String  @default("kill")
+  weakThreshold    Int     @default(70)
+  delayMinMs       Int     @default(0)
+  delayMaxMs       Int     @default(1000)
+  // 强度档位
+  strength         String  @default("standard")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  application   Application @relation(fields: [appId], references: [id], onDelete: Cascade)
+  developer     Developer   @relation(fields: [developerId], references: [id], onDelete: Cascade)
+  qualityReports QualityReport[]
+
+  @@unique([appId])
+  @@index([developerId])
+  @@map("harden_config")
+}
+
+model QualityReport {
+  id            String   @id @default(uuid())
+  appId         String
+  developerId   String
+  configId      String
+  // 评分
+  overallScore  Int
+  grade         String
+  // 各维度详情(JSON)
+  dimensions    Json
+  // 原始报告(JSON)
+  rawReport     Json
+  createdAt     DateTime @default(now())
+
+  application   Application  @relation(fields: [appId], references: [id], onDelete: Cascade)
+  developer     Developer    @relation(fields: [developerId], references: [id], onDelete: Cascade)
+  config        HardenConfig @relation(fields: [configId], references: [id], onDelete: Cascade)
+
+  @@index([appId, createdAt])
+  @@index([developerId, createdAt])
+  @@map("quality_report")
 }

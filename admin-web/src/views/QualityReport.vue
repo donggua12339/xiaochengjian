@@ -9,12 +9,13 @@
  *  - 改进建议
  */
 
-import { ref, computed } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import {
   NCard,
   NButton,
   NInput,
   NSpace,
+  NSelect,
   NTag,
   NProgress,
   NGrid,
@@ -22,14 +23,47 @@ import {
   NAlert,
   NDivider,
   NText,
-  NCollapse,
-  NCollapseItem,
   useMessage,
 } from 'naive-ui';
+import { getQualityReports, submitQualityReport } from '@/api/harden';
+import { appsApi } from '@/api/apps';
 
 const message = useMessage();
 const jsonInput = ref('');
 const report = ref<any>(null);
+
+// API 联动
+const apps = ref<{ label: string; value: string }[]>([]);
+const selectedAppId = ref<string | null>(null);
+const historyReports = ref<any[]>([]);
+
+onMounted(async () => {
+  try {
+    const list = await appsApi.list();
+    apps.value = (list as any[]).map((a: any) => ({ label: `${a.name} (${a.packageName})`, value: a.id }));
+  } catch { /* ignore */ }
+});
+
+async function loadHistory() {
+  if (!selectedAppId.value) return;
+  try {
+    historyReports.value = await getQualityReports(selectedAppId.value) as any[];
+  } catch { /* ignore */ }
+}
+
+async function submitToServer() {
+  if (!selectedAppId.value || !report.value) { message.warning('请先选择应用并解析报告'); return; }
+  try {
+    await submitQualityReport(selectedAppId.value, {
+      overallScore: report.value.overallScore,
+      grade: report.value.grade,
+      dimensions: { stringResidual: report.value.stringResidual, soEncryption: report.value.soEncryption, detectionModules: report.value.detectionModules, signature: report.value.signature, debuggable: report.value.debuggable },
+      raw: report.value,
+    });
+    message.success('报告已提交');
+    await loadHistory();
+  } catch { message.error('提交失败'); }
+}
 
 interface DimensionResult {
   score: number;
@@ -118,6 +152,13 @@ const suggestions = computed(() => {
 <template>
   <div style="max-width: 800px; margin: 0 auto; padding: 24px">
     <NCard title="加固质量报告(天衍 T6)">
+      <!-- 应用选择 -->
+      <NSpace align="center" style="margin-bottom: 16px">
+        <NSelect v-model:value="selectedAppId" :options="apps" placeholder="选择应用" style="width: 300px" @update:value="loadHistory" />
+        <NButton @click="submitToServer" :disabled="!report">提交到服务器</NButton>
+      </NSpace>
+      <NDivider />
+
       <!-- 输入区 -->
       <NSpace vertical :size="12">
         <NText depth="3">粘贴 quality_report.json 内容或上传文件:</NText>
@@ -193,6 +234,22 @@ const suggestions = computed(() => {
         <NAlert v-for="(tip, i) in suggestions" :key="i" :type="overallScore >= 90 ? 'success' : 'warning'" style="margin-bottom: 8px">
           {{ tip }}
         </NAlert>
+      </template>
+
+      <!-- 历史记录 -->
+      <template v-if="historyReports.length > 0">
+        <NDivider title-placement="left">历史报告</NDivider>
+        <NGrid :cols="1" :y-gap="8">
+          <NGi v-for="r in historyReports" :key="r.id">
+            <NSpace align="center" justify="space-between">
+              <NSpace align="center">
+                <NTag :type="r.grade === 'A' ? 'success' : r.grade === 'B' ? 'info' : r.grade === 'C' ? 'warning' : 'error'" size="small">{{ r.grade }}</NTag>
+                <NText>{{ r.overallScore }}%</NText>
+                <NText depth="3" style="font-size: 12px">{{ new Date(r.createdAt).toLocaleString() }}</NText>
+              </NSpace>
+            </NSpace>
+          </NGi>
+        </NGrid>
       </template>
     </NCard>
   </div>

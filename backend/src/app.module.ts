@@ -20,6 +20,7 @@ import { AuditInterceptor } from './audit/audit.interceptor';
 import { AuditOwnModule } from './audit-own/audit-own.module';
 import { PackerModule } from './packer/packer.module';
 import { IntegrityModule } from './integrity/integrity.module';
+import { HardenModule } from './harden/harden.module';
 import { MembershipModule } from './membership/membership.module';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { MetricsService } from './common/metrics/metrics.service';
@@ -51,6 +52,7 @@ import { appConfig, validate } from './config/configuration';
     AuditOwnModule,
     PackerModule,
     IntegrityModule,
+    HardenModule,
   ],
   providers: [
     MetricsService,

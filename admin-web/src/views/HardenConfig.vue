@@ -9,7 +9,7 @@
  *  - 提供 CLI 命令一键复制
  */
 
-import { ref, computed } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import {
   NCard,
   NSwitch,
@@ -27,6 +27,69 @@ import {
 } from 'naive-ui';
 
 const message = useMessage();
+
+// API 联动
+import { getHardenConfig, saveHardenConfig } from '@/api/harden';
+import { appsApi } from '@/api/apps';
+
+const apps = ref<{ label: string; value: string }[]>([]);
+const selectedAppId = ref<string | null>(null);
+const loading = ref(false);
+
+onMounted(async () => {
+  try {
+    const list = await appsApi.list();
+    apps.value = (list as any[]).map((a: any) => ({ label: `${a.name} (${a.packageName})`, value: a.id }));
+  } catch { /* ignore */ }
+});
+
+async function loadConfig() {
+  if (!selectedAppId.value) return;
+  loading.value = true;
+  try {
+    const c = await getHardenConfig(selectedAppId.value) as any;
+    encryptStrings.value = c.encryptStrings ?? true;
+    vmpProtect.value = c.vmpProtect ?? true;
+    segmentStrings.value = c.segmentStrings ?? false;
+    soEncrypt.value = c.soEncrypt ?? true;
+    strength.value = c.strength ?? 'standard';
+    killAction.value = c.killAction ?? 'kill';
+    weakThreshold.value = c.weakThreshold ?? 70;
+    delayMin.value = c.delayMinMs ?? 0;
+    delayMax.value = c.delayMaxMs ?? 1000;
+    if (c.detectionModules) {
+      for (const [k, v] of Object.entries(c.detectionModules)) {
+        if (k in modules.value) (modules.value as any)[k] = v;
+      }
+    }
+    message.success('配置已加载');
+  } catch {
+    message.error('加载配置失败');
+  } finally {
+    loading.value = false;
+  }
+}
+
+async function saveConfig() {
+  if (!selectedAppId.value) { message.warning('请先选择应用'); return; }
+  try {
+    await saveHardenConfig(selectedAppId.value, {
+      encryptStrings: encryptStrings.value,
+      vmpProtect: vmpProtect.value,
+      segmentStrings: segmentStrings.value,
+      soEncrypt: soEncrypt.value,
+      detectionModules: modules.value,
+      killAction: killAction.value,
+      weakThreshold: weakThreshold.value,
+      delayMinMs: delayMin.value,
+      delayMaxMs: delayMax.value,
+      strength: strength.value,
+    });
+    message.success('配置已保存');
+  } catch {
+    message.error('保存失败');
+  }
+}
 
 // 加固强度
 const strength = ref('standard');
@@ -126,6 +189,18 @@ function applyPreset(val: string) {
 <template>
   <div style="max-width: 900px; margin: 0 auto; padding: 24px">
     <NCard title="加固策略配置(天衍 T5)">
+      <!-- 应用选择 + 加载/保存 -->
+      <NSpace align="center" style="margin-bottom: 16px">
+        <NSelect
+          v-model:value="selectedAppId"
+          :options="apps"
+          placeholder="选择应用"
+          style="width: 300px"
+          @update:value="loadConfig"
+        />
+        <NButton type="primary" :loading="loading" @click="saveConfig">保存到服务器</NButton>
+      </NSpace>
+      <NDivider />
       <template #header-extra>
         <NTag :type="strength === 'paranoid' ? 'error' : strength === 'aggressive' ? 'warning' : 'success'">
           {{ strength }}

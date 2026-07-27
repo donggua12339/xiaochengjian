@@ -1,0 +1,138 @@
+name: Defender SDK Build + Quality
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'sdk-android/defender-sdk/**'
+      - 'sdk-android/defender-demo/**'
+      - 'injector/**'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'sdk-android/defender-sdk/**'
+      - 'sdk-android/defender-demo/**'
+      - 'injector/**'
+  workflow_dispatch:
+
+jobs:
+  host-tests:
+    name: Host C 单测(VM 引擎 + Canary)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate VM bytecode
+        run: python3 sdk-android/defender-sdk/scripts/build_vm_bytecode.py
+
+      - name: Compile + run host tests
+        run: |
+          cd sdk-android/defender-sdk
+          gcc -I src/main/cpp -I src/test/cpp \
+            -o /tmp/test_vm \
+            src/test/cpp/test_vm_engine.c src/main/cpp/vm_engine.c
+          /tmp/test_vm
+
+  backend-lint:
+    name: Backend TypeScript 检查
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+          cache-dependency-path: backend/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Prisma generate
+        run: npx prisma generate
+
+      - name: TypeScript check
+        run: npx tsc --noEmit
+
+  admin-lint:
+    name: Admin-web TypeScript 检查
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: admin-web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+          cache-dependency-path: admin-web/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: TypeScript check
+        run: npx vue-tsc --noEmit
+
+  injector-build:
+    name: Injector 构建 + encrypt-strings 冒烟
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Build injector
+        working-directory: injector
+        run: ./gradlew installDist
+
+      - name: Smoke test encrypt-strings (help)
+        working-directory: injector
+        run: java -jar build/install/xcj-injector/lib/xcj-injector-all.jar --help
+
+  defender-build:
+    name: Defender SDK + Demo 构建
+    runs-on: ubuntu-latest
+    needs: [host-tests]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Setup NDK
+        run: sdkmanager "ndk;27.0.12077973"
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Build defender-sdk
+        working-directory: sdk-android/defender-sdk
+        run: ./gradlew assembleRelease
+
+      - name: Build X0 payload
+        working-directory: sdk-android/defender-sdk
+        run: |
+          python3 scripts/build_x0_pack.py \
+            --so build/intermediates/stripped_native_libs/release/stripReleaseDebugSymbols/out/lib/arm64-v8a/libxcj_defender.so
+
+      - name: Build defender-demo
+        working-directory: sdk-android/defender-demo
+        run: ./gradlew assembleRelease
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: defender-demo-release
+          path: sdk-android/defender-demo/build/outputs/apk/release/*.apk
+          retention-days: 7
