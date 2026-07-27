@@ -8,8 +8,9 @@ application {
 }
 
 dependencies {
-    // T4 DEX 字符串加密(ADR 0090): dexlib2 + 后处理 patch debug_info
+    // T4 DEX 字符串加密(ADR 0090): dexlib2 3.0.7 读取 + org.smali 2.5.2 写出
     implementation("com.android.tools.smali:smali-dexlib2:3.0.7")
+    implementation("org.smali:dexlib2:2.5.2")
     implementation("org.json:json:20240303")
     implementation("net.lingala.zip4j:zip4j:2.11.5")
     implementation("com.github.ajalt.clikt:clikt:4.2.2")

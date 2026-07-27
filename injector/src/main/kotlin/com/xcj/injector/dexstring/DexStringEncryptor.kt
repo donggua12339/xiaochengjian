@@ -1,20 +1,20 @@
 package com.xcj.injector.dexstring
 
-import com.android.tools.smali.dexlib2.DexFileFactory
-import com.android.tools.smali.dexlib2.Opcode
-import com.android.tools.smali.dexlib2.Opcodes
-import com.android.tools.smali.dexlib2.dexbacked.DexBackedDexFile
-import com.android.tools.smali.dexlib2.iface.instruction.formats.Instruction21c
-import com.android.tools.smali.dexlib2.immutable.ImmutableClassDef
-import com.android.tools.smali.dexlib2.immutable.ImmutableDexFile
-import com.android.tools.smali.dexlib2.immutable.instruction.ImmutableInstruction
-import com.android.tools.smali.dexlib2.immutable.instruction.ImmutableInstruction11x
-import com.android.tools.smali.dexlib2.immutable.instruction.ImmutableInstruction21s
-import com.android.tools.smali.dexlib2.immutable.instruction.ImmutableInstruction35c
-import com.android.tools.smali.dexlib2.immutable.instruction.ImmutableInstruction3rc
-import com.android.tools.smali.dexlib2.iface.reference.StringReference
-import com.android.tools.smali.dexlib2.immutable.reference.ImmutableMethodReference
-import com.android.tools.smali.dexlib2.immutable.reference.ImmutableStringReference
+import org.jf.dexlib2.DexFileFactory
+import org.jf.dexlib2.Opcode
+import org.jf.dexlib2.Opcodes
+import org.jf.dexlib2.dexbacked.DexBackedDexFile
+import org.jf.dexlib2.iface.instruction.formats.Instruction21c
+import org.jf.dexlib2.immutable.ImmutableClassDef
+import org.jf.dexlib2.immutable.ImmutableDexFile
+import org.jf.dexlib2.immutable.instruction.ImmutableInstruction
+import org.jf.dexlib2.immutable.instruction.ImmutableInstruction11x
+import org.jf.dexlib2.immutable.instruction.ImmutableInstruction21s
+import org.jf.dexlib2.immutable.instruction.ImmutableInstruction35c
+import org.jf.dexlib2.immutable.instruction.ImmutableInstruction3rc
+import org.jf.dexlib2.iface.reference.StringReference
+import org.jf.dexlib2.immutable.reference.ImmutableMethodReference
+import org.jf.dexlib2.immutable.reference.ImmutableStringReference
 import org.slf4j.LoggerFactory
 import java.io.File
 import java.security.SecureRandom
@@ -72,12 +72,12 @@ class DexStringEncryptor(private val xorKey: ByteArray) {
                 val impl = method.implementation
                 // Strip parameter names(dexlib2 重排 string table 后 parameter_name 索引失效)
                 val strippedParams = method.parameters.map { p ->
-                    com.android.tools.smali.dexlib2.immutable.ImmutableMethodParameter(
+                    org.jf.dexlib2.immutable.ImmutableMethodParameter(
                         p.type, p.annotations, null
                     )
                 }
                 if (impl == null) {
-                    return@map com.android.tools.smali.dexlib2.immutable.ImmutableMethod(
+                    return@map org.jf.dexlib2.immutable.ImmutableMethod(
                         classDef.type, method.name, strippedParams, method.returnType,
                         method.accessFlags, method.annotations, method.hiddenApiRestrictions, null
                     )
@@ -133,13 +133,13 @@ class DexStringEncryptor(private val xorKey: ByteArray) {
 
                 if (modified) {
                     // 重建 method
-                    val newImpl = com.android.tools.smali.dexlib2.immutable.ImmutableMethodImplementation(
+                    val newImpl = org.jf.dexlib2.immutable.ImmutableMethodImplementation(
                         impl.registerCount,
                         newInstructions,
                         impl.tryBlocks,
                         null  // strip debug info(修改指令后 debug 索引失效)
                     )
-                    com.android.tools.smali.dexlib2.immutable.ImmutableMethod(
+                    org.jf.dexlib2.immutable.ImmutableMethod(
                         classDef.type,
                         method.name,
                         strippedParams,
@@ -153,15 +153,15 @@ class DexStringEncryptor(private val xorKey: ByteArray) {
                     // 未修改指令,但仍需 strip debug info + parameter names
                     val origImpl = method.implementation
                     if (origImpl != null) {
-                        val strippedImpl = com.android.tools.smali.dexlib2.immutable.ImmutableMethodImplementation(
+                        val strippedImpl = org.jf.dexlib2.immutable.ImmutableMethodImplementation(
                             origImpl.registerCount, origImpl.instructions, origImpl.tryBlocks, null
                         )
-                        com.android.tools.smali.dexlib2.immutable.ImmutableMethod(
+                        org.jf.dexlib2.immutable.ImmutableMethod(
                             classDef.type, method.name, strippedParams, method.returnType,
                             method.accessFlags, method.annotations, method.hiddenApiRestrictions, strippedImpl
                         )
                     } else {
-                        com.android.tools.smali.dexlib2.immutable.ImmutableMethod(
+                        org.jf.dexlib2.immutable.ImmutableMethod(
                             classDef.type, method.name, strippedParams, method.returnType,
                             method.accessFlags, method.annotations, method.hiddenApiRestrictions, null
                         )
@@ -177,7 +177,7 @@ class DexStringEncryptor(private val xorKey: ByteArray) {
                     classDef.interfaces,
                     classDef.sourceFile,
                     classDef.annotations,
-                    classDef.fields.map { com.android.tools.smali.dexlib2.immutable.ImmutableField.of(it) },
+                    classDef.fields.map { org.jf.dexlib2.immutable.ImmutableField.of(it) },
                     modifiedMethods
                 )
             )

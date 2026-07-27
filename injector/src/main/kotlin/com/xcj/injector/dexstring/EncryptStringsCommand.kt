@@ -1,8 +1,8 @@
 package com.xcj.injector.dexstring
 
-import com.android.tools.smali.dexlib2.DexFileFactory
-import com.android.tools.smali.dexlib2.Opcodes
-import com.android.tools.smali.dexlib2.dexbacked.DexBackedDexFile
+import org.jf.dexlib2.DexFileFactory
+import org.jf.dexlib2.Opcodes
+import org.jf.dexlib2.dexbacked.DexBackedDexFile
 import com.github.ajalt.clikt.core.CliktCommand
 import com.github.ajalt.clikt.parameters.options.option
 import com.github.ajalt.clikt.parameters.options.required
@@ -95,7 +95,7 @@ class EncryptStringsCommand : CliktCommand(
         val dexFile = DexBackedDexFile(readOpcodes, dexBytes)
         val modifiedClasses = encryptor.processDex(dexFile)
 
-        val outputDex = com.android.tools.smali.dexlib2.immutable.ImmutableDexFile(
+        val outputDex = org.jf.dexlib2.immutable.ImmutableDexFile(
             writeOpcodes, modifiedClasses
         )
 
@@ -103,9 +103,8 @@ class EncryptStringsCommand : CliktCommand(
         try {
             DexFileFactory.writeDexFile(tmpFile.absolutePath, outputDex)
             val rawDex = tmpFile.readBytes()
-            // 后处理:清零所有 code_item 的 debug_info_off
-            patchDebugInfoOff(rawDex)
-            logger.info("  debug_info_off 已清零(${countCodeItems(rawDex)} 个 code_item)")
+            // 2.5.2 writer 应正确处理 debug_info; 不做 binary patch
+            logger.info("  2.5.2 writer 输出: ${rawDex.size} bytes (dex v${String(rawDex, 4, 3)})")
             return rawDex
         } finally {
             tmpFile.delete()
