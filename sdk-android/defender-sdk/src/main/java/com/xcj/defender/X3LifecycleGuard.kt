@@ -56,8 +56,12 @@ object X3LifecycleGuard {
 
         return try {
             val appInfo = app.packageManager.getApplicationInfo(app.packageName, 0)
-            val declaredName = appInfo.className
-            declaredName != null && declaredName != actualName
+            var declaredName = appInfo.className ?: return false
+            // Manifest 中 .ClassName 是相对名,需拼接包名
+            if (declaredName.startsWith(".")) {
+                declaredName = app.packageName + declaredName
+            }
+            declaredName != actualName
         } catch (e: PackageManager.NameNotFoundException) {
             false
         }

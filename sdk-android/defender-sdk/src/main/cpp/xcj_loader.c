@@ -40,6 +40,8 @@
 #include "defender_log.h"
 
 static JavaVM *g_vm = NULL;
+/* cl 加载时 JNI_OnLoad 的 FindClass 需要应用 ClassLoader(全局引用,跨 .so 可见) */
+jobject g_app_classloader = NULL;
 
 /* T1 自实现 Linker 加载后的 defender 句柄(R4) */
 static cl_handle_t g_defender_cl = NULL;
@@ -279,7 +281,7 @@ static uint8_t *locate_and_decrypt(const uint8_t *apk, size_t size, uint32_t *ou
     return NULL;
 }
 
-static int bootstrap(const char *apk_path) {
+static int bootstrap(JNIEnv *env, jclass caller_clazz, const char *apk_path) {
     /* "初始化序列"(ADR 0094 §3 控制流伪装:看起来像正常初始化) */
     xcj_init_log_seed();       /* "日志种子初始化" */
     xcj_verify_elf_offset();   /* "ELF 偏移校验" */
@@ -342,7 +344,22 @@ static int bootstrap(const char *apk_path) {
     memset(so, 0, so_len);                            /* 清理解密缓冲 */
     free(so);
 
-    jint rc = on_load(g_vm, NULL);                    /* 手动注册载荷 native */
+    /* 获取应用 ClassLoader 供 defender JNI_OnLoad 的 FindClass 使用
+     * (cl 手动调 JNI_OnLoad 时系统用 BootstrapClassLoader,找不到应用类) */
+    if (env && caller_clazz) {
+        jclass cls = (*env)->GetObjectClass(env, caller_clazz);
+        jmethodID mid = (*env)->GetMethodID(env, cls, "getClassLoader", "()Ljava/lang/ClassLoader;");
+        if (mid) {
+            jobject loader = (*env)->CallObjectMethod(env, cls, mid);
+            if (loader) {
+                g_app_classloader = (*env)->NewGlobalRef(env, loader);
+                (*env)->DeleteLocalRef(env, loader);
+            }
+        }
+        (*env)->DeleteLocalRef(env, cls);
+    }
+
+    jint rc = on_load(g_vm, (void *)g_app_classloader);  /* 传 ClassLoader 给 JNI_OnLoad */
     LOGI("载荷 JNI_OnLoad 返回 %d", rc);
 
     /* ELF 头擦除(delayed erase):JNI_OnLoad 完成后,所有注册/初始化已结束。
@@ -535,7 +552,7 @@ Java_com_xcj_defender_DefenderX0Test_bootstrap(JNIEnv *env, jclass clazz, jstrin
 
     const char *apk_path = apk_path_j ? (*env)->GetStringUTFChars(env, apk_path_j, NULL) : NULL;
     if (!apk_path) return -1;
-    int rc = bootstrap(apk_path);
+    int rc = bootstrap(env, clazz, apk_path);
     (*env)->ReleaseStringUTFChars(env, apk_path_j, apk_path);
     return rc;
 }

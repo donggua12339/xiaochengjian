@@ -490,10 +490,24 @@ JNI_OnLoad(JavaVM *vm, void *reserved) {
     static const char *class_name = "com/xcj/defender/DefenderNative";
     jclass clazz = (*env)->FindClass(env, class_name);
     if (clazz == NULL) {
-        /* LSPosed 等工具会替换 DEX 导致 FindClass 失败。
-         * 不返回 JNI_ERR(否则 .so 被卸载,守护线程死亡)。
-         * 守护线程已在上方启动,保持 .so 存活即可。 */
-        LOGW("FindClass 失败: %s(DEX 可能被替换,native 方法延迟注册)", class_name);
+        /* cl 手动调 JNI_OnLoad 时 FindClass 用 BootstrapClassLoader,找不到应用类。
+         * 回退:用 reserved 参数(xcj_loader 传入的应用 ClassLoader) + loadClass。 */
+        if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+        jobject appLoader = (jobject)reserved;
+        if (appLoader) {
+            jclass clClass = (*env)->GetObjectClass(env, appLoader);
+            jmethodID loadClass = (*env)->GetMethodID(env, clClass, "loadClass", "(Ljava/lang/String;)Ljava/lang/Class;");
+            if (loadClass) {
+                jstring nameStr = (*env)->NewStringUTF(env, "com.xcj.defender.DefenderNative");
+                clazz = (jclass)(*env)->CallObjectMethod(env, appLoader, loadClass, nameStr);
+                (*env)->DeleteLocalRef(env, nameStr);
+                if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); clazz = NULL; }
+            }
+            (*env)->DeleteLocalRef(env, clClass);
+        }
+    }
+    if (clazz == NULL) {
+        LOGW("FindClass 失败: %s", class_name);
         return JNI_VERSION_1_6;
     }
 
