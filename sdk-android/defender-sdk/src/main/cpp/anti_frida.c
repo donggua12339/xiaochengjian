@@ -891,7 +891,58 @@ static int check_rwxp_anonymous(void) {
     return 0;
 }
 
-/* ============= 组合检测(同步:A+B+C+E+F+G+H+I+J) ============= */
+/* ============= K 层:时间侧信道检测(反 Frida Stalker) =============
+ *
+ * Frida Stalker 追踪时,每条指令都经过 JS 引擎处理,执行时间 10x+。
+ * 执行 N 条 NOP,用 CLOCK_MONOTONIC 测量耗时。
+ * 正常 <1μs,Stalker 追踪 >10μs。多次采样取最小值(消除调度噪声)。
+ */
+#include <time.h>
+
+static int check_timing_sidechannel(void) {
+    /* 执行 1000 条 NOP 并计时 */
+    struct timespec t0, t1;
+
+    /* 预热(消除首次调用开销) */
+    clock_gettime(CLOCK_MONOTONIC, &t0);
+    __asm__ volatile(
+        "nop; nop; nop; nop; nop; nop; nop; nop; nop; nop;"
+        "nop; nop; nop; nop; nop; nop; nop; nop; nop; nop;"
+    );
+    clock_gettime(CLOCK_MONOTONIC, &t1);
+
+    /* 正式测量:取 5 次最小值 */
+    long min_ns = 999999999L;
+    for (int round = 0; round < 5; round++) {
+        clock_gettime(CLOCK_MONOTONIC, &t0);
+        __asm__ volatile(
+            /* 100 条 NOP(ARM64) */
+            "nop; nop; nop; nop; nop; nop; nop; nop; nop; nop;"
+            "nop; nop; nop; nop; nop; nop; nop; nop; nop; nop;"
+            "nop; nop; nop; nop; nop; nop; nop; nop; nop; nop;"
+            "nop; nop; nop; nop; nop; nop; nop; nop; nop; nop;"
+            "nop; nop; nop; nop; nop; nop; nop; nop; nop; nop;"
+            "nop; nop; nop; nop; nop; nop; nop; nop; nop; nop;"
+            "nop; nop; nop; nop; nop; nop; nop; nop; nop; nop;"
+            "nop; nop; nop; nop; nop; nop; nop; nop; nop; nop;"
+            "nop; nop; nop; nop; nop; nop; nop; nop; nop; nop;"
+            "nop; nop; nop; nop; nop; nop; nop; nop; nop; nop;"
+        );
+        clock_gettime(CLOCK_MONOTONIC, &t1);
+
+        long ns = (t1.tv_sec - t0.tv_sec) * 1000000000L + (t1.tv_nsec - t0.tv_nsec);
+        if (ns < min_ns) min_ns = ns;
+    }
+
+    /* 阈值:100 条 NOP 正常 <500ns,Stalker 追踪 >5000ns */
+    if (min_ns > 5000) {
+        LOGE("K 层:时间侧信道异常(%ld ns,疑似 Stalker 追踪)", min_ns);
+        return 1;
+    }
+    return 0;
+}
+
+/* ============= 组合检测(同步:A-K) ============= */
 
 /**
  * AntiFrida 检测(同步:A-E + F/G + H + I + J)
@@ -901,7 +952,7 @@ static int check_rwxp_anonymous(void) {
 static int g_seccomp_installed = 0;
 
 int anti_frida_check(void) {
-    LOGI("=== AntiFrida 检测(A-J 多态顺序) ===");
+    LOGI("=== AntiFrida 检测(A-K 多态顺序) ===");
 
     int strong_hit = 0;
 
@@ -911,22 +962,23 @@ int anti_frida_check(void) {
 
     /* 定义检测函数指针表 */
     typedef int (*check_fn)(void);
-    /* 0=A maps, 1=B port, 2=C thread, 3=F+G dbus, 4=I cross, 5=J rwxp */
+    /* 0=A maps, 1=B port, 2=C thread, 3=F+G dbus, 4=I cross, 5=J rwxp, 6=K timing */
     check_fn checks[] = {
         check_maps_frida, check_frida_port, check_thread_names,
-        check_dbus_protocol, check_cross_process, check_rwxp_anonymous
+        check_dbus_protocol, check_cross_process, check_rwxp_anonymous,
+        check_timing_sidechannel
     };
-    const char *names[] = {"A", "B", "C", "F+G", "I", "J"};
+    const char *names[] = {"A", "B", "C", "F+G", "I", "J", "K"};
 
-    /* 6 种排列(覆盖常见顺序 + 反转 + 交错) */
-    static const uint8_t perms[8][6] = {
-        {0,1,2,3,4,5}, {5,4,3,2,1,0}, {3,0,4,1,5,2},
-        {2,5,1,4,0,3}, {4,3,0,5,2,1}, {1,4,5,0,3,2},
-        {3,5,0,2,4,1}, {0,3,1,4,2,5},
+    /* 8 种排列(7 层检测,每次构建不同) */
+    static const uint8_t perms[8][7] = {
+        {0,1,2,3,4,5,6}, {6,5,4,3,2,1,0}, {3,0,4,1,5,2,6},
+        {2,5,1,4,0,3,6}, {4,3,0,5,2,1,6}, {1,4,5,0,3,2,6},
+        {3,5,0,2,4,1,6}, {6,0,3,1,4,2,5},
     };
     const uint8_t *perm = perms[order & 0x7];
 
-    for (int i = 0; i < 6; i++) {
+    for (int i = 0; i < 7; i++) {
         int idx = perm[i];
         if (checks[idx]()) {
             LOGE("%s 层检测到 Frida", names[idx]);
@@ -953,6 +1005,6 @@ int anti_frida_check(void) {
         return 1;
     }
 
-    LOGI("AntiFrida 检测通过(9 层全绿,order=%d)", order);
+    LOGI("AntiFrida 检测通过(10 层全绿,order=%d)", order);
     return 0;
 }
