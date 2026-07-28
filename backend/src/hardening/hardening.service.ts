@@ -28,10 +28,13 @@ export interface HardeningTask {
  *
  * 流水线: 上传 APK → 分析 → 用户选择模块 → 注入 DEX/SO/config → 修改 Manifest → 重签 → 下载
  *
- * 合规约束(ADR 0081 + 0088):
- *  - 仅注入固定 classes-xcj.dex + 30 池随机 .so
+ * 合规约束(ADR 0081 + 0088 + 0097):
+ *  - 可注入用户自有 APK(ADR 0097 扩展,用户声明自担风险)
+ *  - 注入内容: SDK DEX + 30 池随机 .so + defender-config.json
+ *  - smali 修改限于 ADR 0090 授权范围(const-string 替换 + 解密调用)
  *  - Manifest 修改仅限 Application 委托 + meta-data + provider
  *  - 重签必须使用开发者自备 Keystore(锁 4)
+ *  - 用户所有权声明必须为 true,否则拒绝执行(ADR 0097)
  */
 @Injectable()
 export class HardeningService {

@@ -59,6 +59,7 @@ export function hardenApk(params: {
   keyPassword: string;
   config: HardeningRequestConfig;
   analysis: ApkAnalysis;
+  ownershipConfirmed: boolean; // ADR 0097
 }) {
   const formData = new FormData();
   formData.append('apk', params.apkFile);
@@ -70,6 +71,7 @@ export function hardenApk(params: {
   formData.append('keyPassword', params.keyPassword);
   formData.append('config', JSON.stringify(params.config));
   formData.append('analysisJson', JSON.stringify(params.analysis));
+  formData.append('ownershipConfirmed', params.ownershipConfirmed ? 'true' : 'false');
 
   return request<{ taskId: string; status: string; message: string }>({
     method: 'POST',

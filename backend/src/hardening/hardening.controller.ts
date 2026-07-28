@@ -129,6 +129,7 @@ export class HardeningController {
       keyPassword: string;
       config: string;
       analysisJson: string;
+      ownershipConfirmed: string; // ADR 0097: 用户所有权声明
     },
   ) {
     if (!apkFile) throw new BadRequestException('请上传 APK 文件');
@@ -136,13 +137,16 @@ export class HardeningController {
     if (!body.keystorePassword || !body.keyAlias || !body.keyPassword) {
       throw new BadRequestException('请提供 Keystore 密码和别名');
     }
+    // ADR 0097: 强制校验所有权声明
+    if (body.ownershipConfirmed !== 'true') {
+      throw new BadRequestException('请确认 APK 所有权声明(ADR 0097)');
+    }
 
     // 注意:keystore 作为第二个文件上传,这里用 body 传递 base64 或者额外字段
     // 简化方案:keystore 通过单独字段传递(Multer 限制单 FileInterceptor)
     // 生产方案:用 @UseInterceptors(AnyFilesInterceptor) 接收多文件
 
     const config: HardeningConfig = JSON.parse(body.config);
-    const analysis = JSON.parse(body.analysisJson);
 
     // 保存 APK 到临时目录
     const tmpDir = path.join(process.cwd(), 'tmp', 'hardening', developerId);
@@ -155,10 +159,16 @@ export class HardeningController {
     // keystore 需要从请求中获取,这里用占位
     // 实际实现中应通过 multipart 的第二个文件字段接收
 
-    this.logger.log(
-      `加固请求: developer=${developerId} ` +
+    // ADR 0097 审计日志: 记录所有权声明
+    const analysis = JSON.parse(body.analysisJson);
+    this.logger.warn(
+      `[ADR-0097 审计] developer=${developerId} ` +
+      `pkg=${analysis?.packageName ?? 'unknown'} ` +
+      `apkSha256=${apkFile.buffer ? 'pending' : 'none'} ` +
+      `ownershipConfirmed=${body.ownershipConfirmed} ` +
       `productLine=${config.productLine} ` +
-      `preset=${config.preset ?? 'manual'}`,
+      `preset=${config.preset ?? 'manual'} ` +
+      `timestamp=${new Date().toISOString()}`,
     );
 
     try {

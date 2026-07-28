@@ -153,6 +153,9 @@ const ksPassword = ref('');
 const ksAlias = ref('');
 const ksKeyPassword = ref('');
 
+// ========== 合规声明(ADR 0097) ==========
+const ownershipConfirmed = ref(false);
+
 function handleKeystoreUpload({ file }: { file: UploadFileInfo }) {
   if (file.file) keystoreFile.value = file.file;
 }
@@ -171,6 +174,10 @@ async function startHardening() {
   }
   if (enabledCount.value === 0) {
     message.warning('请至少选择一个加固模块');
+    return;
+  }
+  if (!ownershipConfirmed.value) {
+    message.error('请确认 APK 所有权声明');
     return;
   }
 
@@ -201,6 +208,7 @@ async function startHardening() {
       keyPassword: ksKeyPassword.value,
       config,
       analysis: analysis.value!,
+      ownershipConfirmed: ownershipConfirmed.value,
     }) as any;
 
     taskId.value = res.taskId;
@@ -259,6 +267,7 @@ function resetAll() {
   ksKeyPassword.value = '';
   hardenProgress.value = 0;
   taskId.value = '';
+  ownershipConfirmed.value = false;
 }
 
 // 不可用功能表
@@ -400,6 +409,18 @@ const unavailableColumns = [
           <NInput v-model:value="ksAlias" placeholder="Key 别名" />
           <NInput v-model:value="ksKeyPassword" type="password" placeholder="Key 密码" show-password-on="click" />
         </NSpace>
+
+        <!-- 合规声明(ADR 0097) -->
+        <NDivider title-placement="left">所有权声明</NDivider>
+        <NAlert type="warning" style="margin-bottom: 12px">
+          <template #header>法律声明</template>
+          加固功能将对您上传的 APK 进行 DEX 修改、SO 注入、Manifest 变更等操作。
+          您必须确认上传的 APK 为您自有或已获得合法著作权授权。
+          <strong>若您擅自上传他人 APK 进行加固，由此产生的一切法律责任由您个人承担，平台不承担任何连带责任。</strong>
+        </NAlert>
+        <NCheckbox v-model:checked="ownershipConfirmed">
+          我确认此 APK 为我自有或已获合法授权，并理解上述法律声明(ADR 0097)
+        </NCheckbox>
 
         <NDivider />
         <NSpace justify="space-between">
