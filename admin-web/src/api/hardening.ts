@@ -49,7 +49,7 @@ export async function analyzeApk(apkFile: File) {
 }
 
 /** 执行加固 */
-export function hardenApk(params: {
+export async function hardenApk(params: {
   apkFile: File;
   keystoreFile?: File;
   keystorePassword: string;
