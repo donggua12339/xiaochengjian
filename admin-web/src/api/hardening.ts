@@ -1,4 +1,4 @@
-import { request } from './client';
+import { request, longTimeoutClient } from './client';
 
 /** APK 分析结果 */
 export interface ApkAnalysis {
@@ -38,16 +38,14 @@ export interface HardeningTaskStatus {
   message: string;
 }
 
-/** 上传 APK 分析 */
-export function analyzeApk(apkFile: File) {
+/** 上传 APK 分析(长超时 + 自动 Content-Type) */
+export async function analyzeApk(apkFile: File) {
   const formData = new FormData();
   formData.append('apk', apkFile);
-  return request<{ taskId: string; analysis: ApkAnalysis; _tmpApkPath: string }>({
-    method: 'POST',
-    url: '/hardening/analyze',
-    data: formData,
-    headers: { 'Content-Type': 'multipart/form-data' },
+  const res = await longTimeoutClient.post('/hardening/analyze', formData, {
+    headers: { 'Content-Type': undefined as any },  // 让 axios 自动生成 boundary
   });
+  return res.data as { taskId: string; analysis: ApkAnalysis; _tmpApkPath: string };
 }
 
 /** 执行加固 */
@@ -73,12 +71,10 @@ export function hardenApk(params: {
   formData.append('analysisJson', JSON.stringify(params.analysis));
   formData.append('ownershipConfirmed', params.ownershipConfirmed ? 'true' : 'false');
 
-  return request<{ taskId: string; status: string; message: string }>({
-    method: 'POST',
-    url: '/hardening/harden',
-    data: formData,
-    headers: { 'Content-Type': 'multipart/form-data' },
+  const res = await longTimeoutClient.post('/hardening/harden', formData, {
+    headers: { 'Content-Type': undefined as any },
   });
+  return res.data as { taskId: string; status: string; message: string };
 }
 
 /** 查询加固状态 */
