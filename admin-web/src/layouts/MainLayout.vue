@@ -11,14 +11,37 @@ const auth = useAuthStore();
 
 const menuOptions = computed<MenuOption[]>(() => [
   { label: '概览', key: 'dashboard' },
-  { label: '应用管理', key: 'apps' },
-  { label: 'SDK 集成指南', key: 'sdk-guide' },
-  { label: 'SDK 配置', key: 'sdk-config' },
-  { label: '自有 APK 诊断', key: 'audit' },
-  { label: 'SDK 封装', key: 'packer' },
-  { label: '加固配置', key: 'harden-config' },
-  { label: '质量报告', key: 'quality-report' },
-  { label: 'APK 加固', key: 'harden-upload' },
+  { type: 'divider', key: 'd1' },
+  {
+    type: 'group',
+    label: '加固',
+    key: 'g-harden',
+    children: [
+      { label: 'APK 加固', key: 'harden-upload' },
+      { label: '质量报告', key: 'quality-report' },
+      { label: '加固配置', key: 'harden-config' },
+    ],
+  },
+  {
+    type: 'group',
+    label: '应用',
+    key: 'g-app',
+    children: [
+      { label: '应用管理', key: 'apps' },
+      { label: 'APK 诊断', key: 'audit' },
+    ],
+  },
+  {
+    type: 'group',
+    label: '开发者工具',
+    key: 'g-dev',
+    children: [
+      { label: 'SDK 封装', key: 'packer' },
+      { label: 'SDK 配置', key: 'sdk-config' },
+      { label: 'SDK 集成指南', key: 'sdk-guide' },
+    ],
+  },
+  { type: 'divider', key: 'd2' },
   { label: '设置', key: 'settings' },
 ]);
 
@@ -52,7 +75,7 @@ const activeKey = computed(() => {
     <NLayout>
       <NLayoutHeader bordered class="header">
         <NSpace justify="space-between" align="center" style="height: 100%; padding: 0 24px">
-          <NText depth="2">卡密验证系统管理后台</NText>
+          <NText depth="2">小城笺 · APK 加固平台</NText>
           <NSpace align="center">
             <NText depth="3">{{ auth.developer?.email ?? '开发者' }}</NText>
             <NButton size="small" quaternary @click="handleLogout">登出</NButton>

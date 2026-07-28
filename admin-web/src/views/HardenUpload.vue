@@ -8,16 +8,15 @@
 import { ref, computed } from 'vue';
 import {
   NCard, NButton, NSpace, NUpload, NProgress, NTag, NText,
-  NCheckbox, NCheckboxGroup, NGrid, NGi, NDivider, NAlert,
-  NSelect, NInput, NSteps, NStep, NCollapse, NCollapseItem,
-  NDataTable, useMessage, useDialog,
+  NCheckbox, NGrid, NGi, NDivider, NAlert,
+  NSelect, NInput, NSteps, NStep,
+  useMessage,
 } from 'naive-ui';
 import type { UploadFileInfo } from 'naive-ui';
 import { analyzeApk, hardenApk, getHardeningStatus } from '@/api/hardening';
 import type { ApkAnalysis, HardeningRequestConfig } from '@/api/hardening';
 
 const message = useMessage();
-const dialog = useDialog();
 
 // ========== 步骤控制 ==========
 const currentStep = ref(0); // 0=上传 1=配置 2=加固 3=完成
@@ -269,12 +268,6 @@ function resetAll() {
   taskId.value = '';
   ownershipConfirmed.value = false;
 }
-
-// 不可用功能表
-const unavailableColumns = [
-  { title: '功能', key: 'feature' },
-  { title: '原因', key: 'reason' },
-];
 </script>
 
 <template>
