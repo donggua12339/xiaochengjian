@@ -33,6 +33,6 @@ import { DefenderConfigGenerator } from './defender-config-generator';
     SoInjector,
     DefenderConfigGenerator,
   ],
-  exports: [PackerService, PackerLogService],
+  exports: [PackerService, PackerLogService, DexInjector, SoInjector, DefenderConfigGenerator],
 })
 export class PackerModule {}

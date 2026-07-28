@@ -18,6 +18,7 @@ const menuOptions = computed<MenuOption[]>(() => [
   { label: 'SDK 封装', key: 'packer' },
   { label: '加固配置', key: 'harden-config' },
   { label: '质量报告', key: 'quality-report' },
+  { label: 'APK 加固', key: 'harden-upload' },
   { label: '设置', key: 'settings' },
 ]);
 

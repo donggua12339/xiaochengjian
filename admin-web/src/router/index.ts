@@ -66,6 +66,11 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/QualityReport.vue'),
       },
       {
+        path: 'harden-upload',
+        name: 'harden-upload',
+        component: () => import('@/views/HardenUpload.vue'),
+      },
+      {
         path: 'apps/:id',
         name: 'app-detail',
         component: () => import('@/views/AppDetail.vue'),
