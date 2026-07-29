@@ -58,7 +58,16 @@ async function handleApkUpload({ file }: { file: UploadFileInfo }) {
 
   try {
     const { taskId } = await analyzeApk(file.file);
-    taskStatus.value = { id: taskId } as HardeningTaskStatus;
+    taskStatus.value = {
+      id: taskId,
+      status: 'analyzing',
+      progress: 0,
+      message: '正在连接服务器...',
+      step: 'queued',
+      detail: '',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    } as HardeningTaskStatus;
     startPolling(taskId, 'analysis');
   } catch (e: unknown) {
     globalError.value = `上传失败: ${errMsg(e)}`;
@@ -306,6 +315,7 @@ async function startHardening() {
 
   hardening.value = true;
   currentStep.value = 4;
+  globalError.value = '';
 
   try {
     const config: HardeningRequestConfig = {
@@ -334,7 +344,16 @@ async function startHardening() {
       ownershipConfirmed: ownershipConfirmed.value,
     });
 
-    taskStatus.value = { id: res.taskId } as HardeningTaskStatus;
+    taskStatus.value = {
+      id: res.taskId,
+      status: 'hardening',
+      progress: 0,
+      message: '正在准备加固...',
+      step: 'init',
+      detail: '',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    } as HardeningTaskStatus;
     startPolling(res.taskId, 'hardening');
   } catch (e: unknown) {
     message.error(`加固失败: ${errMsg(e)}`);
