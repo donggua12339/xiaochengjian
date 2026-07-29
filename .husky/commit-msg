@@ -1,0 +1,3 @@
+#!/usr/bin/env sh
+# commit message 格式检查(Conventional Commits)
+npx --no -- commitlint --edit "$1"

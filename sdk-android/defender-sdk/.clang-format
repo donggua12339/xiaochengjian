@@ -1,0 +1,53 @@
+# 小城笺 · Android Native C/C++ 格式化规则
+# 基于 Google 风格,针对嵌入式/NDK 场景调整
+
+BasedOnStyle: Google
+Language: Cpp
+
+# 缩进
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ContinuationIndentWidth: 4
+IndentCaseLabels: true
+
+# 行宽
+ColumnLimit: 100
+
+# 大括号
+BreakBeforeBraces: Linux
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortIfStatementsOnASingleLine: false
+AllowShortLoopsOnASingleLine: false
+
+# 指针/引用对齐
+PointerAlignment: Right
+ReferenceAlignment: Right
+
+# 空格
+SpaceAfterCStyleCast: true
+SpaceBeforeParens: ControlStatements
+SpacesInParentheses: false
+SpacesInSquareBrackets: false
+
+# 对齐
+AlignAfterOpenBracket: Align
+AlignConsecutiveAssignments: false
+AlignConsecutiveDeclarations: false
+AlignOperands: true
+AlignTrailingComments: true
+
+# 换行
+BinPackArguments: true
+BinPackParameters: true
+PenaltyBreakBeforeFirstCallParameter: 19
+
+# 宏
+IndentPPDirectives: BeforeHash
+
+# include 排序
+IncludeBlocks: Regroup
+SortIncludes: CaseSensitive
+
+# 注释
+ReflowComments: true

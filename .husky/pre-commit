@@ -1,0 +1,3 @@
+#!/usr/bin/env sh
+# 暂存文件自动 lint + format
+npx lint-staged

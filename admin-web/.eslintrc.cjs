@@ -1,0 +1,38 @@
+module.exports = {
+  parser: 'vue-eslint-parser',
+  parserOptions: {
+    parser: '@typescript-eslint/parser',
+    project: 'tsconfig.json',
+    tsconfigRootDir: __dirname,
+    sourceType: 'module',
+    extraFileExtensions: ['.vue'],
+  },
+  plugins: ['@typescript-eslint/eslint-plugin'],
+  extends: [
+    'plugin:@typescript-eslint/recommended',
+    'plugin:vue/vue3-recommended',
+    'plugin:prettier/recommended',
+  ],
+  root: true,
+  env: {
+    browser: true,
+    node: true,
+  },
+  ignorePatterns: ['.eslintrc.cjs', 'dist', 'node_modules', 'env.d.ts'],
+  rules: {
+    '@typescript-eslint/no-explicit-any': 'error',
+    '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
+    '@typescript-eslint/no-non-null-assertion': 'warn',
+    '@typescript-eslint/explicit-function-return-type': 'off',
+    'no-console': 'error',
+    'prefer-const': 'error',
+    'no-var': 'error',
+    'vue/multi-word-component-names': 'off',
+    'vue/no-v-html': 'warn',
+    'vue/component-definition-name-casing': ['error', 'PascalCase'],
+    'vue/component-name-in-template-casing': ['error', 'PascalCase'],
+    'vue/require-default-prop': 'error',
+    'vue/require-explicit-emits': 'error',
+    'vue/no-unused-vars': 'error',
+  },
+};
