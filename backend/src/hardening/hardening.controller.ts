@@ -13,12 +13,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import {
-  ApiBearerAuth,
-  ApiOperation,
-  ApiTags,
-  ApiConsumes,
-} from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiTags, ApiConsumes } from '@nestjs/swagger';
 import type { Response } from 'express';
 import * as fs from 'fs/promises';
 import * as path from 'path';
@@ -44,7 +39,7 @@ export class HardeningController {
   @Post('analyze')
   @ApiOperation({ summary: '上传 APK 开始异步分析(返回 taskId)' })
   @ApiConsumes('multipart/form-data')
-  @UseInterceptors(FileInterceptor('apk'))
+  @UseInterceptors(FileInterceptor('apk', { limits: { fileSize: 200 * 1024 * 1024 } }))
   async analyze(
     @UploadedFile() file: Express.Multer.File,
     @CurrentDeveloper() developerId: string,
@@ -53,7 +48,9 @@ export class HardeningController {
       throw new BadRequestException('请上传 .apk 文件');
     }
 
-    this.logger.log(`分析请求: developer=${developerId} file=${file.originalname} size=${file.size}`);
+    this.logger.log(
+      `分析请求: developer=${developerId} file=${file.originalname} size=${file.size}`,
+    );
 
     const tmpDir = path.join(process.cwd(), 'tmp', 'hardening', developerId);
     await fs.mkdir(tmpDir, { recursive: true });
@@ -61,7 +58,11 @@ export class HardeningController {
     await fs.writeFile(tmpPath, file.buffer);
 
     try {
-      const task = await this.hardeningService.startAnalysis(tmpPath, developerId, file.originalname);
+      const task = await this.hardeningService.startAnalysis(
+        tmpPath,
+        developerId,
+        file.originalname,
+      );
       return { taskId: task.id };
     } catch (e) {
       await fs.unlink(tmpPath).catch(() => {});
@@ -76,11 +77,12 @@ export class HardeningController {
   @Post('harden')
   @ApiOperation({ summary: '执行加固(异步,返回 taskId)' })
   @ApiConsumes('multipart/form-data')
-  @UseInterceptors(FileInterceptor('apk'))
+  @UseInterceptors(FileInterceptor('apk', { limits: { fileSize: 200 * 1024 * 1024 } }))
   async harden(
     @UploadedFile() apkFile: Express.Multer.File,
     @CurrentDeveloper() developerId: string,
-    @Body() body: {
+    @Body()
+    body: {
       keystorePassword: string;
       keyAlias: string;
       keyPassword: string;
@@ -104,11 +106,11 @@ export class HardeningController {
     // ADR 0097 审计日志
     this.logger.warn(
       `[ADR-0097 审计] developer=${developerId} ` +
-      `pkg=${analysis?.packageName ?? 'unknown'} ` +
-      `ownershipConfirmed=${body.ownershipConfirmed} ` +
-      `productLine=${config.productLine} ` +
-      `preset=${config.preset ?? 'manual'} ` +
-      `timestamp=${new Date().toISOString()}`,
+        `pkg=${analysis?.packageName ?? 'unknown'} ` +
+        `ownershipConfirmed=${body.ownershipConfirmed} ` +
+        `productLine=${config.productLine} ` +
+        `preset=${config.preset ?? 'manual'} ` +
+        `timestamp=${new Date().toISOString()}`,
     );
 
     const tmpDir = path.join(process.cwd(), 'tmp', 'hardening', developerId);
@@ -178,11 +180,13 @@ export class HardeningController {
         step: t.step,
         detail: t.detail,
         apkFileName: t.apkFileName,
-        analysis: t.analysis ? {
-          packageName: t.analysis.packageName,
-          nativeAbis: t.analysis.nativeAbis,
-          dexFiles: t.analysis.dexFiles,
-        } : null,
+        analysis: t.analysis
+          ? {
+              packageName: t.analysis.packageName,
+              nativeAbis: t.analysis.nativeAbis,
+              dexFiles: t.analysis.dexFiles,
+            }
+          : null,
         createdAt: t.createdAt,
         updatedAt: t.updatedAt,
       })),
@@ -205,7 +209,11 @@ export class HardeningController {
     if (task.status !== 'completed' || !task.outputPath) {
       throw new BadRequestException('加固尚未完成');
     }
-    try { await fs.access(task.outputPath); } catch { throw new NotFoundException('加固文件不存在'); }
+    try {
+      await fs.access(task.outputPath);
+    } catch {
+      throw new NotFoundException('加固文件不存在');
+    }
 
     const fileName = `hardened_${taskId.slice(0, 8)}.apk`;
     res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
