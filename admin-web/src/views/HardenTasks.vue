@@ -10,10 +10,7 @@
  */
 
 import { ref, onMounted, onUnmounted } from 'vue';
-import {
-  NCard, NButton, NSpace, NTag, NText, NEmpty, NProgress,
-  NAlert,
-} from 'naive-ui';
+import { NCard, NButton, NSpace, NTag, NText, NEmpty, NProgress, NAlert } from 'naive-ui';
 import { useRouter } from 'vue-router';
 import { getHardeningTasks, getHardeningStatus, downloadHardenedApk } from '@/api/hardening';
 import type { HardeningTaskSummary } from '@/api/hardening';
@@ -37,7 +34,7 @@ onUnmounted(() => {
 async function loadTasks() {
   loading.value = true;
   try {
-    const res = await getHardeningTasks() as any;
+    const res = (await getHardeningTasks()) as { tasks: HardeningTaskSummary[] };
     tasks.value = res.tasks ?? [];
   } catch {
     // ignore
@@ -50,17 +47,22 @@ async function refreshActive() {
   const active = tasks.value.filter((t) => !['completed', 'failed'].includes(t.status));
   for (const t of active) {
     try {
-      const s = await getHardeningStatus(t.id) as any;
+      const s = (await getHardeningStatus(t.id)) as HardeningTaskSummary;
       t.status = s.status;
       t.progress = s.progress;
       t.message = s.message;
       t.step = s.step;
       t.detail = s.detail;
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   }
 }
 
-const statusMap: Record<string, { label: string; type: 'success' | 'error' | 'warning' | 'info' | 'default' }> = {
+const statusMap: Record<
+  string,
+  { label: string; type: 'success' | 'error' | 'warning' | 'info' | 'default' }
+> = {
   queued: { label: '排队中', type: 'default' },
   analyzing: { label: '分析中', type: 'info' },
   hardening: { label: '加固中', type: 'warning' },
@@ -70,21 +72,40 @@ const statusMap: Record<string, { label: string; type: 'success' | 'error' | 'wa
 };
 
 const stepIcons: Record<string, string> = {
-  queued: '⏳', unzip: '📦', dex: '📄', abi: '🔧', manifest: '📋',
-  hardener: '🔍', sdk: '📱', config: '⚙️', asset: '📁', so: '🔒',
-  sign: '🔑', done: '✅', error: '❌',
+  queued: '⏳',
+  unzip: '📦',
+  dex: '📄',
+  abi: '🔧',
+  manifest: '📋',
+  hardener: '🔍',
+  sdk: '📱',
+  config: '⚙️',
+  asset: '📁',
+  so: '🔒',
+  sign: '🔑',
+  done: '✅',
+  error: '❌',
 };
 
 function formatTime(iso: string): string {
-  return new Date(iso).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+  return new Date(iso).toLocaleString('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }
 
 function isActive(status: string): boolean {
   return !['completed', 'failed'].includes(status);
 }
 
-function downloadTask(taskId: string) {
-  window.open(downloadHardenedApk(taskId), '_blank');
+async function downloadTask(taskId: string) {
+  try {
+    await downloadHardenedApk(taskId);
+  } catch {
+    // downloadHardenedApk 内部已有 blob 处理,此处兜底
+  }
 }
 </script>
 
@@ -93,7 +114,7 @@ function downloadTask(taskId: string) {
     <NCard title="加固任务">
       <template #header-extra>
         <NSpace>
-          <NButton @click="loadTasks" :loading="loading">刷新</NButton>
+          <NButton :loading="loading" @click="loadTasks">刷新</NButton>
           <NButton type="primary" @click="router.push('/harden-upload')">新建加固</NButton>
         </NSpace>
       </template>
@@ -105,7 +126,12 @@ function downloadTask(taskId: string) {
       </NEmpty>
 
       <NSpace v-else vertical :size="12">
-        <NCard v-for="task in tasks" :key="task.id" size="small" :class="{ 'active-task': isActive(task.status) }">
+        <NCard
+          v-for="task in tasks"
+          :key="task.id"
+          size="small"
+          :class="{ 'active-task': isActive(task.status) }"
+        >
           <NSpace justify="space-between" align="center">
             <!-- 左侧: 状态 + 文件名 -->
             <NSpace align="center" :size="12">
@@ -119,7 +145,7 @@ function downloadTask(taskId: string) {
                 </NSpace>
                 <NText depth="3" style="font-size: 12px">
                   {{ task.message }}
-                  <template v-if="task.detail"> · {{ task.detail }}</template>
+                  <template v-if="task.detail">· {{ task.detail }}</template>
                   <br />
                   {{ formatTime(task.createdAt) }}
                 </NText>

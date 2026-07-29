@@ -62,8 +62,9 @@ export interface HardeningTaskSummary {
 export async function analyzeApk(apkFile: File) {
   const formData = new FormData();
   formData.append('apk', apkFile);
+  // longTimeoutClient 拦截器已解包 response.data,此处 res 即为 data
   const res = await longTimeoutClient.post('/hardening/analyze', formData);
-  return res.data as { taskId: string };
+  return res as unknown as { taskId: string };
 }
 
 /** 轮询任务状态 */
@@ -107,13 +108,24 @@ export async function hardenApk(params: {
   formData.append('analysisJson', JSON.stringify(params.analysis));
   formData.append('ownershipConfirmed', params.ownershipConfirmed ? 'true' : 'false');
 
+  // longTimeoutClient 拦截器已解包 response.data,此处 res 即为 data
   const res = await longTimeoutClient.post('/hardening/harden', formData);
-  return res.data as { taskId: string; status: string; message: string };
+  return res as unknown as { taskId: string; status: string; message: string };
 }
 
-/** 下载加固后的 APK */
-export function downloadHardenedApk(taskId: string): string {
-  const baseURL = (import.meta.env.VITE_API_BASE_URL as string) || '/api/v1';
-  const token = localStorage.getItem('xcj_access_token') || '';
-  return `${baseURL}/hardening/download/${taskId}?token=${encodeURIComponent(token)}`;
+/** 下载加固后的 APK(axios blob 下载,带 JWT) */
+export async function downloadHardenedApk(taskId: string): Promise<void> {
+  const res = await longTimeoutClient.get(`/hardening/download/${taskId}`, {
+    responseType: 'blob',
+  });
+  // res 已被拦截器解包为 blob
+  const blob = res instanceof Blob ? res : new Blob([res as unknown as BlobPart]);
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `hardened_${taskId.slice(0, 8)}.apk`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }

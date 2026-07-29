@@ -9,16 +9,38 @@
 
 import { ref, computed, onUnmounted } from 'vue';
 import {
-  NCard, NButton, NSpace, NUpload, NProgress, NTag, NText,
-  NCheckbox, NGrid, NGi, NDivider, NAlert,
-  NSelect, NInput, NSteps, NStep,
+  NCard,
+  NButton,
+  NSpace,
+  NUpload,
+  NProgress,
+  NTag,
+  NText,
+  NCheckbox,
+  NGrid,
+  NGi,
+  NDivider,
+  NAlert,
+  NSelect,
+  NInput,
+  NSteps,
+  NStep,
   useMessage,
 } from 'naive-ui';
 import type { UploadFileInfo } from 'naive-ui';
-import { analyzeApk, hardenApk, getHardeningStatus } from '@/api/hardening';
+import { analyzeApk, hardenApk, getHardeningStatus, downloadHardenedApk } from '@/api/hardening';
 import type { ApkAnalysis, HardeningRequestConfig, HardeningTaskStatus } from '@/api/hardening';
 
 const message = useMessage();
+
+/** 从 unknown 错误提取消息(合规: 禁 any) */
+function errMsg(e: unknown): string {
+  if (e instanceof Error) return e.message;
+  if (typeof e === 'object' && e !== null && 'message' in e) {
+    return String((e as Record<string, unknown>).message ?? '');
+  }
+  return String(e);
+}
 
 // ========== 步骤控制 ==========
 const currentStep = ref(0); // 0=上传 1=分析中 2=配置 3=签名 4=加固 5=完成
@@ -37,8 +59,8 @@ async function handleApkUpload({ file }: { file: UploadFileInfo }) {
     const { taskId } = await analyzeApk(file.file);
     taskStatus.value = { id: taskId } as HardeningTaskStatus;
     startPolling(taskId, 'analysis');
-  } catch (e: any) {
-    message.error(`上传失败: ${e?.response?.data?.message || e.message}`);
+  } catch (e: unknown) {
+    message.error(`上传失败: ${errMsg(e)}`);
     analyzing.value = false;
     currentStep.value = 0;
   }
@@ -47,18 +69,28 @@ async function handleApkUpload({ file }: { file: UploadFileInfo }) {
 // ========== 轮询进度 ==========
 const taskStatus = ref<HardeningTaskStatus | null>(null);
 let pollTimer: ReturnType<typeof setInterval> | null = null;
+let pollErrorCount = 0;
+const MAX_POLL_ERRORS = 5;
 
 function startPolling(taskId: string, mode: 'analysis' | 'hardening') {
   stopPolling();
+  if (!taskId) {
+    message.error('任务 ID 无效,请重新上传');
+    analyzing.value = false;
+    currentStep.value = 0;
+    return;
+  }
+  pollErrorCount = 0;
   pollTimer = setInterval(async () => {
     try {
-      const status = await getHardeningStatus(taskId) as any;
+      const status = (await getHardeningStatus(taskId)) as HardeningTaskStatus;
+      pollErrorCount = 0; // 成功则重置计数
       taskStatus.value = status;
 
       if (status.status === 'completed') {
         stopPolling();
         if (mode === 'analysis') {
-          analysis.value = status.analysis;
+          analysis.value = status.analysis ?? null;
           applyRecommendedConfig(status.analysis?.recommendedConfig);
           analyzing.value = false;
           currentStep.value = 2;
@@ -71,17 +103,28 @@ function startPolling(taskId: string, mode: 'analysis' | 'hardening') {
       } else if (status.status === 'failed') {
         stopPolling();
         analyzing.value = false;
-        message.error(`${mode === 'analysis' ? '分析' : '加固'}失败: ${status.error || status.message}`);
+        message.error(
+          `${mode === 'analysis' ? '分析' : '加固'}失败: ${status.error || status.message}`,
+        );
         currentStep.value = mode === 'analysis' ? 0 : 3;
       }
-    } catch {
-      // 网络错误,继续轮询
+    } catch (e: unknown) {
+      pollErrorCount++;
+      if (pollErrorCount >= MAX_POLL_ERRORS) {
+        stopPolling();
+        analyzing.value = false;
+        message.error(`轮询失败(${pollErrorCount} 次): ${errMsg(e)}`);
+        currentStep.value = mode === 'analysis' ? 0 : 3;
+      }
     }
-  }, 2000); // 每 2 秒轮询
+  }, 2000);
 }
 
 function stopPolling() {
-  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  if (pollTimer) {
+    clearInterval(pollTimer);
+    pollTimer = null;
+  }
 }
 
 onUnmounted(() => stopPolling());
@@ -92,12 +135,20 @@ const productLine = ref<'xuanjia' | 'tianyan'>('xuanjia');
 const preset = ref<string>('standard');
 
 const xuanjiaModules = ref<Record<string, boolean>>({
-  x0_soEncrypt: true, x3_lifecycle: true, x4_antiDynamic: true,
-  x5_vpnProxy: true, x6_dualApp: true, x7_privatePort: true,
-  x8_fart: false, x9_odex: false,
+  x0_soEncrypt: true,
+  x3_lifecycle: true,
+  x4_antiDynamic: true,
+  x5_vpnProxy: true,
+  x6_dualApp: true,
+  x7_privatePort: true,
+  x8_fart: false,
+  x9_odex: false,
 });
 const tianyanModules = ref<Record<string, boolean>>({
-  t1_customLinker: true, t2_vmp: true, t3_segment: false, t4_dexStringEncrypt: false,
+  t1_customLinker: true,
+  t2_vmp: true,
+  t3_segment: false,
+  t4_dexStringEncrypt: false,
 });
 
 const killAction = ref('kill');
@@ -111,14 +162,20 @@ const presetOptions = [
 ];
 
 const xuanjiaLabels: Record<string, string> = {
-  x0_soEncrypt: 'X0 SO 本体加密(RC4+memfd)', x3_lifecycle: 'X3 生命周期劫持检测',
-  x4_antiDynamic: 'X4 反动态五层 + 12 层反 Frida', x5_vpnProxy: 'X5 VPN/代理检测',
-  x6_dualApp: 'X6 双开/分身检测', x7_privatePort: 'X7 私人端口保护',
-  x8_fart: 'X8 FART 脱壳扫描', x9_odex: 'X9 ODEX 修补检测',
+  x0_soEncrypt: 'X0 SO 本体加密(RC4+memfd)',
+  x3_lifecycle: 'X3 生命周期劫持检测',
+  x4_antiDynamic: 'X4 反动态五层 + 12 层反 Frida',
+  x5_vpnProxy: 'X5 VPN/代理检测',
+  x6_dualApp: 'X6 双开/分身检测',
+  x7_privatePort: 'X7 私人端口保护',
+  x8_fart: 'X8 FART 脱壳扫描',
+  x9_odex: 'X9 ODEX 修补检测',
 };
 const tianyanLabels: Record<string, string> = {
-  t1_customLinker: 'T1 自实现 Linker(匿名映射)', t2_vmp: 'T2 VMP 保护解密函数',
-  t3_segment: 'T3 字符串分段散列', t4_dexStringEncrypt: 'T4 DEX 字符串加密',
+  t1_customLinker: 'T1 自实现 Linker(匿名映射)',
+  t2_vmp: 'T2 VMP 保护解密函数',
+  t3_segment: 'T3 字符串分段散列',
+  t4_dexStringEncrypt: 'T4 DEX 字符串加密',
 };
 
 function applyRecommendedConfig(config?: HardeningRequestConfig) {
@@ -131,18 +188,72 @@ function applyRecommendedConfig(config?: HardeningRequestConfig) {
 
 function onPresetChange(val: string) {
   const presets: Record<string, { x: Record<string, boolean>; t: Record<string, boolean> }> = {
-    basic: { x: { x0_soEncrypt: true, x3_lifecycle: true, x4_antiDynamic: true, x5_vpnProxy: false, x6_dualApp: false, x7_privatePort: false, x8_fart: false, x9_odex: false }, t: { t1_customLinker: true, t2_vmp: false, t3_segment: false, t4_dexStringEncrypt: false } },
-    standard: { x: { x0_soEncrypt: true, x3_lifecycle: true, x4_antiDynamic: true, x5_vpnProxy: true, x6_dualApp: true, x7_privatePort: true, x8_fart: false, x9_odex: false }, t: { t1_customLinker: true, t2_vmp: true, t3_segment: false, t4_dexStringEncrypt: false } },
-    aggressive: { x: { x0_soEncrypt: true, x3_lifecycle: true, x4_antiDynamic: true, x5_vpnProxy: true, x6_dualApp: true, x7_privatePort: true, x8_fart: true, x9_odex: true }, t: { t1_customLinker: true, t2_vmp: true, t3_segment: true, t4_dexStringEncrypt: false } },
-    paranoid: { x: { x0_soEncrypt: true, x3_lifecycle: true, x4_antiDynamic: true, x5_vpnProxy: true, x6_dualApp: true, x7_privatePort: true, x8_fart: true, x9_odex: true }, t: { t1_customLinker: true, t2_vmp: true, t3_segment: true, t4_dexStringEncrypt: true } },
+    basic: {
+      x: {
+        x0_soEncrypt: true,
+        x3_lifecycle: true,
+        x4_antiDynamic: true,
+        x5_vpnProxy: false,
+        x6_dualApp: false,
+        x7_privatePort: false,
+        x8_fart: false,
+        x9_odex: false,
+      },
+      t: { t1_customLinker: true, t2_vmp: false, t3_segment: false, t4_dexStringEncrypt: false },
+    },
+    standard: {
+      x: {
+        x0_soEncrypt: true,
+        x3_lifecycle: true,
+        x4_antiDynamic: true,
+        x5_vpnProxy: true,
+        x6_dualApp: true,
+        x7_privatePort: true,
+        x8_fart: false,
+        x9_odex: false,
+      },
+      t: { t1_customLinker: true, t2_vmp: true, t3_segment: false, t4_dexStringEncrypt: false },
+    },
+    aggressive: {
+      x: {
+        x0_soEncrypt: true,
+        x3_lifecycle: true,
+        x4_antiDynamic: true,
+        x5_vpnProxy: true,
+        x6_dualApp: true,
+        x7_privatePort: true,
+        x8_fart: true,
+        x9_odex: true,
+      },
+      t: { t1_customLinker: true, t2_vmp: true, t3_segment: true, t4_dexStringEncrypt: false },
+    },
+    paranoid: {
+      x: {
+        x0_soEncrypt: true,
+        x3_lifecycle: true,
+        x4_antiDynamic: true,
+        x5_vpnProxy: true,
+        x6_dualApp: true,
+        x7_privatePort: true,
+        x8_fart: true,
+        x9_odex: true,
+      },
+      t: { t1_customLinker: true, t2_vmp: true, t3_segment: true, t4_dexStringEncrypt: true },
+    },
   };
   const p = presets[val];
-  if (p) { xuanjiaModules.value = { ...p.x }; tianyanModules.value = { ...p.t }; }
+  if (p) {
+    xuanjiaModules.value = { ...p.x };
+    tianyanModules.value = { ...p.t };
+  }
 }
 
 const enabledCount = computed(() => {
   const x = Object.values(xuanjiaModules.value).filter(Boolean).length;
-  const t = productLine.value === 'tianyan' ? Object.values(tianyanModules.value).filter(Boolean).length : 0;
+  const t =
+    productLine.value === 'tianyan'
+      ? Object.values(tianyanModules.value).filter(Boolean).length
+      : 0;
   return x + t;
 });
 
@@ -161,10 +272,22 @@ function handleKeystoreUpload({ file }: { file: UploadFileInfo }) {
 const hardening = ref(false);
 
 async function startHardening() {
-  if (!apkFile.value) { message.error('请上传 APK'); return; }
-  if (!ksPassword.value || !ksAlias.value || !ksKeyPassword.value) { message.error('请填写 Keystore 信息'); return; }
-  if (enabledCount.value === 0) { message.warning('请至少选择一个加固模块'); return; }
-  if (!ownershipConfirmed.value) { message.error('请确认 APK 所有权声明'); return; }
+  if (!apkFile.value) {
+    message.error('请上传 APK');
+    return;
+  }
+  if (!ksPassword.value || !ksAlias.value || !ksKeyPassword.value) {
+    message.error('请填写 Keystore 信息');
+    return;
+  }
+  if (enabledCount.value === 0) {
+    message.warning('请至少选择一个加固模块');
+    return;
+  }
+  if (!ownershipConfirmed.value) {
+    message.error('请确认 APK 所有权声明');
+    return;
+  }
 
   hardening.value = true;
   currentStep.value = 4;
@@ -172,10 +295,17 @@ async function startHardening() {
   try {
     const config: HardeningRequestConfig = {
       productLine: productLine.value,
-      preset: preset.value as any,
+      preset: preset.value as HardeningRequestConfig['preset'],
       xuanjia: xuanjiaModules.value,
       ...(productLine.value === 'tianyan' ? { tianyan: tianyanModules.value } : {}),
-      killPolicy: { strongEvidence: killAction.value as any, weakScoreThreshold: weakThreshold.value, delayMinMs: 0, delayMaxMs: 1000 },
+      killPolicy: {
+        strongEvidence: killAction.value as NonNullable<
+          HardeningRequestConfig['killPolicy']
+        >['strongEvidence'],
+        weakScoreThreshold: weakThreshold.value,
+        delayMinMs: 0,
+        delayMaxMs: 1000,
+      },
     };
 
     const res = await hardenApk({
@@ -191,19 +321,21 @@ async function startHardening() {
 
     taskStatus.value = { id: res.taskId } as HardeningTaskStatus;
     startPolling(res.taskId, 'hardening');
-  } catch (e: any) {
-    message.error(`加固失败: ${e?.response?.data?.message || e.message}`);
+  } catch (e: unknown) {
+    message.error(`加固失败: ${errMsg(e)}`);
     hardening.value = false;
     currentStep.value = 3;
   }
 }
 
 // ========== 下载 ==========
-function downloadApk() {
+async function downloadApk() {
   if (!taskStatus.value?.id) return;
-  const baseURL = (import.meta.env.VITE_API_BASE_URL as string) || '/v1';
-  const token = localStorage.getItem('xcj_access_token') || '';
-  window.open(`${baseURL}/hardening/download/${taskStatus.value.id}?token=${encodeURIComponent(token)}`, '_blank');
+  try {
+    await downloadHardenedApk(taskStatus.value.id);
+  } catch (e: unknown) {
+    message.error(`下载失败: ${errMsg(e)}`);
+  }
 }
 
 function resetAll() {
@@ -227,9 +359,20 @@ const progressStep = computed(() => taskStatus.value?.step ?? '');
 
 // 步骤图标映射
 const stepIcons: Record<string, string> = {
-  queued: '⏳', unzip: '📦', dex: '📄', abi: '🔧', manifest: '📋',
-  hardener: '🔍', sdk: '📱', config: '⚙️', asset: '📁', so: '🔒',
-  sign: '🔑', done: '✅', error: '❌',
+  queued: '⏳',
+  init: '🚀',
+  unzip: '📦',
+  dex: '📄',
+  abi: '🔧',
+  manifest: '📋',
+  hardener: '🔍',
+  sdk: '📱',
+  config: '⚙️',
+  asset: '📁',
+  so: '🔒',
+  sign: '🔑',
+  done: '✅',
+  error: '❌',
 };
 </script>
 
@@ -237,7 +380,11 @@ const stepIcons: Record<string, string> = {
   <div style="max-width: 900px; margin: 0 auto; padding: 24px">
     <NCard title="APK 加固">
       <!-- 步骤条 -->
-      <NSteps :current="currentStep === 1 ? 1 : currentStep >= 5 ? 5 : currentStep" size="small" style="margin-bottom: 20px">
+      <NSteps
+        :current="currentStep === 1 ? 1 : currentStep >= 5 ? 5 : currentStep"
+        size="small"
+        style="margin-bottom: 20px"
+      >
         <NStep title="上传" />
         <NStep title="分析" />
         <NStep title="选模块" />
@@ -248,7 +395,13 @@ const stepIcons: Record<string, string> = {
 
       <!-- Step 0: 上传 -->
       <template v-if="currentStep === 0">
-        <NUpload :max="1" accept=".apk" :default-upload="false" @change="handleApkUpload" :show-file-list="true">
+        <NUpload
+          :max="1"
+          accept=".apk"
+          :default-upload="false"
+          :show-file-list="true"
+          @change="handleApkUpload"
+        >
           <NButton type="primary" :loading="analyzing">
             {{ analyzing ? '上传中...' : '选择 APK 文件' }}
           </NButton>
@@ -266,7 +419,12 @@ const stepIcons: Record<string, string> = {
               <NText depth="3" style="font-size: 12px">{{ progressDetail }}</NText>
             </div>
           </NSpace>
-          <NProgress type="line" :percentage="progressPercent" :show-indicator="true" status="info" />
+          <NProgress
+            type="line"
+            :percentage="progressPercent"
+            :show-indicator="true"
+            status="info"
+          />
         </NCard>
 
         <!-- 实时信息面板 -->
@@ -274,20 +432,31 @@ const stepIcons: Record<string, string> = {
           <template #header><NText depth="3" style="font-size: 12px">已获取信息</NText></template>
           <NGrid :cols="2" :x-gap="12" :y-gap="4">
             <NGi v-if="taskStatus.detail.includes('包名')">
-              <NText depth="3" style="font-size: 12px">📦 {{ taskStatus.detail.split(', ').find(s => s.startsWith('包名')) }}</NText>
+              <NText depth="3" style="font-size: 12px">
+                📦 {{ taskStatus.detail.split(', ').find((s) => s.startsWith('包名')) }}
+              </NText>
             </NGi>
             <NGi v-if="taskStatus.detail.includes('DEX')">
-              <NText depth="3" style="font-size: 12px">📄 {{ taskStatus.detail.split(', ').find(s => s.startsWith('DEX')) }}</NText>
+              <NText depth="3" style="font-size: 12px">
+                📄 {{ taskStatus.detail.split(', ').find((s) => s.startsWith('DEX')) }}
+              </NText>
             </NGi>
             <NGi v-if="taskStatus.detail.includes('架构') || taskStatus.detail.includes('ABI')">
-              <NText depth="3" style="font-size: 12px">🔧 {{ taskStatus.detail.split(', ').find(s => s.includes('架构') || s.includes('ABI')) }}</NText>
+              <NText depth="3" style="font-size: 12px">
+                🔧
+                {{
+                  taskStatus.detail.split(', ').find((s) => s.includes('架构') || s.includes('ABI'))
+                }}
+              </NText>
             </NGi>
           </NGrid>
         </NCard>
 
         <NAlert v-if="taskStatus?.status === 'failed'" type="error" style="margin-top: 12px">
           {{ taskStatus.error }}
-          <div style="margin-top: 8px"><NButton size="small" @click="currentStep = 0">重新上传</NButton></div>
+          <div style="margin-top: 8px">
+            <NButton size="small" @click="currentStep = 0">重新上传</NButton>
+          </div>
         </NAlert>
       </template>
 
@@ -295,10 +464,10 @@ const stepIcons: Record<string, string> = {
       <template v-if="currentStep === 2 && analysis">
         <NAlert type="success" style="margin-bottom: 16px">
           <template #header>APK 分析结果</template>
-          包名: {{ analysis.packageName }} | DEX: {{ analysis.dexFiles.length }} 个 |
-          ABI: {{ analysis.nativeAbis.join(', ') || '无' }} |
-          大小: {{ (analysis.apkSize / 1024 / 1024).toFixed(1) }} MB |
-          已加固: {{ analysis.alreadyHardened ? analysis.detectedHardener : '否' }}
+          包名: {{ analysis.packageName }} | DEX: {{ analysis.dexFiles.length }} 个 | ABI:
+          {{ analysis.nativeAbis.join(', ') || '无' }} | 大小:
+          {{ (analysis.apkSize / 1024 / 1024).toFixed(1) }} MB | 已加固:
+          {{ analysis.alreadyHardened ? analysis.detectedHardener : '否' }}
         </NAlert>
 
         <NAlert v-if="analysis.alreadyHardened" type="warning" style="margin-bottom: 16px">
@@ -307,15 +476,32 @@ const stepIcons: Record<string, string> = {
 
         <NSpace align="center" style="margin-bottom: 16px">
           <NText strong>产品线:</NText>
-          <NSelect v-model:value="productLine" :options="[{ label: '玄甲(开源免费)', value: 'xuanjia' }, { label: '天衍(付费高级)', value: 'tianyan' }]" style="width: 200px" />
+          <NSelect
+            v-model:value="productLine"
+            :options="[
+              { label: '玄甲(开源免费)', value: 'xuanjia' },
+              { label: '天衍(付费高级)', value: 'tianyan' },
+            ]"
+            style="width: 200px"
+          />
           <NText strong>强度:</NText>
-          <NSelect v-model:value="preset" :options="presetOptions" style="width: 180px" @update:value="onPresetChange" />
+          <NSelect
+            v-model:value="preset"
+            :options="presetOptions"
+            style="width: 180px"
+            @update:value="onPresetChange"
+          />
         </NSpace>
 
         <NDivider title-placement="left">玄甲 X0-X9</NDivider>
         <NGrid :cols="2" :x-gap="12" :y-gap="8">
           <NGi v-for="(label, key) in xuanjiaLabels" :key="key">
-            <NCheckbox v-model:checked="xuanjiaModules[key]" :disabled="analysis.unavailableFeatures.some(f => f.feature === key || f.feature === 'all')">
+            <NCheckbox
+              v-model:checked="xuanjiaModules[key]"
+              :disabled="
+                analysis.unavailableFeatures.some((f) => f.feature === key || f.feature === 'all')
+              "
+            >
               {{ label }}
             </NCheckbox>
           </NGi>
@@ -332,10 +518,16 @@ const stepIcons: Record<string, string> = {
 
         <NDivider />
         <NSpace justify="space-between" align="center">
-          <NText>已启用 <NTag type="primary" size="small">{{ enabledCount }}</NTag> 个模块</NText>
+          <NText>
+            已启用
+            <NTag type="primary" size="small">{{ enabledCount }}</NTag>
+            个模块
+          </NText>
           <NSpace>
             <NButton @click="currentStep = 0">重新上传</NButton>
-            <NButton type="primary" :disabled="enabledCount === 0" @click="currentStep = 3">下一步</NButton>
+            <NButton type="primary" :disabled="enabledCount === 0" @click="currentStep = 3">
+              下一步
+            </NButton>
           </NSpace>
         </NSpace>
       </template>
@@ -344,12 +536,27 @@ const stepIcons: Record<string, string> = {
       <template v-if="currentStep === 3">
         <NDivider title-placement="left">签名配置</NDivider>
         <NSpace vertical :size="12">
-          <NUpload :max="1" accept=".jks,.keystore" :default-upload="false" @change="handleKeystoreUpload">
+          <NUpload
+            :max="1"
+            accept=".jks,.keystore"
+            :default-upload="false"
+            @change="handleKeystoreUpload"
+          >
             <NButton>选择 Keystore(.jks)</NButton>
           </NUpload>
-          <NInput v-model:value="ksPassword" type="password" placeholder="Keystore 密码" show-password-on="click" />
+          <NInput
+            v-model:value="ksPassword"
+            type="password"
+            placeholder="Keystore 密码"
+            show-password-on="click"
+          />
           <NInput v-model:value="ksAlias" placeholder="Key 别名" />
-          <NInput v-model:value="ksKeyPassword" type="password" placeholder="Key 密码" show-password-on="click" />
+          <NInput
+            v-model:value="ksKeyPassword"
+            type="password"
+            placeholder="Key 密码"
+            show-password-on="click"
+          />
         </NSpace>
 
         <NDivider title-placement="left">所有权声明(ADR 0097)</NDivider>
@@ -365,7 +572,7 @@ const stepIcons: Record<string, string> = {
         <NDivider />
         <NSpace justify="space-between">
           <NButton @click="currentStep = 2">返回</NButton>
-          <NButton type="primary" @click="startHardening" :loading="hardening">开始加固</NButton>
+          <NButton type="primary" :loading="hardening" @click="startHardening">开始加固</NButton>
         </NSpace>
       </template>
 
@@ -380,7 +587,11 @@ const stepIcons: Record<string, string> = {
               <NText depth="3" style="font-size: 12px">{{ progressDetail }}</NText>
             </div>
           </NSpace>
-          <NProgress type="line" :percentage="progressPercent" :status="progressPercent >= 100 ? 'success' : 'info'" />
+          <NProgress
+            type="line"
+            :percentage="progressPercent"
+            :status="progressPercent >= 100 ? 'success' : 'info'"
+          />
         </NCard>
       </template>
 
@@ -391,8 +602,8 @@ const stepIcons: Record<string, string> = {
           已启用 {{ enabledCount }} 个加固模块,APK 已重签。
         </NAlert>
         <NSpace vertical :size="12">
-          <NButton type="primary" size="large" @click="downloadApk" block>下载加固后的 APK</NButton>
-          <NButton @click="resetAll" block>加固另一个 APK</NButton>
+          <NButton type="primary" size="large" block @click="downloadApk">下载加固后的 APK</NButton>
+          <NButton block @click="resetAll">加固另一个 APK</NButton>
         </NSpace>
       </template>
     </NCard>
