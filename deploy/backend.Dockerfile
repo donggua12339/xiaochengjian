@@ -33,6 +33,7 @@ RUN apk add --no-cache openssl wget unzip openjdk17-jre bash
 ENV ANDROID_SDK_ROOT=/opt/android-sdk
 ENV ANDROID_HOME=/opt/android-sdk
 ENV APKSIGNER_PATH=/opt/android-sdk/build-tools/34.0.0/apksigner
+ENV PATH="/opt/android-sdk/build-tools/34.0.0:${PATH}"
 RUN mkdir -p /opt/android-sdk/build-tools && \
     wget -qO /tmp/build-tools.zip https://dl.google.com/android/repository/build-tools_r34-linux.zip && \
     unzip -q /tmp/build-tools.zip -d /tmp/bt && \

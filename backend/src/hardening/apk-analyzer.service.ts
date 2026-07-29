@@ -8,6 +8,12 @@ import { applyPreset } from './hardening-config.dto';
 
 const execFileAsync = promisify(execFile);
 
+/** aapt 全路径 fallback(Docker 容器内 build-tools 路径) */
+const AAPT_PATHS = ['aapt', '/opt/android-sdk/build-tools/34.0.0/aapt'];
+
+/** 进度回调 */
+export type ProgressCallback = (step: string, progress: number, detail?: string) => void;
+
 /**
  * APK 结构分析器
  *
@@ -35,7 +41,7 @@ export class ApkAnalyzerService {
   /**
    * 分析 APK 结构
    */
-  async analyze(apkPath: string): Promise<ApkAnalysisResult> {
+  async analyze(apkPath: string, onProgress?: ProgressCallback): Promise<ApkAnalysisResult> {
     const stat = await fs.stat(apkPath);
     if (stat.size < 1024) {
       throw new BadRequestException('APK_TOO_SMALL');
@@ -47,12 +53,14 @@ export class ApkAnalyzerService {
     }
 
     // 1. 用 unzip -l 列出 APK 内容
+    onProgress?.('unzip', 10, '正在解压 APK 文件列表...');
     const { stdout: zipList } = await execFileAsync('unzip', ['-l', apkPath], {
       timeout: 30_000,
       maxBuffer: 10 * 1024 * 1024,
     });
 
     const entries = this.parseZipEntries(zipList);
+    onProgress?.('unzip', 20, `发现 ${entries.length} 个文件`);
 
     // 2. 提取 DEX 文件列表
     const dexFiles = entries
@@ -69,17 +77,23 @@ export class ApkAnalyzerService {
         cause: 'APK contains no classes.dex',
       });
     }
+    onProgress?.('dex', 30, `DEX 文件: ${dexFiles.join(', ')}`);
 
     // 3. 提取原生 ABI
     const nativeAbis = this.detectAbis(entries);
+    onProgress?.('abi', 40, `原生架构: ${nativeAbis.join(', ') || '无'}`);
 
     // 4. 用 apktool 反编译获取 Manifest 信息
+    onProgress?.('manifest', 50, '正在解析 AndroidManifest.xml...');
     const manifestInfo = await this.extractManifestInfo(apkPath);
+    onProgress?.('manifest', 60, `包名: ${manifestInfo.packageName}`);
 
     // 5. 检测已加固
     const hardenerResult = this.detectHardener(entries);
+    onProgress?.('hardener', 70, hardenerResult.name ? `检测到 ${hardenerResult.name} 加固` : '未检测到已知加固');
 
     // 6. 提取 SDK 版本(从 aapt dump badging)
+    onProgress?.('sdk', 80, '正在提取 SDK 版本...');
     const sdkInfo = await this.extractSdkInfo(apkPath);
 
     // 7. 构建不可用功能列表
@@ -158,6 +172,23 @@ export class ApkAnalyzerService {
     return { name: null };
   }
 
+  /** 尝试多个 aapt 路径执行命令 */
+  private async execAapt(args: string[]): Promise<string> {
+    let lastErr: Error | null = null;
+    for (const aaptPath of AAPT_PATHS) {
+      try {
+        const { stdout } = await execFileAsync(aaptPath, args, {
+          timeout: 30_000,
+          maxBuffer: 5 * 1024 * 1024,
+        });
+        return stdout;
+      } catch (e) {
+        lastErr = e as Error;
+      }
+    }
+    throw lastErr ?? new Error('aapt not found');
+  }
+
   private async extractManifestInfo(apkPath: string): Promise<{
     packageName: string;
     applicationName: string | null;
@@ -167,18 +198,12 @@ export class ApkAnalyzerService {
 
     try {
       // 用 aapt dump badging 获取包名(快速,不需要反编译)
-      const { stdout } = await execFileAsync(
-        'aapt',
-        ['dump', 'badging', apkPath],
-        { timeout: 30_000, maxBuffer: 5 * 1024 * 1024 },
-      );
+      const stdout = await this.execAapt(['dump', 'badging', apkPath]);
 
       const pkgMatch = stdout.match(/package:\s*name='([^']+)'/);
       // 用 aapt dump xmltree 获取 Application 类名
-      const { stdout: xmlOut } = await execFileAsync(
-        'aapt',
+      const xmlOut = await this.execAapt(
         ['dump', 'xmltree', apkPath, 'AndroidManifest.xml'],
-        { timeout: 30_000, maxBuffer: 5 * 1024 * 1024 },
       );
 
       // 找 application 标签的 name 属性
@@ -204,11 +229,7 @@ export class ApkAnalyzerService {
     targetSdk: number;
   }> {
     try {
-      const { stdout } = await execFileAsync(
-        'aapt',
-        ['dump', 'badging', apkPath],
-        { timeout: 30_000, maxBuffer: 5 * 1024 * 1024 },
-      );
+      const stdout = await this.execAapt(['dump', 'badging', apkPath]);
       const minMatch = stdout.match(/sdkVersion:'(\d+)'/);
       const targetMatch = stdout.match(/targetSdkVersion:'(\d+)'/);
       return {

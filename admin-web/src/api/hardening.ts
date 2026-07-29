@@ -30,25 +30,61 @@ export interface HardeningRequestConfig {
   };
 }
 
-/** 加固任务状态 */
+/** 任务状态(后端返回) */
 export interface HardeningTaskStatus {
   id: string;
-  status: 'analyzing' | 'hardening' | 'signing' | 'completed' | 'failed';
+  status: 'queued' | 'analyzing' | 'hardening' | 'signing' | 'completed' | 'failed';
   progress: number;
   message: string;
+  step: string;
+  detail: string;
+  analysis?: ApkAnalysis | null;
+  error?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
-/** 上传 APK 分析(长超时 + 自动 Content-Type) */
+/** 任务列表项(精简) */
+export interface HardeningTaskSummary {
+  id: string;
+  status: string;
+  progress: number;
+  message: string;
+  step: string;
+  detail: string;
+  apkFileName?: string;
+  analysis?: { packageName: string; nativeAbis: string[]; dexFiles: string[] } | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** 上传 APK 开始异步分析(立即返回 taskId) */
 export async function analyzeApk(apkFile: File) {
   const formData = new FormData();
   formData.append('apk', apkFile);
-  const res = await longTimeoutClient.post('/hardening/analyze', formData, {
-    headers: { 'Content-Type': undefined as any },  // 让 axios 自动生成 boundary
-  });
-  return res.data as { taskId: string; analysis: ApkAnalysis; _tmpApkPath: string };
+  const res = await longTimeoutClient.post('/hardening/analyze', formData);
+  return res.data as { taskId: string };
 }
 
-/** 执行加固 */
+/** 轮询任务状态 */
+export async function getHardeningStatus(taskId: string) {
+  const res = await request<HardeningTaskStatus>({
+    method: 'GET',
+    url: `/hardening/status/${taskId}`,
+  });
+  return res;
+}
+
+/** 获取当前用户的所有加固任务 */
+export async function getHardeningTasks() {
+  const res = await request<{ tasks: HardeningTaskSummary[] }>({
+    method: 'GET',
+    url: '/hardening/tasks',
+  });
+  return res;
+}
+
+/** 执行加固(异步,返回 taskId) */
 export async function hardenApk(params: {
   apkFile: File;
   keystoreFile?: File;
@@ -57,7 +93,7 @@ export async function hardenApk(params: {
   keyPassword: string;
   config: HardeningRequestConfig;
   analysis: ApkAnalysis;
-  ownershipConfirmed: boolean; // ADR 0097
+  ownershipConfirmed: boolean;
 }) {
   const formData = new FormData();
   formData.append('apk', params.apkFile);
@@ -71,23 +107,13 @@ export async function hardenApk(params: {
   formData.append('analysisJson', JSON.stringify(params.analysis));
   formData.append('ownershipConfirmed', params.ownershipConfirmed ? 'true' : 'false');
 
-  const res = await longTimeoutClient.post('/hardening/harden', formData, {
-    headers: { 'Content-Type': undefined as any },
-  });
+  const res = await longTimeoutClient.post('/hardening/harden', formData);
   return res.data as { taskId: string; status: string; message: string };
 }
 
-/** 查询加固状态 */
-export function getHardeningStatus(taskId: string) {
-  return request<HardeningTaskStatus>({
-    method: 'GET',
-    url: `/hardening/status/${taskId}`,
-  });
-}
-
-/** 下载加固后的 APK(返回 blob URL) */
+/** 下载加固后的 APK */
 export function downloadHardenedApk(taskId: string): string {
   const baseURL = (import.meta.env.VITE_API_BASE_URL as string) || '/api/v1';
-  const token = localStorage.getItem('access_token') || '';
+  const token = localStorage.getItem('xcj_access_token') || '';
   return `${baseURL}/hardening/download/${taskId}?token=${encodeURIComponent(token)}`;
 }

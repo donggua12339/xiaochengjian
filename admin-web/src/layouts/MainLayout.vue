@@ -18,6 +18,7 @@ const menuOptions = computed<MenuOption[]>(() => [
     key: 'g-harden',
     children: [
       { label: 'APK 加固', key: 'harden-upload' },
+      { label: '加固任务', key: 'harden-tasks' },
       { label: '质量报告', key: 'quality-report' },
       { label: '加固配置', key: 'harden-config' },
     ],

@@ -2,10 +2,12 @@
 /**
  * APK 加固上传页面
  *
- * 流程: 上传 APK → 分析 → 勾选加固模块 → 上传 Keystore → 执行加固 → 下载
+ * 流程: 上传 APK → 异步分析(轮询进度) → 勾选模块 → Keystore → 加固 → 下载
+ * 分析进度实时展示: 步骤名 + 详情(包名/DEX/ABI/Manifest)
+ * 刷新页面后可从"加固任务"tab 恢复
  */
 
-import { ref, computed } from 'vue';
+import { ref, computed, onUnmounted } from 'vue';
 import {
   NCard, NButton, NSpace, NUpload, NProgress, NTag, NText,
   NCheckbox, NGrid, NGi, NDivider, NAlert,
@@ -14,63 +16,90 @@ import {
 } from 'naive-ui';
 import type { UploadFileInfo } from 'naive-ui';
 import { analyzeApk, hardenApk, getHardeningStatus } from '@/api/hardening';
-import type { ApkAnalysis, HardeningRequestConfig } from '@/api/hardening';
+import type { ApkAnalysis, HardeningRequestConfig, HardeningTaskStatus } from '@/api/hardening';
 
 const message = useMessage();
 
 // ========== 步骤控制 ==========
-const currentStep = ref(0); // 0=上传 1=配置 2=加固 3=完成
+const currentStep = ref(0); // 0=上传 1=分析中 2=配置 3=签名 4=加固 5=完成
 
 // ========== Step 0: 上传 ==========
 const apkFile = ref<File | null>(null);
 const analyzing = ref(false);
-const analysis = ref<ApkAnalysis | null>(null);
 
 async function handleApkUpload({ file }: { file: UploadFileInfo }) {
   if (!file.file) return;
   apkFile.value = file.file;
   analyzing.value = true;
-  analysis.value = null;
+  currentStep.value = 1;
 
   try {
-    const res = await analyzeApk(file.file) as any;
-    analysis.value = res.analysis;
-    // 应用推荐配置
-    applyRecommendedConfig(res.analysis.recommendedConfig);
-    currentStep.value = 1;
-    message.success('APK 分析完成');
+    const { taskId } = await analyzeApk(file.file);
+    taskStatus.value = { id: taskId } as HardeningTaskStatus;
+    startPolling(taskId, 'analysis');
   } catch (e: any) {
-    message.error(`分析失败: ${e?.response?.data?.message || e.message}`);
-  } finally {
+    message.error(`上传失败: ${e?.response?.data?.message || e.message}`);
     analyzing.value = false;
+    currentStep.value = 0;
   }
 }
 
-// ========== Step 1: 加固配置 ==========
+// ========== 轮询进度 ==========
+const taskStatus = ref<HardeningTaskStatus | null>(null);
+let pollTimer: ReturnType<typeof setInterval> | null = null;
+
+function startPolling(taskId: string, mode: 'analysis' | 'hardening') {
+  stopPolling();
+  pollTimer = setInterval(async () => {
+    try {
+      const status = await getHardeningStatus(taskId) as any;
+      taskStatus.value = status;
+
+      if (status.status === 'completed') {
+        stopPolling();
+        if (mode === 'analysis') {
+          analysis.value = status.analysis;
+          applyRecommendedConfig(status.analysis?.recommendedConfig);
+          analyzing.value = false;
+          currentStep.value = 2;
+          message.success('APK 分析完成');
+        } else {
+          analyzing.value = false;
+          currentStep.value = 5;
+          message.success('加固完成!');
+        }
+      } else if (status.status === 'failed') {
+        stopPolling();
+        analyzing.value = false;
+        message.error(`${mode === 'analysis' ? '分析' : '加固'}失败: ${status.error || status.message}`);
+        currentStep.value = mode === 'analysis' ? 0 : 3;
+      }
+    } catch {
+      // 网络错误,继续轮询
+    }
+  }, 2000); // 每 2 秒轮询
+}
+
+function stopPolling() {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+}
+
+onUnmounted(() => stopPolling());
+
+// ========== Step 2: 配置 ==========
+const analysis = ref<ApkAnalysis | null>(null);
 const productLine = ref<'xuanjia' | 'tianyan'>('xuanjia');
 const preset = ref<string>('standard');
 
-// 玄甲模块
 const xuanjiaModules = ref<Record<string, boolean>>({
-  x0_soEncrypt: true,
-  x3_lifecycle: true,
-  x4_antiDynamic: true,
-  x5_vpnProxy: true,
-  x6_dualApp: true,
-  x7_privatePort: true,
-  x8_fart: false,
-  x9_odex: false,
+  x0_soEncrypt: true, x3_lifecycle: true, x4_antiDynamic: true,
+  x5_vpnProxy: true, x6_dualApp: true, x7_privatePort: true,
+  x8_fart: false, x9_odex: false,
 });
-
-// 天衍模块
 const tianyanModules = ref<Record<string, boolean>>({
-  t1_customLinker: true,
-  t2_vmp: true,
-  t3_segment: false,
-  t4_dexStringEncrypt: false,
+  t1_customLinker: true, t2_vmp: true, t3_segment: false, t4_dexStringEncrypt: false,
 });
 
-// Kill 策略
 const killAction = ref('kill');
 const weakThreshold = ref(70);
 
@@ -82,31 +111,18 @@ const presetOptions = [
 ];
 
 const xuanjiaLabels: Record<string, string> = {
-  x0_soEncrypt: 'X0 SO 本体加密(RC4+memfd 加载)',
-  x3_lifecycle: 'X3 生命周期劫持检测',
-  x4_antiDynamic: 'X4 反动态五层 + 12 层反 Frida',
-  x5_vpnProxy: 'X5 VPN/代理检测',
-  x6_dualApp: 'X6 双开/分身检测',
-  x7_privatePort: 'X7 私人端口保护',
-  x8_fart: 'X8 FART 脱壳扫描',
-  x9_odex: 'X9 ODEX 修补检测',
+  x0_soEncrypt: 'X0 SO 本体加密(RC4+memfd)', x3_lifecycle: 'X3 生命周期劫持检测',
+  x4_antiDynamic: 'X4 反动态五层 + 12 层反 Frida', x5_vpnProxy: 'X5 VPN/代理检测',
+  x6_dualApp: 'X6 双开/分身检测', x7_privatePort: 'X7 私人端口保护',
+  x8_fart: 'X8 FART 脱壳扫描', x9_odex: 'X9 ODEX 修补检测',
 };
-
 const tianyanLabels: Record<string, string> = {
-  t1_customLinker: 'T1 自实现 Linker(匿名映射)',
-  t2_vmp: 'T2 VMP 保护解密函数',
-  t3_segment: 'T3 字符串分段散列',
-  t4_dexStringEncrypt: 'T4 DEX 字符串加密',
+  t1_customLinker: 'T1 自实现 Linker(匿名映射)', t2_vmp: 'T2 VMP 保护解密函数',
+  t3_segment: 'T3 字符串分段散列', t4_dexStringEncrypt: 'T4 DEX 字符串加密',
 };
 
-const presetDescriptions: Record<string, string> = {
-  basic: 'SO 加密 + 反动态五层 + 生命周期检测。适合对包体积敏感的场景。',
-  standard: '在基础上新增 VPN/双开/端口检测。覆盖常见攻击面。',
-  aggressive: '全模块启用,含 FART/ODEX 扫描 + 字符串分段散列。',
-  paranoid: '所有玄甲+天衍模块全开,含 DEX 字符串加密。最大化攻击成本。',
-};
-
-function applyRecommendedConfig(config: HardeningRequestConfig) {
+function applyRecommendedConfig(config?: HardeningRequestConfig) {
+  if (!config) return;
   productLine.value = config.productLine;
   preset.value = config.preset ?? 'standard';
   if (config.xuanjia) xuanjiaModules.value = { ...xuanjiaModules.value, ...config.xuanjia };
@@ -114,30 +130,14 @@ function applyRecommendedConfig(config: HardeningRequestConfig) {
 }
 
 function onPresetChange(val: string) {
-  // 根据预设批量设置模块开关
   const presets: Record<string, { x: Record<string, boolean>; t: Record<string, boolean> }> = {
-    basic: {
-      x: { x0_soEncrypt: true, x3_lifecycle: true, x4_antiDynamic: true, x5_vpnProxy: false, x6_dualApp: false, x7_privatePort: false, x8_fart: false, x9_odex: false },
-      t: { t1_customLinker: true, t2_vmp: false, t3_segment: false, t4_dexStringEncrypt: false },
-    },
-    standard: {
-      x: { x0_soEncrypt: true, x3_lifecycle: true, x4_antiDynamic: true, x5_vpnProxy: true, x6_dualApp: true, x7_privatePort: true, x8_fart: false, x9_odex: false },
-      t: { t1_customLinker: true, t2_vmp: true, t3_segment: false, t4_dexStringEncrypt: false },
-    },
-    aggressive: {
-      x: { x0_soEncrypt: true, x3_lifecycle: true, x4_antiDynamic: true, x5_vpnProxy: true, x6_dualApp: true, x7_privatePort: true, x8_fart: true, x9_odex: true },
-      t: { t1_customLinker: true, t2_vmp: true, t3_segment: true, t4_dexStringEncrypt: false },
-    },
-    paranoid: {
-      x: { x0_soEncrypt: true, x3_lifecycle: true, x4_antiDynamic: true, x5_vpnProxy: true, x6_dualApp: true, x7_privatePort: true, x8_fart: true, x9_odex: true },
-      t: { t1_customLinker: true, t2_vmp: true, t3_segment: true, t4_dexStringEncrypt: true },
-    },
+    basic: { x: { x0_soEncrypt: true, x3_lifecycle: true, x4_antiDynamic: true, x5_vpnProxy: false, x6_dualApp: false, x7_privatePort: false, x8_fart: false, x9_odex: false }, t: { t1_customLinker: true, t2_vmp: false, t3_segment: false, t4_dexStringEncrypt: false } },
+    standard: { x: { x0_soEncrypt: true, x3_lifecycle: true, x4_antiDynamic: true, x5_vpnProxy: true, x6_dualApp: true, x7_privatePort: true, x8_fart: false, x9_odex: false }, t: { t1_customLinker: true, t2_vmp: true, t3_segment: false, t4_dexStringEncrypt: false } },
+    aggressive: { x: { x0_soEncrypt: true, x3_lifecycle: true, x4_antiDynamic: true, x5_vpnProxy: true, x6_dualApp: true, x7_privatePort: true, x8_fart: true, x9_odex: true }, t: { t1_customLinker: true, t2_vmp: true, t3_segment: true, t4_dexStringEncrypt: false } },
+    paranoid: { x: { x0_soEncrypt: true, x3_lifecycle: true, x4_antiDynamic: true, x5_vpnProxy: true, x6_dualApp: true, x7_privatePort: true, x8_fart: true, x9_odex: true }, t: { t1_customLinker: true, t2_vmp: true, t3_segment: true, t4_dexStringEncrypt: true } },
   };
   const p = presets[val];
-  if (p) {
-    xuanjiaModules.value = { ...p.x };
-    tianyanModules.value = { ...p.t };
-  }
+  if (p) { xuanjiaModules.value = { ...p.x }; tianyanModules.value = { ...p.t }; }
 }
 
 const enabledCount = computed(() => {
@@ -146,44 +146,28 @@ const enabledCount = computed(() => {
   return x + t;
 });
 
-// ========== Keystore ==========
+// ========== Keystore + 合规 ==========
 const keystoreFile = ref<File | null>(null);
 const ksPassword = ref('');
 const ksAlias = ref('');
 const ksKeyPassword = ref('');
-
-// ========== 合规声明(ADR 0097) ==========
 const ownershipConfirmed = ref(false);
 
 function handleKeystoreUpload({ file }: { file: UploadFileInfo }) {
   if (file.file) keystoreFile.value = file.file;
 }
 
-// ========== Step 2: 加固执行 ==========
+// ========== 加固执行 ==========
 const hardening = ref(false);
-const hardenProgress = ref(0);
-const hardenMessage = ref('');
-const taskId = ref('');
 
 async function startHardening() {
   if (!apkFile.value) { message.error('请上传 APK'); return; }
-  if (!ksPassword.value || !ksAlias.value || !ksKeyPassword.value) {
-    message.error('请填写 Keystore 信息');
-    return;
-  }
-  if (enabledCount.value === 0) {
-    message.warning('请至少选择一个加固模块');
-    return;
-  }
-  if (!ownershipConfirmed.value) {
-    message.error('请确认 APK 所有权声明');
-    return;
-  }
+  if (!ksPassword.value || !ksAlias.value || !ksKeyPassword.value) { message.error('请填写 Keystore 信息'); return; }
+  if (enabledCount.value === 0) { message.warning('请至少选择一个加固模块'); return; }
+  if (!ownershipConfirmed.value) { message.error('请确认 APK 所有权声明'); return; }
 
   hardening.value = true;
-  currentStep.value = 2;
-  hardenProgress.value = 0;
-  hardenMessage.value = '正在上传并加固...';
+  currentStep.value = 4;
 
   try {
     const config: HardeningRequestConfig = {
@@ -191,12 +175,7 @@ async function startHardening() {
       preset: preset.value as any,
       xuanjia: xuanjiaModules.value,
       ...(productLine.value === 'tianyan' ? { tianyan: tianyanModules.value } : {}),
-      killPolicy: {
-        strongEvidence: killAction.value as any,
-        weakScoreThreshold: weakThreshold.value,
-        delayMinMs: 0,
-        delayMaxMs: 1000,
-      },
+      killPolicy: { strongEvidence: killAction.value as any, weakScoreThreshold: weakThreshold.value, delayMinMs: 0, delayMaxMs: 1000 },
     };
 
     const res = await hardenApk({
@@ -208,246 +187,211 @@ async function startHardening() {
       config,
       analysis: analysis.value!,
       ownershipConfirmed: ownershipConfirmed.value,
-    }) as any;
+    });
 
-    taskId.value = res.taskId;
-
-    // 轮询状态
-    await pollStatus(res.taskId);
+    taskStatus.value = { id: res.taskId } as HardeningTaskStatus;
+    startPolling(res.taskId, 'hardening');
   } catch (e: any) {
     message.error(`加固失败: ${e?.response?.data?.message || e.message}`);
     hardening.value = false;
-    currentStep.value = 1;
+    currentStep.value = 3;
   }
 }
 
-async function pollStatus(tid: string) {
-  const maxAttempts = 60;
-  for (let i = 0; i < maxAttempts; i++) {
-    await new Promise((r) => setTimeout(r, 3000));
-    try {
-      const status = await getHardeningStatus(tid) as any;
-      hardenProgress.value = status.progress;
-      hardenMessage.value = status.message;
-
-      if (status.status === 'completed') {
-        hardening.value = false;
-        currentStep.value = 3;
-        message.success('加固完成!');
-        return;
-      }
-      if (status.status === 'failed') {
-        throw new Error(status.message);
-      }
-    } catch (e: any) {
-      if (e.message?.includes('加固失败')) throw e;
-      // 网络错误,继续轮询
-    }
-  }
-  throw new Error('加固超时');
-}
-
-// ========== Step 3: 下载 ==========
+// ========== 下载 ==========
 function downloadApk() {
-  if (!taskId.value) return;
-  const baseURL = (import.meta.env.VITE_API_BASE_URL as string) || '/api/v1';
-  const token = localStorage.getItem('access_token') || '';
-  const url = `${baseURL}/hardening/download/${taskId.value}?token=${encodeURIComponent(token)}`;
-  window.open(url, '_blank');
+  if (!taskStatus.value?.id) return;
+  const baseURL = (import.meta.env.VITE_API_BASE_URL as string) || '/v1';
+  const token = localStorage.getItem('xcj_access_token') || '';
+  window.open(`${baseURL}/hardening/download/${taskStatus.value.id}?token=${encodeURIComponent(token)}`, '_blank');
 }
 
 function resetAll() {
+  stopPolling();
   currentStep.value = 0;
   apkFile.value = null;
   analysis.value = null;
+  taskStatus.value = null;
   keystoreFile.value = null;
   ksPassword.value = '';
   ksAlias.value = '';
   ksKeyPassword.value = '';
-  hardenProgress.value = 0;
-  taskId.value = '';
   ownershipConfirmed.value = false;
 }
+
+// 进度条百分比
+const progressPercent = computed(() => taskStatus.value?.progress ?? 0);
+const progressMessage = computed(() => taskStatus.value?.message ?? '');
+const progressDetail = computed(() => taskStatus.value?.detail ?? '');
+const progressStep = computed(() => taskStatus.value?.step ?? '');
+
+// 步骤图标映射
+const stepIcons: Record<string, string> = {
+  queued: '⏳', unzip: '📦', dex: '📄', abi: '🔧', manifest: '📋',
+  hardener: '🔍', sdk: '📱', config: '⚙️', asset: '📁', so: '🔒',
+  sign: '🔑', done: '✅', error: '❌',
+};
 </script>
 
 <template>
   <div style="max-width: 900px; margin: 0 auto; padding: 24px">
     <NCard title="APK 加固">
       <!-- 步骤条 -->
-      <NSteps :current="currentStep + 1" style="margin-bottom: 24px">
-        <NStep title="上传 APK" description="分析结构" />
-        <NStep title="选择模块" description="勾选加固功能" />
-        <NStep title="执行加固" description="注入 + 重签" />
-        <NStep title="下载" description="获取加固 APK" />
+      <NSteps :current="currentStep === 1 ? 1 : currentStep >= 5 ? 5 : currentStep" size="small" style="margin-bottom: 20px">
+        <NStep title="上传" />
+        <NStep title="分析" />
+        <NStep title="选模块" />
+        <NStep title="签名" />
+        <NStep title="加固" />
+        <NStep title="下载" />
       </NSteps>
 
-      <!-- Step 0: 上传 APK -->
+      <!-- Step 0: 上传 -->
       <template v-if="currentStep === 0">
-        <NUpload
-          :max="1"
-          accept=".apk"
-          :default-upload="false"
-          @change="handleApkUpload"
-          :show-file-list="true"
-        >
+        <NUpload :max="1" accept=".apk" :default-upload="false" @change="handleApkUpload" :show-file-list="true">
           <NButton type="primary" :loading="analyzing">
-            {{ analyzing ? '分析中...' : '选择 APK 文件' }}
+            {{ analyzing ? '上传中...' : '选择 APK 文件' }}
           </NButton>
         </NUpload>
+      </template>
 
-        <NAlert v-if="analyzing" type="info" style="margin-top: 16px">
-          正在分析 APK 结构(DEX 文件、原生架构、Manifest 信息)...
+      <!-- Step 1: 分析中(实时进度) -->
+      <template v-if="currentStep === 1">
+        <NCard size="small">
+          <NSpace align="center" style="margin-bottom: 12px">
+            <span style="font-size: 24px">{{ stepIcons[progressStep] || '⏳' }}</span>
+            <div>
+              <NText strong>{{ progressMessage }}</NText>
+              <br />
+              <NText depth="3" style="font-size: 12px">{{ progressDetail }}</NText>
+            </div>
+          </NSpace>
+          <NProgress type="line" :percentage="progressPercent" :show-indicator="true" status="info" />
+        </NCard>
+
+        <!-- 实时信息面板 -->
+        <NCard v-if="taskStatus?.detail" size="small" style="margin-top: 12px">
+          <template #header><NText depth="3" style="font-size: 12px">已获取信息</NText></template>
+          <NGrid :cols="2" :x-gap="12" :y-gap="4">
+            <NGi v-if="taskStatus.detail.includes('包名')">
+              <NText depth="3" style="font-size: 12px">📦 {{ taskStatus.detail.split(', ').find(s => s.startsWith('包名')) }}</NText>
+            </NGi>
+            <NGi v-if="taskStatus.detail.includes('DEX')">
+              <NText depth="3" style="font-size: 12px">📄 {{ taskStatus.detail.split(', ').find(s => s.startsWith('DEX')) }}</NText>
+            </NGi>
+            <NGi v-if="taskStatus.detail.includes('架构') || taskStatus.detail.includes('ABI')">
+              <NText depth="3" style="font-size: 12px">🔧 {{ taskStatus.detail.split(', ').find(s => s.includes('架构') || s.includes('ABI')) }}</NText>
+            </NGi>
+          </NGrid>
+        </NCard>
+
+        <NAlert v-if="taskStatus?.status === 'failed'" type="error" style="margin-top: 12px">
+          {{ taskStatus.error }}
+          <div style="margin-top: 8px"><NButton size="small" @click="currentStep = 0">重新上传</NButton></div>
         </NAlert>
       </template>
 
-      <!-- Step 1: 配置模块 -->
-      <template v-if="currentStep === 1 && analysis">
-        <!-- APK 信息摘要 -->
+      <!-- Step 2: 配置模块 -->
+      <template v-if="currentStep === 2 && analysis">
         <NAlert type="success" style="margin-bottom: 16px">
           <template #header>APK 分析结果</template>
-          包名: {{ analysis.packageName }} |
-          DEX: {{ analysis.dexFiles.length }} 个 |
+          包名: {{ analysis.packageName }} | DEX: {{ analysis.dexFiles.length }} 个 |
           ABI: {{ analysis.nativeAbis.join(', ') || '无' }} |
           大小: {{ (analysis.apkSize / 1024 / 1024).toFixed(1) }} MB |
           已加固: {{ analysis.alreadyHardened ? analysis.detectedHardener : '否' }}
         </NAlert>
 
-        <!-- 已加固警告 -->
         <NAlert v-if="analysis.alreadyHardened" type="warning" style="margin-bottom: 16px">
-          该 APK 已被 {{ analysis.detectedHardener }} 加固,建议先去除加固再使用玄甲/天衍。
+          该 APK 已被 {{ analysis.detectedHardener }} 加固,建议先去除加固再使用。
         </NAlert>
 
-        <!-- 不可用功能 -->
-        <template v-if="analysis.unavailableFeatures.length > 0">
-          <NAlert type="warning" style="margin-bottom: 16px">
-            <template #header>以下功能不可用</template>
-          </NAlert>
-        </template>
-
-        <!-- 产品线选择 -->
         <NSpace align="center" style="margin-bottom: 16px">
           <NText strong>产品线:</NText>
-          <NSelect
-            v-model:value="productLine"
-            :options="[
-              { label: '玄甲(开源免费)', value: 'xuanjia' },
-              { label: '天衍(付费高级)', value: 'tianyan' },
-            ]"
-            style="width: 200px"
-          />
-          <NText strong>强度预设:</NText>
-          <NSelect
-            v-model:value="preset"
-            :options="presetOptions"
-            style="width: 180px"
-            @update:value="onPresetChange"
-          />
+          <NSelect v-model:value="productLine" :options="[{ label: '玄甲(开源免费)', value: 'xuanjia' }, { label: '天衍(付费高级)', value: 'tianyan' }]" style="width: 200px" />
+          <NText strong>强度:</NText>
+          <NSelect v-model:value="preset" :options="presetOptions" style="width: 180px" @update:value="onPresetChange" />
         </NSpace>
 
-        <NAlert :type="preset === 'paranoid' ? 'error' : preset === 'aggressive' ? 'warning' : 'info'" style="margin-bottom: 16px">
-          {{ presetDescriptions[preset] }}
-        </NAlert>
-
-        <!-- 玄甲模块复选框 -->
-        <NDivider title-placement="left">玄甲 X0-X9 模块</NDivider>
+        <NDivider title-placement="left">玄甲 X0-X9</NDivider>
         <NGrid :cols="2" :x-gap="12" :y-gap="8">
           <NGi v-for="(label, key) in xuanjiaLabels" :key="key">
-            <NCheckbox
-              v-model:checked="xuanjiaModules[key]"
-              :disabled="analysis.unavailableFeatures.some(f => f.feature === key || f.feature === 'all')"
-            >
+            <NCheckbox v-model:checked="xuanjiaModules[key]" :disabled="analysis.unavailableFeatures.some(f => f.feature === key || f.feature === 'all')">
               {{ label }}
             </NCheckbox>
           </NGi>
         </NGrid>
 
-        <!-- 天衍模块复选框 -->
         <template v-if="productLine === 'tianyan'">
-          <NDivider title-placement="left">天衍 T1-T6 模块</NDivider>
+          <NDivider title-placement="left">天衍 T1-T6</NDivider>
           <NGrid :cols="2" :x-gap="12" :y-gap="8">
             <NGi v-for="(label, key) in tianyanLabels" :key="key">
-              <NCheckbox v-model:checked="tianyanModules[key]">
-                {{ label }}
-              </NCheckbox>
+              <NCheckbox v-model:checked="tianyanModules[key]">{{ label }}</NCheckbox>
             </NGi>
           </NGrid>
         </template>
 
         <NDivider />
-
-        <!-- 启用统计 -->
         <NSpace justify="space-between" align="center">
-          <NText>已启用 <NTag type="primary" size="small">{{ enabledCount }}</NTag> 个加固模块</NText>
+          <NText>已启用 <NTag type="primary" size="small">{{ enabledCount }}</NTag> 个模块</NText>
           <NSpace>
             <NButton @click="currentStep = 0">重新上传</NButton>
-            <NButton type="primary" :disabled="enabledCount === 0" @click="currentStep = 1.5">
-              下一步: 签名配置
-            </NButton>
+            <NButton type="primary" :disabled="enabledCount === 0" @click="currentStep = 3">下一步</NButton>
           </NSpace>
         </NSpace>
       </template>
 
-      <!-- Step 1.5: Keystore 配置(过渡) -->
-      <template v-if="currentStep === 1.5">
-        <NDivider title-placement="left">签名配置(自备 Keystore)</NDivider>
-        <NAlert type="info" style="margin-bottom: 16px">
-          加固后需使用您自备的 Keystore 重签 APK(合规要求:锁 4 签名锁定)。
-        </NAlert>
-
+      <!-- Step 3: Keystore + 声明 -->
+      <template v-if="currentStep === 3">
+        <NDivider title-placement="left">签名配置</NDivider>
         <NSpace vertical :size="12">
           <NUpload :max="1" accept=".jks,.keystore" :default-upload="false" @change="handleKeystoreUpload">
-            <NButton>选择 Keystore 文件(.jks)</NButton>
+            <NButton>选择 Keystore(.jks)</NButton>
           </NUpload>
           <NInput v-model:value="ksPassword" type="password" placeholder="Keystore 密码" show-password-on="click" />
           <NInput v-model:value="ksAlias" placeholder="Key 别名" />
           <NInput v-model:value="ksKeyPassword" type="password" placeholder="Key 密码" show-password-on="click" />
         </NSpace>
 
-        <!-- 合规声明(ADR 0097) -->
-        <NDivider title-placement="left">所有权声明</NDivider>
+        <NDivider title-placement="left">所有权声明(ADR 0097)</NDivider>
         <NAlert type="warning" style="margin-bottom: 12px">
           <template #header>法律声明</template>
-          加固功能将对您上传的 APK 进行 DEX 修改、SO 注入、Manifest 变更等操作。
-          您必须确认上传的 APK 为您自有或已获得合法著作权授权。
-          <strong>若您擅自上传他人 APK 进行加固，由此产生的一切法律责任由您个人承担，平台不承担任何连带责任。</strong>
+          加固功能将修改您上传的 APK(DEX/SO/Manifest)。您必须确认 APK 为您自有或已获合法授权。
+          <strong>擅自上传他人 APK 由您个人承担法律责任。</strong>
         </NAlert>
         <NCheckbox v-model:checked="ownershipConfirmed">
-          我确认此 APK 为我自有或已获合法授权，并理解上述法律声明(ADR 0097)
+          我确认此 APK 为我自有或已获合法授权(ADR 0097)
         </NCheckbox>
 
         <NDivider />
         <NSpace justify="space-between">
-          <NButton @click="currentStep = 1">返回模块配置</NButton>
-          <NButton type="primary" @click="startHardening" :loading="hardening">
-            开始加固
-          </NButton>
+          <NButton @click="currentStep = 2">返回</NButton>
+          <NButton type="primary" @click="startHardening" :loading="hardening">开始加固</NButton>
         </NSpace>
       </template>
 
-      <!-- Step 2: 加固执行 -->
-      <template v-if="currentStep === 2">
+      <!-- Step 4: 加固中(实时进度) -->
+      <template v-if="currentStep === 4">
         <NCard size="small">
-          <NText strong>{{ hardenMessage }}</NText>
-          <NProgress
-            type="line"
-            :percentage="hardenProgress"
-            :status="hardenProgress >= 100 ? 'success' : undefined"
-            style="margin-top: 12px"
-          />
+          <NSpace align="center" style="margin-bottom: 12px">
+            <span style="font-size: 24px">{{ stepIcons[progressStep] || '⚙️' }}</span>
+            <div>
+              <NText strong>{{ progressMessage }}</NText>
+              <br />
+              <NText depth="3" style="font-size: 12px">{{ progressDetail }}</NText>
+            </div>
+          </NSpace>
+          <NProgress type="line" :percentage="progressPercent" :status="progressPercent >= 100 ? 'success' : 'info'" />
         </NCard>
       </template>
 
-      <!-- Step 3: 下载 -->
-      <template v-if="currentStep === 3">
+      <!-- Step 5: 完成 -->
+      <template v-if="currentStep === 5">
         <NAlert type="success" style="margin-bottom: 16px">
           <template #header>加固完成!</template>
-          已启用 {{ enabledCount }} 个加固模块,APK 已使用您的 Keystore 重签。
+          已启用 {{ enabledCount }} 个加固模块,APK 已重签。
         </NAlert>
-
         <NSpace vertical :size="12">
-          <NButton type="primary" size="large" @click="downloadApk" block>
-            下载加固后的 APK
-          </NButton>
+          <NButton type="primary" size="large" @click="downloadApk" block>下载加固后的 APK</NButton>
           <NButton @click="resetAll" block>加固另一个 APK</NButton>
         </NSpace>
       </template>
