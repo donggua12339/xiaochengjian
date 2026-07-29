@@ -7,7 +7,7 @@
  * 刷新页面后可从"加固任务"tab 恢复
  */
 
-import { ref, computed, onUnmounted } from 'vue';
+import { ref, computed, onUnmounted, onActivated, onDeactivated } from 'vue';
 import {
   NCard,
   NButton,
@@ -54,13 +54,15 @@ async function handleApkUpload({ file }: { file: UploadFileInfo }) {
   apkFile.value = file.file;
   analyzing.value = true;
   currentStep.value = 1;
+  globalError.value = '';
 
   try {
     const { taskId } = await analyzeApk(file.file);
     taskStatus.value = { id: taskId } as HardeningTaskStatus;
     startPolling(taskId, 'analysis');
   } catch (e: unknown) {
-    message.error(`上传失败: ${errMsg(e)}`);
+    globalError.value = `上传失败: ${errMsg(e)}`;
+    message.error(globalError.value);
     analyzing.value = false;
     currentStep.value = 0;
   }
@@ -113,7 +115,8 @@ function startPolling(taskId: string, mode: 'analysis' | 'hardening') {
       if (pollErrorCount >= MAX_POLL_ERRORS) {
         stopPolling();
         analyzing.value = false;
-        message.error(`轮询失败(${pollErrorCount} 次): ${errMsg(e)}`);
+        globalError.value = `轮询失败(${pollErrorCount} 次): ${errMsg(e)}`;
+        message.error(globalError.value);
         currentStep.value = mode === 'analysis' ? 0 : 3;
       }
     }
@@ -128,6 +131,18 @@ function stopPolling() {
 }
 
 onUnmounted(() => stopPolling());
+
+// KeepAlive 钩子: 离开页面停止轮询,回来时重置卡住状态
+onDeactivated(() => stopPolling());
+onActivated(() => {
+  // 如果当前在分析/加固步骤但轮询已停(从缓存恢复),重置到上传步骤
+  if ((currentStep.value === 1 || currentStep.value === 4) && !pollTimer) {
+    resetAll();
+  }
+});
+
+// 全局错误消息(显示在步骤卡片下方)
+const globalError = ref('');
 
 // ========== Step 2: 配置 ==========
 const analysis = ref<ApkAnalysis | null>(null);
@@ -455,7 +470,15 @@ const stepIcons: Record<string, string> = {
         <NAlert v-if="taskStatus?.status === 'failed'" type="error" style="margin-top: 12px">
           {{ taskStatus.error }}
           <div style="margin-top: 8px">
-            <NButton size="small" @click="currentStep = 0">重新上传</NButton>
+            <NButton size="small" @click="resetAll">重新上传</NButton>
+          </div>
+        </NAlert>
+
+        <!-- 全局错误(轮询失败/网络异常等) -->
+        <NAlert v-if="globalError" type="error" style="margin-top: 12px">
+          {{ globalError }}
+          <div style="margin-top: 8px">
+            <NButton size="small" @click="resetAll">重新开始</NButton>
           </div>
         </NAlert>
       </template>
@@ -593,6 +616,13 @@ const stepIcons: Record<string, string> = {
             :status="progressPercent >= 100 ? 'success' : 'info'"
           />
         </NCard>
+
+        <NAlert v-if="globalError" type="error" style="margin-top: 12px">
+          {{ globalError }}
+          <div style="margin-top: 8px">
+            <NButton size="small" @click="resetAll">重新开始</NButton>
+          </div>
+        </NAlert>
       </template>
 
       <!-- Step 5: 完成 -->
