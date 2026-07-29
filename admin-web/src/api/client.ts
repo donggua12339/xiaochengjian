@@ -90,6 +90,7 @@ longTimeoutClient.interceptors.response.use(
       } else {
         clearTokens();
         window.location.href = '/login';
+        return Promise.reject(error);
       }
     }
     return Promise.reject(error);
@@ -131,6 +132,7 @@ client.interceptors.response.use(
       } else {
         clearTokens();
         window.location.href = '/login';
+        return Promise.reject(error);
       }
     }
     return Promise.reject(error);

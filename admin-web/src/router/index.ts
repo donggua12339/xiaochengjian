@@ -95,8 +95,28 @@ const router = createRouter({
   routes,
 });
 
+/** 解码 JWT payload 检查是否过期(不验签,仅前端预检) */
+function isTokenExpired(token: string | null): boolean {
+  if (!token) return true;
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    if (payload.exp && payload.exp * 1000 < Date.now()) return true;
+  } catch {
+    return true;
+  }
+  return false;
+}
+
 router.beforeEach((to) => {
-  const loggedIn = !!getAccessToken();
+  const token = getAccessToken();
+  const loggedIn = !!token && !isTokenExpired(token);
+
+  // token 过期: 清除并跳转登录
+  if (token && isTokenExpired(token)) {
+    localStorage.removeItem('xcj_access_token');
+    localStorage.removeItem('xcj_refresh_token');
+  }
+
   if (!to.meta.public && !loggedIn) {
     return { name: 'login', query: { redirect: to.fullPath } };
   }
