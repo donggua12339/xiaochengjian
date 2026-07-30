@@ -1,4 +1,5 @@
 import { request, longTimeoutClient } from './client';
+import type { AxiosProgressEvent } from 'axios';
 
 /** APK 分析结果 */
 export interface ApkAnalysis {
@@ -58,17 +59,44 @@ export interface HardeningTaskSummary {
   updatedAt: string;
 }
 
-/** 上传 APK 开始异步分析(立即返回 taskId) */
-export async function analyzeApk(apkFile: File) {
+/** 上传结果 */
+export interface UploadResult {
+  fileId: string;
+  fileName: string;
+  fileSize: number;
+}
+
+/**
+ * Step 0: 上传 APK 文件(带上传进度回调)
+ * 文件只上传一次,返回 fileId 供后续 analyze/harden 引用。
+ */
+export async function uploadApk(
+  apkFile: File,
+  onProgress?: (percent: number) => void,
+): Promise<UploadResult> {
   const formData = new FormData();
   formData.append('apk', apkFile);
-  // longTimeoutClient 拦截器已解包 response.data,此处 res 即为 data
-  const res = await longTimeoutClient.post('/hardening/analyze', formData);
+
+  const res = await longTimeoutClient.post('/hardening/upload', formData, {
+    onUploadProgress: (event: AxiosProgressEvent) => {
+      if (onProgress && event.total) {
+        onProgress(Math.round((event.loaded / event.total) * 100));
+      }
+    },
+  });
+  return res as unknown as UploadResult;
+}
+
+/**
+ * Step 1: 传 fileId 启动异步分析
+ */
+export async function analyzeApk(fileId: string): Promise<{ taskId: string }> {
+  const res = await longTimeoutClient.post('/hardening/analyze', { fileId });
   return res as unknown as { taskId: string };
 }
 
 /** 轮询任务状态 */
-export async function getHardeningStatus(taskId: string) {
+export async function getHardeningStatus(taskId: string): Promise<HardeningTaskStatus> {
   const res = await request<HardeningTaskStatus>({
     method: 'GET',
     url: `/hardening/status/${taskId}`,
@@ -77,7 +105,7 @@ export async function getHardeningStatus(taskId: string) {
 }
 
 /** 获取当前用户的所有加固任务 */
-export async function getHardeningTasks() {
+export async function getHardeningTasks(): Promise<{ tasks: HardeningTaskSummary[] }> {
   const res = await request<{ tasks: HardeningTaskSummary[] }>({
     method: 'GET',
     url: '/hardening/tasks',
@@ -85,22 +113,24 @@ export async function getHardeningTasks() {
   return res;
 }
 
-/** 执行加固(异步,返回 taskId) */
+/**
+ * Step 3: 传 fileId + keystore 执行加固
+ * APK 不再重新上传,通过 fileId 引用。
+ * Keystore 通过 multipart 内存传输(不落盘)。
+ */
 export async function hardenApk(params: {
-  apkFile: File;
-  keystoreFile?: File;
+  fileId: string;
+  keystoreFile: File;
   keystorePassword: string;
   keyAlias: string;
   keyPassword: string;
   config: HardeningRequestConfig;
   analysis: ApkAnalysis;
   ownershipConfirmed: boolean;
-}) {
+}): Promise<{ taskId: string; status: string; message: string }> {
   const formData = new FormData();
-  formData.append('apk', params.apkFile);
-  if (params.keystoreFile) {
-    formData.append('keystore', params.keystoreFile);
-  }
+  formData.append('fileId', params.fileId);
+  formData.append('keystore', params.keystoreFile);
   formData.append('keystorePassword', params.keystorePassword);
   formData.append('keyAlias', params.keyAlias);
   formData.append('keyPassword', params.keyPassword);
@@ -108,7 +138,6 @@ export async function hardenApk(params: {
   formData.append('analysisJson', JSON.stringify(params.analysis));
   formData.append('ownershipConfirmed', params.ownershipConfirmed ? 'true' : 'false');
 
-  // longTimeoutClient 拦截器已解包 response.data,此处 res 即为 data
   const res = await longTimeoutClient.post('/hardening/harden', formData);
   return res as unknown as { taskId: string; status: string; message: string };
 }
@@ -118,7 +147,6 @@ export async function downloadHardenedApk(taskId: string): Promise<void> {
   const res = await longTimeoutClient.get(`/hardening/download/${taskId}`, {
     responseType: 'blob',
   });
-  // res 已被拦截器解包为 blob
   const blob = res instanceof Blob ? res : new Blob([res as unknown as BlobPart]);
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');

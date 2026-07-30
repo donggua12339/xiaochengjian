@@ -28,7 +28,7 @@ import {
   useMessage,
 } from 'naive-ui';
 import type { UploadFileInfo } from 'naive-ui';
-import { analyzeApk, hardenApk, getHardeningStatus, downloadHardenedApk } from '@/api/hardening';
+import { uploadApk, analyzeApk, hardenApk, getHardeningStatus, downloadHardenedApk } from '@/api/hardening';
 import type { ApkAnalysis, HardeningRequestConfig, HardeningTaskStatus } from '@/api/hardening';
 
 const message = useMessage();
@@ -45,19 +45,33 @@ function errMsg(e: unknown): string {
 // ========== 步骤控制 ==========
 const currentStep = ref(0); // 0=上传 1=分析中 2=配置 3=签名 4=加固 5=完成
 
-// ========== Step 0: 上传 ==========
+// ========== Step 0: 上传 + 分析 ==========
 const apkFile = ref<File | null>(null);
 const analyzing = ref(false);
+const uploadProgress = ref(0);
+const uploadPhase = ref<'idle' | 'uploading' | 'analyzing'>('idle');
+const fileId = ref<string | null>(null);
 
 async function handleApkUpload({ file }: { file: UploadFileInfo }) {
   if (!file.file) return;
   apkFile.value = file.file;
   analyzing.value = true;
+  uploadProgress.value = 0;
+  uploadPhase.value = 'uploading';
   currentStep.value = 1;
   globalError.value = '';
 
   try {
-    const { taskId } = await analyzeApk(file.file);
+    // Phase 1: 上传文件(带进度条)
+    const uploadResult = await uploadApk(file.file, (percent) => {
+      uploadProgress.value = percent;
+    });
+    fileId.value = uploadResult.fileId;
+    uploadProgress.value = 100;
+
+    // Phase 2: 启动分析
+    uploadPhase.value = 'analyzing';
+    const { taskId } = await analyzeApk(uploadResult.fileId);
     taskStatus.value = {
       id: taskId,
       status: 'analyzing',
@@ -73,6 +87,7 @@ async function handleApkUpload({ file }: { file: UploadFileInfo }) {
     globalError.value = `上传失败: ${errMsg(e)}`;
     message.error(globalError.value);
     analyzing.value = false;
+    uploadPhase.value = 'idle';
     currentStep.value = 0;
   }
 }
@@ -296,8 +311,12 @@ function handleKeystoreUpload({ file }: { file: UploadFileInfo }) {
 const hardening = ref(false);
 
 async function startHardening() {
-  if (!apkFile.value) {
-    message.error('请上传 APK');
+  if (!fileId.value) {
+    message.error('请先上传 APK');
+    return;
+  }
+  if (!keystoreFile.value) {
+    message.error('请选择 Keystore 文件');
     return;
   }
   if (!ksPassword.value || !ksAlias.value || !ksKeyPassword.value) {
@@ -334,8 +353,8 @@ async function startHardening() {
     };
 
     const res = await hardenApk({
-      apkFile: apkFile.value,
-      keystoreFile: keystoreFile.value ?? undefined,
+      fileId: fileId.value,
+      keystoreFile: keystoreFile.value,
       keystorePassword: ksPassword.value,
       keyAlias: ksAlias.value,
       keyPassword: ksKeyPassword.value,
@@ -383,6 +402,10 @@ function resetAll() {
   ksAlias.value = '';
   ksKeyPassword.value = '';
   ownershipConfirmed.value = false;
+  uploadProgress.value = 0;
+  uploadPhase.value = 'idle';
+  fileId.value = null;
+  globalError.value = '';
 }
 
 // 进度条百分比
@@ -442,9 +465,25 @@ const stepIcons: Record<string, string> = {
         </NUpload>
       </template>
 
-      <!-- Step 1: 分析中(实时进度) -->
+      <!-- Step 1: 上传+分析(实时进度) -->
       <template v-if="currentStep === 1">
-        <NCard size="small">
+        <!-- 上传进度 -->
+        <NCard v-if="uploadPhase === 'uploading'" size="small">
+          <NSpace align="center" style="margin-bottom: 12px">
+            <span style="font-size: 24px">📤</span>
+            <div>
+              <NText strong>正在上传 APK...</NText>
+              <br />
+              <NText depth="3" style="font-size: 12px">
+                {{ apkFile?.name }} ({{ ((apkFile?.size ?? 0) / 1024 / 1024).toFixed(1) }} MB)
+              </NText>
+            </div>
+          </NSpace>
+          <NProgress type="line" :percentage="uploadProgress" :show-indicator="true" status="info" />
+        </NCard>
+
+        <!-- 分析进度 -->
+        <NCard v-if="uploadPhase === 'analyzing'" size="small">
           <NSpace align="center" style="margin-bottom: 12px">
             <span style="font-size: 24px">{{ stepIcons[progressStep] || '⏳' }}</span>
             <div>
