@@ -3,15 +3,18 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { HardeningController } from './hardening.controller';
 import { HardeningService } from './hardening.service';
 import { FileStorageService } from './file-storage.service';
+import { ChunkStorageService } from './chunk-storage.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 describe('HardeningController.upload', () => {
   let controller: HardeningController;
   let fileStorage: { save: jest.Mock; get: jest.Mock; delete: jest.Mock };
+  let chunkStorage: { createUpload: jest.Mock; receiveChunk: jest.Mock; mergeChunks: jest.Mock };
   let hardeningService: { startAnalysis: jest.Mock; harden: jest.Mock; getTask: jest.Mock; getUserTasks: jest.Mock };
 
   beforeEach(async () => {
     fileStorage = { save: jest.fn(), get: jest.fn(), delete: jest.fn() };
+    chunkStorage = { createUpload: jest.fn(), receiveChunk: jest.fn(), mergeChunks: jest.fn() };
     hardeningService = {
       startAnalysis: jest.fn(),
       harden: jest.fn(),
@@ -23,6 +26,7 @@ describe('HardeningController.upload', () => {
       providers: [
         { provide: HardeningService, useValue: hardeningService },
         { provide: FileStorageService, useValue: fileStorage },
+        { provide: ChunkStorageService, useValue: chunkStorage },
       ],
     })
       .overrideGuard(JwtAuthGuard)
