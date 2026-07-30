@@ -157,3 +157,162 @@ export async function downloadHardenedApk(taskId: string): Promise<void> {
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
+
+// ========== 分片上传 ==========
+
+export const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB
+export const MAX_FILE_SIZE = 1024 * 1024 * 1024; // 1GB
+const MAX_CONCURRENT = 3;
+const MAX_RETRIES = 3;
+
+/** 分片上传 init */
+export async function uploadInit(
+  fileName: string,
+  fileSize: number,
+  totalChunks: number,
+): Promise<{ uploadId: string; chunkSize: number }> {
+  const res = await longTimeoutClient.post('/hardening/upload/init', {
+    fileName,
+    fileSize,
+    totalChunks,
+  });
+  return res as unknown as { uploadId: string; chunkSize: number };
+}
+
+/** 上传单个分片 */
+async function uploadSingleChunk(
+  uploadId: string,
+  chunkIndex: number,
+  chunk: Blob,
+  onChunkProgress?: (chunkIndex: number, percent: number) => void,
+): Promise<void> {
+  const formData = new FormData();
+  formData.append('uploadId', uploadId);
+  formData.append('chunkIndex', String(chunkIndex));
+  formData.append('chunk', chunk, `chunk_${chunkIndex}`);
+
+  await longTimeoutClient.post('/hardening/upload/chunk', formData, {
+    onUploadProgress: (event: AxiosProgressEvent) => {
+      if (onChunkProgress && event.total) {
+        onChunkProgress(chunkIndex, Math.round((event.loaded / event.total) * 100));
+      }
+    },
+  });
+}
+
+/** 完成分片上传 → 拼接 → 返回 fileId */
+export async function uploadComplete(
+  uploadId: string,
+): Promise<UploadResult> {
+  const res = await longTimeoutClient.post('/hardening/upload/complete', { uploadId });
+  return res as unknown as UploadResult;
+}
+
+/**
+ * 分片上传编排器
+ *
+ * 滑动窗口 3 并发 + 自动重试 3 次 + 进度回调
+ */
+export async function chunkedUpload(
+  file: File,
+  onProgress: (percent: number) => void,
+  signal?: AbortSignal,
+): Promise<UploadResult> {
+  const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+
+  // Step 1: init
+  const { uploadId } = await uploadInit(file.name, file.size, totalChunks);
+
+  // 断点续传: 从 sessionStorage 恢复
+  const ssKey = `xcj_upload_${uploadId}`;
+  let completedSet = new Set<number>();
+  try {
+    const saved = sessionStorage.getItem(ssKey);
+    if (saved) completedSet = new Set(JSON.parse(saved) as number[]);
+  } catch { /* ignore */ }
+
+  // 待传队列
+  const queue: number[] = [];
+  for (let i = 0; i < totalChunks; i++) {
+    if (!completedSet.has(i)) queue.push(i);
+  }
+
+  // 每片当前进度(用于精确总进度计算)
+  const chunkProgress = new Map<number, number>();
+  let completedCount = completedSet.size;
+
+  function computeTotalProgress(): number {
+    let loaded = completedCount * CHUNK_SIZE;
+    for (const [, pct] of chunkProgress) {
+      loaded += (pct / 100) * CHUNK_SIZE;
+    }
+    return Math.min(100, Math.round((loaded / file.size) * 100));
+  }
+
+  // 滑动窗口上传
+  let inFlight = 0;
+  let queueIdx = 0;
+
+  await new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) { reject(new Error('上传已取消')); return; }
+
+    function tryNext() {
+      if (signal?.aborted) { reject(new Error('上传已取消')); return; }
+
+      while (inFlight < MAX_CONCURRENT && queueIdx < queue.length) {
+        const chunkIdx = queue[queueIdx++];
+        inFlight++;
+        const start = chunkIdx * CHUNK_SIZE;
+        const end = Math.min(start + CHUNK_SIZE, file.size);
+        const chunk = file.slice(start, end);
+
+        uploadWithRetry(uploadId, chunkIdx, chunk, 0)
+          .then(() => {
+            completedSet.add(chunkIdx);
+            completedCount++;
+            chunkProgress.delete(chunkIdx);
+            onProgress(computeTotalProgress());
+            // 保存断点
+            try { sessionStorage.setItem(ssKey, JSON.stringify([...completedSet])); } catch { /* ignore */ }
+            inFlight--;
+            if (completedCount === totalChunks) { resolve(); return; }
+            tryNext();
+          })
+          .catch((err) => {
+            inFlight--;
+            reject(err);
+          });
+      }
+    }
+
+    async function uploadWithRetry(
+      uid: string,
+      idx: number,
+      data: Blob,
+      attempt: number,
+    ): Promise<void> {
+      try {
+        await uploadSingleChunk(uid, idx, data, (ci, pct) => {
+          chunkProgress.set(ci, pct);
+          onProgress(computeTotalProgress());
+        });
+      } catch (err) {
+        if (attempt < MAX_RETRIES - 1) {
+          await new Promise((r) => setTimeout(r, 1000 * Math.pow(2, attempt)));
+          return uploadWithRetry(uid, idx, data, attempt + 1);
+        }
+        throw err;
+      }
+    }
+
+    if (queue.length === 0) { resolve(); return; }
+    tryNext();
+  });
+
+  // 清理 sessionStorage
+  try { sessionStorage.removeItem(ssKey); } catch { /* ignore */ }
+
+  // Step 3: complete
+  onProgress(100);
+  return uploadComplete(uploadId);
+}

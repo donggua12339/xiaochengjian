@@ -28,7 +28,7 @@ import {
   useMessage,
 } from 'naive-ui';
 import type { UploadFileInfo } from 'naive-ui';
-import { uploadApk, analyzeApk, hardenApk, getHardeningStatus, downloadHardenedApk } from '@/api/hardening';
+import { chunkedUpload, analyzeApk, hardenApk, getHardeningStatus, downloadHardenedApk, MAX_FILE_SIZE } from '@/api/hardening';
 import type { ApkAnalysis, HardeningRequestConfig, HardeningTaskStatus } from '@/api/hardening';
 
 const message = useMessage();
@@ -54,6 +54,14 @@ const fileId = ref<string | null>(null);
 
 async function handleApkUpload({ file }: { file: UploadFileInfo }) {
   if (!file.file) return;
+
+  // 预检: 文件大小 > 1GB → 友好提示,不发请求
+  if (file.file.size > MAX_FILE_SIZE) {
+    globalError.value = 'APK 体积过大(上限 1GB)，请压缩资源后重试';
+    message.error(globalError.value);
+    return;
+  }
+
   apkFile.value = file.file;
   analyzing.value = true;
   uploadProgress.value = 0;
@@ -62,8 +70,8 @@ async function handleApkUpload({ file }: { file: UploadFileInfo }) {
   globalError.value = '';
 
   try {
-    // Phase 1: 上传文件(带进度条)
-    const uploadResult = await uploadApk(file.file, (percent) => {
+    // Phase 1: 分片上传(带进度条)
+    const uploadResult = await chunkedUpload(file.file, (percent) => {
       uploadProgress.value = percent;
     });
     fileId.value = uploadResult.fileId;

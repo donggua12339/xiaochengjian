@@ -23,6 +23,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentDeveloper } from '../common/decorators/current-developer.decorator';
 import { HardeningService } from './hardening.service';
 import { FileStorageService } from './file-storage.service';
+import { ChunkStorageService } from './chunk-storage.service';
 import type { HardeningConfig } from './hardening-config.dto';
 
 /** APK magic bytes: PK\x03\x04 (ZIP format) */
@@ -38,6 +39,7 @@ export class HardeningController {
   constructor(
     private readonly hardeningService: HardeningService,
     private readonly fileStorage: FileStorageService,
+    private readonly chunkStorage: ChunkStorageService,
   ) {}
 
   /**
@@ -106,6 +108,79 @@ export class HardeningController {
 
     this.logger.log(`上传完成: fileId=${fileId} dev=${developerId} size=${file.size}`);
     return { fileId, fileName: file.originalname, fileSize: file.size };
+  }
+
+  /**
+   * POST /v1/hardening/upload/init
+   * 初始化分片上传会话,返回 uploadId。
+   */
+  @Post('upload/init')
+  @ApiOperation({ summary: '初始化分片上传(返回 uploadId)' })
+  async uploadInit(
+    @Body() body: { fileName: string; fileSize: number; totalChunks: number },
+    @CurrentDeveloper() developerId: string,
+  ) {
+    if (!body?.fileName || !body?.fileSize || !body?.totalChunks) {
+      throw new BadRequestException('请提供 fileName, fileSize, totalChunks');
+    }
+    return this.chunkStorage.createUpload(
+      developerId,
+      body.fileName,
+      body.fileSize,
+      body.totalChunks,
+    );
+  }
+
+  /**
+   * POST /v1/hardening/upload/chunk
+   * 上传单个分片(5MB, memoryStorage)。
+   */
+  @Post('upload/chunk')
+  @ApiOperation({ summary: '上传分片(5MB/片, 3 并发)' })
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(
+    FileInterceptor('chunk', {
+      storage: memoryStorage(),
+      limits: { fileSize: 6 * 1024 * 1024 }, // 6MB 余量
+    }),
+  )
+  async uploadChunk(
+    @UploadedFile() chunkFile: Express.Multer.File | undefined,
+    @CurrentDeveloper() developerId: string,
+    @Body() body: { uploadId: string; chunkIndex: string },
+  ) {
+    if (!body?.uploadId || body?.chunkIndex === undefined) {
+      throw new BadRequestException('请提供 uploadId 和 chunkIndex');
+    }
+    if (!chunkFile) {
+      throw new BadRequestException('请上传分片文件');
+    }
+    const chunkIndex = parseInt(body.chunkIndex, 10);
+    if (isNaN(chunkIndex)) {
+      throw new BadRequestException('chunkIndex 必须为数字');
+    }
+    return this.chunkStorage.receiveChunk(
+      body.uploadId,
+      developerId,
+      chunkIndex,
+      chunkFile.buffer,
+    );
+  }
+
+  /**
+   * POST /v1/hardening/upload/complete
+   * 所有分片上传完毕,拼接 + 校验 + 注册 fileId。
+   */
+  @Post('upload/complete')
+  @ApiOperation({ summary: '完成分片上传(拼接+校验+返回 fileId)' })
+  async uploadComplete(
+    @Body() body: { uploadId: string },
+    @CurrentDeveloper() developerId: string,
+  ) {
+    if (!body?.uploadId) {
+      throw new BadRequestException('请提供 uploadId');
+    }
+    return this.chunkStorage.mergeChunks(body.uploadId, developerId);
   }
 
   /**
