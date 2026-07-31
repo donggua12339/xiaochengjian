@@ -209,12 +209,12 @@ async function uploadSingleChunk(
   });
 }
 
-/** 完成分片上传 → 拼接 → 返回 fileId */
+/** 完成分片上传 → 拼接 → 返回 fileId 或 missing 列表 */
 export async function uploadComplete(
   uploadId: string,
-): Promise<UploadResult> {
+): Promise<UploadResult | { missing: number[] }> {
   const res = await longTimeoutClient.post('/hardening/upload/complete', { uploadId });
-  return res as unknown as UploadResult;
+  return res as unknown as UploadResult | { missing: number[] };
 }
 
 /**
@@ -240,12 +240,6 @@ export async function chunkedUpload(
     if (saved) completedSet = new Set(JSON.parse(saved) as number[]);
   } catch { /* ignore */ }
 
-  // 待传队列
-  const queue: number[] = [];
-  for (let i = 0; i < totalChunks; i++) {
-    if (!completedSet.has(i)) queue.push(i);
-  }
-
   // 每片当前进度(用于精确总进度计算)
   const chunkProgress = new Map<number, number>();
   let completedCount = completedSet.size;
@@ -258,7 +252,32 @@ export async function chunkedUpload(
     return Math.min(100, Math.round((loaded / file.size) * 100));
   }
 
-  // 滑动窗口上传
+  // 上传单片(带重试)——提取到外层,Step 2 和 Step 3 补传共用
+  async function uploadWithRetry(idx: number, attempt: number): Promise<void> {
+    if (signal?.aborted) throw new Error('上传已取消');
+    const start = idx * CHUNK_SIZE;
+    const end = Math.min(start + CHUNK_SIZE, file.size);
+    const chunk = file.slice(start, end);
+    try {
+      await uploadSingleChunk(uploadId, idx, chunk, (ci, pct) => {
+        chunkProgress.set(ci, pct);
+        onProgress(computeTotalProgress());
+      });
+    } catch (err) {
+      if (attempt < MAX_RETRIES - 1) {
+        await new Promise((r) => setTimeout(r, 1000 * Math.pow(2, attempt)));
+        return uploadWithRetry(idx, attempt + 1);
+      }
+      throw err;
+    }
+  }
+
+  // Step 2: 滑动窗口上传
+  const queue: number[] = [];
+  for (let i = 0; i < totalChunks; i++) {
+    if (!completedSet.has(i)) queue.push(i);
+  }
+
   let inFlight = 0;
   let queueIdx = 0;
 
@@ -271,17 +290,13 @@ export async function chunkedUpload(
       while (inFlight < MAX_CONCURRENT && queueIdx < queue.length) {
         const chunkIdx = queue[queueIdx++];
         inFlight++;
-        const start = chunkIdx * CHUNK_SIZE;
-        const end = Math.min(start + CHUNK_SIZE, file.size);
-        const chunk = file.slice(start, end);
 
-        uploadWithRetry(uploadId, chunkIdx, chunk, 0)
+        uploadWithRetry(chunkIdx, 0)
           .then(() => {
             completedSet.add(chunkIdx);
             completedCount++;
             chunkProgress.delete(chunkIdx);
             onProgress(computeTotalProgress());
-            // 保存断点
             try { sessionStorage.setItem(ssKey, JSON.stringify([...completedSet])); } catch { /* ignore */ }
             inFlight--;
             if (completedCount === totalChunks) { resolve(); return; }
@@ -294,26 +309,6 @@ export async function chunkedUpload(
       }
     }
 
-    async function uploadWithRetry(
-      uid: string,
-      idx: number,
-      data: Blob,
-      attempt: number,
-    ): Promise<void> {
-      try {
-        await uploadSingleChunk(uid, idx, data, (ci, pct) => {
-          chunkProgress.set(ci, pct);
-          onProgress(computeTotalProgress());
-        });
-      } catch (err) {
-        if (attempt < MAX_RETRIES - 1) {
-          await new Promise((r) => setTimeout(r, 1000 * Math.pow(2, attempt)));
-          return uploadWithRetry(uid, idx, data, attempt + 1);
-        }
-        throw err;
-      }
-    }
-
     if (queue.length === 0) { resolve(); return; }
     tryNext();
   });
@@ -321,7 +316,28 @@ export async function chunkedUpload(
   // 清理 sessionStorage
   try { sessionStorage.removeItem(ssKey); } catch { /* ignore */ }
 
-  // Step 3: complete
-  onProgress(100);
-  return uploadComplete(uploadId);
+  // Step 3: complete(含缺片补传重试)
+  onProgress(99);
+  const MAX_COMPLETE_RETRIES = 3;
+  for (let attempt = 0; attempt < MAX_COMPLETE_RETRIES; attempt++) {
+    const result = await uploadComplete(uploadId);
+
+    if ('fileId' in result) {
+      onProgress(100);
+      return result as UploadResult;
+    }
+
+    // 后端返回缺片列表 → 补传后重试 complete
+    const missing = (result as { missing: number[] }).missing;
+    if (missing && missing.length > 0) {
+      for (const chunkIdx of missing) {
+        await uploadWithRetry(chunkIdx, 0);
+      }
+      continue; // 补传完,重试 complete
+    }
+
+    throw new Error('uploadComplete 返回格式异常');
+  }
+
+  throw new Error(`分片拼接失败: 重试 ${MAX_COMPLETE_RETRIES} 次仍有缺片`);
 }
