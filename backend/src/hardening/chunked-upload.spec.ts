@@ -151,18 +151,88 @@ describe('ChunkStorageService', () => {
   });
 
   describe('mergeChunks', () => {
-    it('should reject when not all chunks received', async () => {
+    it('should return missing chunks when not all received (Bug G)', async () => {
       redis.get.mockResolvedValue(
         JSON.stringify({
           devId: 'dev1',
           fileName: 'test.apk',
           fileSize: 10 * 1024 * 1024,
+          totalChunks: 3,
+          receivedChunks: [0, 2],
+          createdAt: '2026-01-01T00:00:00Z',
+        }),
+      );
+      // 不再抛异常,返回 missing 列表
+      const result = await service.mergeChunks('u1', 'dev1');
+      expect('missing' in result).toBe(true);
+      if ('missing' in result) {
+        expect(result.missing).toEqual([1]);
+      }
+    });
+
+    it('should merge successfully when all chunks received', async () => {
+      redis.get.mockResolvedValue(
+        JSON.stringify({
+          devId: 'dev1',
+          fileName: 'test.apk',
+          fileSize: 8,
+          totalChunks: 2,
+          receivedChunks: [0, 1],
+          createdAt: '2026-01-01T00:00:00Z',
+        }),
+      );
+      const chunkData = Buffer.from('1234');
+      (fs.readFile as jest.Mock).mockResolvedValue(chunkData);
+      (fs.appendFile as jest.Mock).mockResolvedValue(undefined);
+      (fs.mkdir as jest.Mock).mockResolvedValue(undefined);
+      (fs.stat as jest.Mock).mockResolvedValue({ size: 8 });
+      (fs.open as jest.Mock).mockResolvedValue({
+        read: jest.fn().mockImplementation((_buf: Buffer, _off: number, _len: number, _pos: number) => {
+          _buf[0] = 0x50; _buf[1] = 0x4b; _buf[2] = 0x03; _buf[3] = 0x04;
+          return Promise.resolve({ bytesRead: 4 });
+        }),
+        close: jest.fn().mockResolvedValue(undefined),
+      });
+      (fs.rm as jest.Mock).mockResolvedValue(undefined);
+      (fs.unlink as jest.Mock).mockResolvedValue(undefined);
+
+      const result = await service.mergeChunks('u1', 'dev1');
+      expect(result).toHaveProperty('fileId');
+      expect(result).toHaveProperty('fileName', 'test.apk');
+    });
+  });
+
+  describe('cancelUpload', () => {
+    it('should cancel upload and cleanup (Bug E)', async () => {
+      redis.get.mockResolvedValue(
+        JSON.stringify({
+          devId: 'dev1',
+          fileName: 'test.apk',
+          fileSize: 1024,
           totalChunks: 2,
           receivedChunks: [0],
           createdAt: '2026-01-01T00:00:00Z',
         }),
       );
-      await expect(service.mergeChunks('u1', 'dev1')).rejects.toThrow(BadRequestException);
+      (fs.rm as jest.Mock).mockResolvedValue(undefined);
+
+      await service.cancelUpload('u1', 'dev1');
+      expect(redis.del).toHaveBeenCalledWith(expect.stringContaining('hardening:upload:u1'));
+      expect(fs.rm).toHaveBeenCalled();
+    });
+
+    it('should reject cancel for other dev', async () => {
+      redis.get.mockResolvedValue(
+        JSON.stringify({
+          devId: 'other-dev',
+          fileName: 'test.apk',
+          fileSize: 1024,
+          totalChunks: 1,
+          receivedChunks: [],
+          createdAt: '2026-01-01T00:00:00Z',
+        }),
+      );
+      await expect(service.cancelUpload('u1', 'dev1')).rejects.toThrow(NotFoundException);
     });
   });
 

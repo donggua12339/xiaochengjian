@@ -12,7 +12,7 @@
 import { ref, onMounted, onUnmounted } from 'vue';
 import { NCard, NButton, NSpace, NTag, NText, NEmpty, NProgress, NAlert } from 'naive-ui';
 import { useRouter } from 'vue-router';
-import { getHardeningTasks, getHardeningStatus, downloadHardenedApk } from '@/api/hardening';
+import { getHardeningTasks, getHardeningStatus, downloadHardenedApk, cancelHardeningTask } from '@/api/hardening';
 import type { HardeningTaskSummary } from '@/api/hardening';
 
 const router = useRouter();
@@ -44,7 +44,7 @@ async function loadTasks() {
 }
 
 async function refreshActive() {
-  const active = tasks.value.filter((t) => !['completed', 'failed'].includes(t.status));
+  const active = tasks.value.filter((t) => !['completed', 'failed', 'cancelled'].includes(t.status));
   for (const t of active) {
     try {
       const s = (await getHardeningStatus(t.id)) as HardeningTaskSummary;
@@ -69,6 +69,7 @@ const statusMap: Record<
   signing: { label: '签名中', type: 'warning' },
   completed: { label: '已完成', type: 'success' },
   failed: { label: '失败', type: 'error' },
+  cancelled: { label: '已取消', type: 'default' },
 };
 
 const stepIcons: Record<string, string> = {
@@ -85,6 +86,7 @@ const stepIcons: Record<string, string> = {
   sign: '🔑',
   done: '✅',
   error: '❌',
+  cancelled: '🚫',
 };
 
 function formatTime(iso: string): string {
@@ -97,7 +99,16 @@ function formatTime(iso: string): string {
 }
 
 function isActive(status: string): boolean {
-  return !['completed', 'failed'].includes(status);
+  return !['completed', 'failed', 'cancelled'].includes(status);
+}
+
+async function cancelTask(taskId: string) {
+  try {
+    await cancelHardeningTask(taskId);
+    await loadTasks();
+  } catch {
+    /* ignore */
+  }
 }
 
 async function downloadTask(taskId: string) {
@@ -161,6 +172,15 @@ async function downloadTask(taskId: string) {
                 :stroke-width="4"
                 style="width: 40px"
               />
+              <NButton
+                v-if="isActive(task.status)"
+                size="tiny"
+                type="error"
+                quaternary
+                @click="cancelTask(task.id)"
+              >
+                取消
+              </NButton>
               <NButton
                 v-if="task.status === 'completed'"
                 type="primary"

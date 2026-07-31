@@ -28,13 +28,21 @@ import {
   useMessage,
 } from 'naive-ui';
 import type { UploadFileInfo } from 'naive-ui';
+import axios from 'axios';
 import { chunkedUpload, analyzeApk, hardenApk, getHardeningStatus, downloadHardenedApk, MAX_FILE_SIZE } from '@/api/hardening';
 import type { ApkAnalysis, HardeningRequestConfig, HardeningTaskStatus } from '@/api/hardening';
 
 const message = useMessage();
 
-/** 从 unknown 错误提取消息(合规: 禁 any) */
+/** 从 unknown 错误提取消息(Bug A: 优先提取后端 message 而非 axios 通用消息) */
 function errMsg(e: unknown): string {
+  // axios 错误: 提取后端 response.data.message
+  if (axios.isAxiosError(e)) {
+    const data = e.response?.data as Record<string, unknown> | undefined;
+    if (data?.message) return String(data.message);
+    if (data?.code) return String(data.code);
+    return e.message;
+  }
   if (e instanceof Error) return e.message;
   if (typeof e === 'object' && e !== null && 'message' in e) {
     return String((e as Record<string, unknown>).message ?? '');
@@ -416,6 +424,64 @@ function resetAll() {
   globalError.value = '';
 }
 
+/** Bug F: 重试分析(不重传文件,用已有 fileId) */
+async function retryAnalysis() {
+  if (!fileId.value) { resetAll(); return; }
+  globalError.value = '';
+  analyzing.value = true;
+  uploadPhase.value = 'analyzing';
+  currentStep.value = 1;
+  try {
+    const { taskId } = await analyzeApk(fileId.value);
+    taskStatus.value = {
+      id: taskId, status: 'analyzing', progress: 0,
+      message: '正在重新分析...', step: 'queued', detail: '',
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+    } as HardeningTaskStatus;
+    startPolling(taskId, 'analysis');
+  } catch (e: unknown) {
+    globalError.value = `重试分析失败: ${errMsg(e)}`;
+    message.error(globalError.value);
+    analyzing.value = false;
+  }
+}
+
+/** Bug F: 重试加固(不重传文件,用已有 fileId + keystore) */
+async function retryHarden() {
+  if (!fileId.value || !keystoreFile.value) { resetAll(); return; }
+  globalError.value = '';
+  hardening.value = true;
+  currentStep.value = 4;
+  try {
+    const config: HardeningRequestConfig = {
+      productLine: productLine.value,
+      preset: preset.value as HardeningRequestConfig['preset'],
+      xuanjia: xuanjiaModules.value,
+      ...(productLine.value === 'tianyan' ? { tianyan: tianyanModules.value } : {}),
+      killPolicy: {
+        strongEvidence: killAction.value as NonNullable<HardeningRequestConfig['killPolicy']>['strongEvidence'],
+        weakScoreThreshold: weakThreshold.value, delayMinMs: 0, delayMaxMs: 1000,
+      },
+    };
+    const res = await hardenApk({
+      fileId: fileId.value, keystoreFile: keystoreFile.value,
+      keystorePassword: ksPassword.value, keyAlias: ksAlias.value, keyPassword: ksKeyPassword.value,
+      config, analysis: analysis.value!, ownershipConfirmed: ownershipConfirmed.value,
+    });
+    taskStatus.value = {
+      id: res.taskId, status: 'hardening', progress: 0,
+      message: '正在重新加固...', step: 'init', detail: '',
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+    } as HardeningTaskStatus;
+    startPolling(res.taskId, 'hardening');
+  } catch (e: unknown) {
+    globalError.value = `重试加固失败: ${errMsg(e)}`;
+    message.error(globalError.value);
+    hardening.value = false;
+    currentStep.value = 3;
+  }
+}
+
 // 进度条百分比
 const progressPercent = computed(() => taskStatus.value?.progress ?? 0);
 const progressMessage = computed(() => taskStatus.value?.message ?? '');
@@ -536,7 +602,10 @@ const stepIcons: Record<string, string> = {
         <NAlert v-if="taskStatus?.status === 'failed'" type="error" style="margin-top: 12px">
           {{ taskStatus.error }}
           <div style="margin-top: 8px">
-            <NButton size="small" @click="resetAll">重新上传</NButton>
+            <NSpace :size="8">
+              <NButton v-if="fileId" size="small" type="warning" @click="retryAnalysis">重试分析</NButton>
+              <NButton size="small" @click="resetAll">重新上传</NButton>
+            </NSpace>
           </div>
         </NAlert>
 
@@ -544,7 +613,10 @@ const stepIcons: Record<string, string> = {
         <NAlert v-if="globalError" type="error" style="margin-top: 12px">
           {{ globalError }}
           <div style="margin-top: 8px">
-            <NButton size="small" @click="resetAll">重新开始</NButton>
+            <NSpace :size="8">
+              <NButton v-if="fileId" size="small" type="warning" @click="retryAnalysis">重试分析</NButton>
+              <NButton size="small" @click="resetAll">重新上传</NButton>
+            </NSpace>
           </div>
         </NAlert>
       </template>
@@ -629,10 +701,14 @@ const stepIcons: Record<string, string> = {
             :max="1"
             accept=".jks,.keystore"
             :default-upload="false"
+            :show-file-list="false"
             @change="handleKeystoreUpload"
           >
-            <NButton>选择 Keystore(.jks)</NButton>
+            <NButton>{{ keystoreFile ? '重新选择 Keystore' : '选择 Keystore(.jks)' }}</NButton>
           </NUpload>
+          <NText v-if="keystoreFile" depth="3" style="font-size: 12px">
+            ✅ {{ keystoreFile.name }} ({{ (keystoreFile.size / 1024).toFixed(1) }} KB)
+          </NText>
           <NInput
             v-model:value="ksPassword"
             type="password"
@@ -686,7 +762,10 @@ const stepIcons: Record<string, string> = {
         <NAlert v-if="globalError" type="error" style="margin-top: 12px">
           {{ globalError }}
           <div style="margin-top: 8px">
-            <NButton size="small" @click="resetAll">重新开始</NButton>
+            <NSpace :size="8">
+              <NButton v-if="fileId && keystoreFile" size="small" type="warning" @click="retryHarden">重试加固</NButton>
+              <NButton size="small" @click="resetAll">重新开始</NButton>
+            </NSpace>
           </div>
         </NAlert>
       </template>

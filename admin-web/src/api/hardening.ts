@@ -34,7 +34,7 @@ export interface HardeningRequestConfig {
 /** 任务状态(后端返回) */
 export interface HardeningTaskStatus {
   id: string;
-  status: 'queued' | 'analyzing' | 'hardening' | 'signing' | 'completed' | 'failed';
+  status: 'queued' | 'analyzing' | 'hardening' | 'signing' | 'completed' | 'failed' | 'cancelled';
   progress: number;
   message: string;
   step: string;
@@ -109,6 +109,15 @@ export async function getHardeningTasks(): Promise<{ tasks: HardeningTaskSummary
   const res = await request<{ tasks: HardeningTaskSummary[] }>({
     method: 'GET',
     url: '/hardening/tasks',
+  });
+  return res;
+}
+
+/** 取消任务(Bug E) */
+export async function cancelHardeningTask(taskId: string): Promise<{ cancelled: boolean }> {
+  const res = await request<{ cancelled: boolean }>({
+    method: 'DELETE',
+    url: `/hardening/tasks/${taskId}`,
   });
   return res;
 }

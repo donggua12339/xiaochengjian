@@ -1,4 +1,4 @@
-import { Injectable, Logger, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
 import * as fs from 'fs/promises';
 import { existsSync, statSync } from 'fs';
 import * as path from 'path';
@@ -23,7 +23,7 @@ const TASK_TTL = 86400; // 24 小时
 export interface HardeningTask {
   id: string;
   developerId: string;
-  status: 'queued' | 'analyzing' | 'hardening' | 'signing' | 'completed' | 'failed';
+  status: 'queued' | 'analyzing' | 'hardening' | 'signing' | 'completed' | 'failed' | 'cancelled';
   progress: number;
   message: string;
   step: string;
@@ -80,6 +80,17 @@ export class HardeningService {
   async getTask(taskId: string): Promise<HardeningTask | null> {
     const raw = await this.redis.get(this.taskKey(taskId));
     return raw ? JSON.parse(raw) : null;
+  }
+
+  /** 取消任务(Bug E) */
+  async cancelTask(taskId: string): Promise<void> {
+    const task = await this.getTask(taskId);
+    if (!task) throw new NotFoundException('任务不存在');
+    task.status = 'cancelled' as HardeningTask['status'];
+    task.message = '已取消';
+    task.step = 'cancelled';
+    await this.saveTask(task);
+    this.logger.log(`任务已取消: taskId=${taskId}`);
   }
 
   async getUserTasks(developerId: string): Promise<HardeningTask[]> {

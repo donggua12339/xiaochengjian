@@ -129,13 +129,21 @@ export class ChunkStorageService {
   /**
    * 拼接分片 + 校验 + 注册 fileId
    */
-  async mergeChunks(uploadId: string, devId: string): Promise<{ fileId: string; fileName: string; fileSize: number }> {
+  async mergeChunks(
+    uploadId: string,
+    devId: string,
+  ): Promise<{ fileId: string; fileName: string; fileSize: number } | { missing: number[] }> {
     const meta = await this.getMeta(uploadId, devId);
 
+    // Bug G: 缺片时返回 missing 列表而非直接 400,前端可补传
     if (meta.receivedChunks.length !== meta.totalChunks) {
-      throw new BadRequestException(
-        `分片未传完(${meta.receivedChunks.length}/${meta.totalChunks})`,
-      );
+      const received = new Set(meta.receivedChunks);
+      const missing: number[] = [];
+      for (let i = 0; i < meta.totalChunks; i++) {
+        if (!received.has(i)) missing.push(i);
+      }
+      this.logger.warn(`分片未传完: ${meta.receivedChunks.length}/${meta.totalChunks}, missing=${missing.join(',')}`);
+      return { missing };
     }
 
     // 拼接
@@ -144,21 +152,14 @@ export class ChunkStorageService {
     await fs.mkdir(outDir, { recursive: true });
     const outPath = path.join(outDir, `${fileId}_${meta.fileName}`);
 
-    const writeStream = (await import('fs')).createWriteStream(outPath);
+    // 逐片追加拼接(用 fs/promises appendFile,可被 jest.mock 拦截)
     try {
       for (let i = 0; i < meta.totalChunks; i++) {
         const chunkPath = path.join(this.chunksDir(uploadId), `${i}.part`);
         const data = await fs.readFile(chunkPath);
-        await new Promise<void>((resolve, reject) => {
-          writeStream.write(data, (err) => (err ? reject(err) : resolve()));
-        });
+        await fs.appendFile(outPath, data);
       }
-      await new Promise<void>((resolve, reject) => {
-        writeStream.end(() => resolve());
-        writeStream.on('error', reject);
-      });
     } catch (e) {
-      writeStream.destroy();
       await fs.unlink(outPath).catch(() => {});
       throw e;
     }
@@ -190,6 +191,15 @@ export class ChunkStorageService {
 
     this.logger.log(`分片拼接完成: uploadId=${uploadId} → fileId=${fileId} size=${meta.fileSize}`);
     return { fileId, fileName: meta.fileName, fileSize: meta.fileSize };
+  }
+
+  /**
+   * 取消上传会话(Bug E)
+   */
+  async cancelUpload(uploadId: string, devId: string): Promise<void> {
+    await this.getMeta(uploadId, devId); // 鉴权
+    await this.cleanup(uploadId);
+    this.logger.log(`上传已取消: uploadId=${uploadId}`);
   }
 
   /**

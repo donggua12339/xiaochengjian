@@ -2,6 +2,7 @@ import {
   Controller,
   Post,
   Get,
+  Delete,
   Param,
   UseGuards,
   UseInterceptors,
@@ -349,6 +350,26 @@ export class HardeningController {
         updatedAt: t.updatedAt,
       })),
     };
+  }
+
+  /**
+   * DELETE /v1/hardening/tasks/:taskId
+   * 取消任务(Bug E)
+   */
+  @Delete('tasks/:taskId')
+  @ApiOperation({ summary: '取消加固/分析任务' })
+  async cancelTask(
+    @Param('taskId') taskId: string,
+    @CurrentDeveloper() developerId: string,
+  ) {
+    const task = await this.hardeningService.getTask(taskId);
+    if (!task) throw new NotFoundException('任务不存在');
+    if (task.developerId !== developerId) throw new NotFoundException('任务不存在');
+    if (task.status === 'completed' || task.status === 'cancelled') {
+      throw new BadRequestException('任务已结束,无法取消');
+    }
+    await this.hardeningService.cancelTask(taskId);
+    return { cancelled: true };
   }
 
   /**
