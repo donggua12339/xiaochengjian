@@ -25,7 +25,7 @@ FROM node:22-alpine AS runner
 WORKDIR /app
 
 RUN corepack enable && corepack prepare pnpm@9 --activate
-RUN apk add --no-cache openssl wget unzip openjdk17-jre bash gcompat
+RUN apk add --no-cache openssl wget unzip openjdk17-jre bash gcompat zip
 
 # 安装 Android SDK build-tools(含 apksigner,ADR 0077 自有 APK 诊断用)
 # 注:build-tools_r35 在 dl.google.com 上 404,用 r34(android-14)

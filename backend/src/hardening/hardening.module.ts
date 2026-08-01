@@ -6,6 +6,7 @@ import { HardeningService } from './hardening.service';
 import { ApkAnalyzerService } from './apk-analyzer.service';
 import { FileStorageService } from './file-storage.service';
 import { ChunkStorageService } from './chunk-storage.service';
+import { PreflightService } from './preflight.service';
 import { MulterExceptionFilter } from './multer-exception.filter';
 import { PackerModule } from '../packer/packer.module';
 import { RedisModule } from '../redis/redis.module';
@@ -18,8 +19,9 @@ import { RedisModule } from '../redis/redis.module';
     ApkAnalyzerService,
     FileStorageService,
     ChunkStorageService,
+    PreflightService,
     { provide: APP_FILTER, useClass: MulterExceptionFilter },
   ],
-  exports: [HardeningService, ApkAnalyzerService, FileStorageService, ChunkStorageService],
+  exports: [HardeningService, ApkAnalyzerService, FileStorageService, ChunkStorageService, PreflightService],
 })
 export class HardeningModule {}

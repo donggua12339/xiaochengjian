@@ -5,14 +5,42 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
+import AdmZip from 'adm-zip';
 import { ApkAnalyzerService } from './apk-analyzer.service';
-import { DexInjector } from '../packer/dex-injector';
 import { SoInjector } from '../packer/so-injector';
+import { PreflightService } from './preflight.service';
 import { RedisService } from '../redis/redis.service';
 import type { HardeningConfig, ApkAnalysisResult } from './hardening-config.dto';
 import { applyPreset } from './hardening-config.dto';
 
 const execFileAsync = promisify(execFile);
+
+/** 执行命令并捕获 stderr */
+async function execWithStderr(
+  cmd: string,
+  args: string[],
+  opts: { timeout?: number; cwd?: string; maxBuffer?: number } = {},
+): Promise<{ stdout: string; stderr: string }> {
+  try {
+    const result = await execFileAsync(cmd, args, {
+      timeout: opts.timeout ?? 120_000,
+      cwd: opts.cwd,
+      maxBuffer: opts.maxBuffer ?? 10 * 1024 * 1024,
+    });
+    return { stdout: result.stdout, stderr: result.stderr ?? '' };
+  } catch (e) {
+    const err = e as Error & { stderr?: string; stdout?: string };
+    throw new BadRequestException(`${cmd} failed: ${err.message}`, {
+      cause: err.stderr || err.stdout || err.message,
+    });
+  }
+}
+
+/** 动态超时: 120s + fileSize_MB × 3s, cap 600s */
+function computeTimeout(fileSizeBytes: number): number {
+  const mb = fileSizeBytes / (1024 * 1024);
+  return Math.min(600_000, 120_000 + Math.ceil(mb) * 3_000);
+}
 
 /** Redis key 前缀 */
 const TASK_KEY = 'hardening:task:';
@@ -57,8 +85,8 @@ export class HardeningService {
 
   constructor(
     private readonly analyzer: ApkAnalyzerService,
-    private readonly dexInjector: DexInjector,
     private readonly soInjector: SoInjector,
+    private readonly preflight: PreflightService,
     private readonly redis: RedisService,
   ) {}
 
@@ -277,24 +305,36 @@ export class HardeningService {
     const workDir = path.join(path.dirname(params.apkPath), `_harden_${task.id}`);
     await fs.mkdir(workDir, { recursive: true });
 
+    // 动态超时
+    const totalTimeout = computeTimeout(params.analysis.apkSize);
+    const controller = new AbortController();
+    const timeoutHandle = setTimeout(() => controller.abort(), totalTimeout);
+
     try {
       const workApk = path.join(workDir, 'work.apk');
       await fs.copyFile(params.apkPath, workApk);
-
       const mergedConfig = this.mergeConfig(params.config);
       const { xuanjia, tianyan } = mergedConfig;
 
-      await this.updateProgress(task, 'config', 10, '生成加固配置...');
+      // Step 0: 预检 (5%)
+      await this.updateProgress(task, 'preflight', 5, '正在验证 Keystore 和 APK...');
+      await this.preflight.runAll(
+        params.apkPath, params.keystorePath, params.keystorePassword, params.keyAlias,
+      );
+      if (controller.signal.aborted) throw new Error('加固超时');
 
+      // Step 1: strip 签名 (10%) — 用 adm-zip 删 META-INF
+      await this.updateProgress(task, 'strip', 10, '删除旧签名...');
+      this.stripSignatureAdmZip(workApk);
+
+      // Step 2: 注入 config (15%)
+      await this.updateProgress(task, 'config', 15, '注入 defender-config.json...');
       const defenderConfig = this.buildDefenderConfig(xuanjia, tianyan, params.config.killPolicy);
       const configJson = JSON.stringify(defenderConfig, null, 2);
-      const configPath = path.join(workDir, 'defender-config.json');
-      await fs.writeFile(configPath, configJson, 'utf-8');
+      this.injectToZip(workApk, 'assets/defender-config.json', Buffer.from(configJson));
 
-      await this.updateProgress(task, 'asset', 20, '注入配置文件到 assets/...');
-      await this.injectAsset(workApk, 'assets/defender-config.json', Buffer.from(configJson));
-
-      await this.updateProgress(task, 'dex', 30, '注入 SDK DEX 模块...');
+      // Step 3: 注入 DEX (25%)
+      await this.updateProgress(task, 'dex', 25, '注入 SDK DEX 模块...');
       const sdkDexPath = this.findSdkDex();
       if (sdkDexPath) {
         const dexContent = await fs.readFile(sdkDexPath);
@@ -303,55 +343,101 @@ export class HardeningService {
           const m = f.match(/classes(\d*)\.dex/);
           return Math.max(max, m ? (m[1] ? parseInt(m[1], 10) : 1) : 0);
         }, 0);
-        const nextDexName = `classes${maxNum + 1}.dex`;
-        await this.dexInjector.injectDex(workApk, dexContent, nextDexName);
+        this.injectToZip(workApk, `classes${maxNum + 1}.dex`, dexContent);
       }
 
-      await this.updateProgress(task, 'so', 50, '注入 native 库(30 池随机名)...');
+      // Step 4: 注入 SO arm64 (35%)
+      let randomSoName = '';
       if (xuanjia.x0_soEncrypt || xuanjia.x4_antiDynamic) {
         const soPath = this.findSdkSo('arm64-v8a');
         if (soPath) {
-          const randomSoName = this.soInjector.pickRandomSoName();
-          await this.injectNativeSo(workApk, soPath, randomSoName, 'arm64-v8a');
+          randomSoName = this.soInjector.pickRandomSoName();
+          await this.updateProgress(task, 'so_arm64', 35, `注入 lib/arm64-v8a/${randomSoName}...`);
+          const soData = await fs.readFile(soPath);
+          this.injectToZip(workApk, `lib/arm64-v8a/${randomSoName}`, soData);
+
+          // Step 5: 注入 SO armv7 (40%)
           const soPathV7 = this.findSdkSo('armeabi-v7a');
           if (soPathV7 && params.analysis.nativeAbis.includes('armeabi-v7a')) {
-            await this.injectNativeSo(workApk, soPathV7, randomSoName, 'armeabi-v7a');
+            await this.updateProgress(task, 'so_armv7', 40, `注入 lib/armeabi-v7a/${randomSoName}...`);
+            const soDataV7 = await fs.readFile(soPathV7);
+            this.injectToZip(workApk, `lib/armeabi-v7a/${randomSoName}`, soDataV7);
           }
-          await this.injectMetaSoName(workApk, workDir, randomSoName);
         }
       }
 
-      await this.updateProgress(task, 'manifest', 70, '修改 AndroidManifest.xml...');
-      await this.patchManifestForHardening(workApk, workDir, params.analysis.packageName);
+      // Step 6: apktool 解包 (50%) — 合并为一次
+      await this.updateProgress(task, 'apktool_d', 50, '解包 APK(修改 Manifest)...');
+      const decodedDir = path.join(workDir, 'decoded');
+      await execWithStderr('apktool', ['d', '-f', '-o', decodedDir, workApk], { timeout: 120_000 });
 
-      await this.updateProgress(task, 'sign', 85, '重签名(V1+V2+V3)...');
+      // Step 7: 修改 Manifest (60%) — 合并所有修改为一次
+      await this.updateProgress(task, 'manifest', 60, '注入 meta-data + provider + permission...');
+      const manifestPath = path.join(decodedDir, 'AndroidManifest.xml');
+      let manifest = await fs.readFile(manifestPath, 'utf-8');
+
+      // meta-data: so 随机名
+      if (randomSoName && !manifest.includes('xcj.defender.lib')) {
+        const metaTag = `<meta-data android:name="xcj.defender.lib" android:value="${randomSoName}" />`;
+        manifest = manifest.replace(/(<application[^>]*>)/, `$1\n        ${metaTag}`);
+      }
+      // provider
+      if (!manifest.includes('DefenderInitProvider')) {
+        const providerTag = `<provider android:name="com.xcj.defender.DefenderInitProvider" android:authorities="${params.analysis.packageName}.xcj.defender.init" android:exported="false" android:initOrder="100" />`;
+        manifest = manifest.replace(/(<application[^>]*>)/, `$1\n        ${providerTag}`);
+      }
+      // permission
+      if (!manifest.includes('android.permission.INTERNET')) {
+        manifest = manifest.replace(
+          /(<manifest[^>]*>)/,
+          `$1\n    <uses-permission android:name="android.permission.INTERNET" />`,
+        );
+      }
+      await fs.writeFile(manifestPath, manifest, 'utf-8');
+
+      // Step 8: apktool 重建 (70%)
+      await this.updateProgress(task, 'apktool_b', 70, '重建 APK...');
+      await execWithStderr('apktool', ['b', '-o', workApk, decodedDir], { timeout: 120_000 });
+      // 清理 decoded 目录
+      await fs.rm(decodedDir, { recursive: true, force: true }).catch(() => {});
+
+      // Step 9: zipalign (80%)
+      await this.updateProgress(task, 'zipalign', 80, '对齐 APK(-p 4)...');
+      const alignedApk = workApk + '-aligned';
+      await execWithStderr('zipalign', ['-p', '-f', '4', workApk, alignedApk], { timeout: 60_000 });
+      await fs.rename(alignedApk, workApk);
+
+      // Step 10: apksigner (90%)
+      await this.updateProgress(task, 'sign', 90, '签名(V1+V2+V3)...');
       task.status = 'signing';
       await this.saveTask(task);
-      await this.stripSignature(workApk);
-      await this.resignApk(
-        workApk,
-        params.keystorePath,
-        params.keystorePassword,
-        params.keyAlias,
-        params.keyPassword,
-      );
+      await this.resignApk(workApk, params.keystorePath, params.keystorePassword, params.keyAlias, params.keyPassword);
 
+      // Step 11: 完成 (100%)
+      const enabledCount = Object.values(xuanjia).filter(Boolean).length +
+        Object.values(tianyan).filter(Boolean).length;
       task.status = 'completed';
       task.progress = 100;
       task.message = '加固完成';
       task.step = 'done';
-      task.detail = `已启用 ${Object.values(xuanjia).filter(Boolean).length} 个模块`;
+      task.detail = `已启用 ${enabledCount} 个模块`;
       task.outputPath = workApk;
       await this.saveTask(task);
-
       this.logger.log(`加固完成: taskId=${task.id}`);
     } catch (e) {
       task.status = 'failed';
-      task.error = (e as Error).message;
+      const err = e as Error & { cause?: string };
+      task.error = err.cause ? `${err.message} | ${err.cause}` : err.message;
       task.message = `加固失败: ${task.error}`;
       task.step = 'error';
       await this.saveTask(task);
-      this.logger.error(`加固失败: taskId=${task.id}`, (e as Error).stack);
+      this.logger.error(`加固失败: taskId=${task.id}`, err.stack);
+    } finally {
+      clearTimeout(timeoutHandle);
+      // 清理 workDir(成功时保留 workApk 供下载)
+      if (task.status !== 'completed') {
+        await fs.rm(workDir, { recursive: true, force: true }).catch(() => {});
+      }
     }
   }
 
@@ -371,12 +457,7 @@ export class HardeningService {
     tianyan: Record<string, boolean>,
     killPolicy?: HardeningConfig['killPolicy'],
   ): Record<string, unknown> {
-    const kp = killPolicy ?? {
-      strongEvidence: 'kill',
-      weakScoreThreshold: 70,
-      delayMinMs: 0,
-      delayMaxMs: 1000,
-    };
+    const kp = killPolicy ?? { strongEvidence: 'kill', weakScoreThreshold: 70, delayMinMs: 0, delayMaxMs: 1000 };
     return {
       version: 2,
       signatureVerify: { enabled: true, onViolation: kp.strongEvidence },
@@ -385,11 +466,7 @@ export class HardeningService {
       antiFrida: { enabled: xuanjia.x4_antiDynamic, onViolation: kp.strongEvidence },
       antiDump: { enabled: xuanjia.x4_antiDynamic, onViolation: kp.strongEvidence },
       rootDetect: { enabled: xuanjia.x4_antiDynamic, onViolation: 'warn' },
-      xposedDetect: {
-        enabled: xuanjia.x4_antiDynamic,
-        onViolation: kp.strongEvidence,
-        killThreshold: 70,
-      },
+      xposedDetect: { enabled: xuanjia.x4_antiDynamic, onViolation: kp.strongEvidence, killThreshold: 70 },
       emulatorDetect: { enabled: xuanjia.x6_dualApp, onViolation: 'warn' },
       vpnDetect: { enabled: xuanjia.x5_vpnProxy, onViolation: 'warn' },
       dualAppDetect: { enabled: xuanjia.x6_dualApp, onViolation: 'warn' },
@@ -400,13 +477,7 @@ export class HardeningService {
       customLinker: { enabled: tianyan.t1_customLinker },
       vmpProtect: { enabled: tianyan.t2_vmp },
       segmentStrings: { enabled: tianyan.t3_segment },
-      onViolationKill: {
-        delayMinMs: kp.delayMinMs,
-        delayMaxMs: kp.delayMaxMs,
-        method: 'sigabrt',
-        showToast: true,
-        toastMessage: '检测到安全风险',
-      },
+      onViolationKill: { delayMinMs: kp.delayMinMs, delayMaxMs: kp.delayMaxMs, method: 'sigabrt', showToast: true, toastMessage: '检测到安全风险' },
       report: { enabled: false, throttleMs: 300000 },
       integrityCrcTable: [],
       integrityFileList: [],
@@ -416,26 +487,9 @@ export class HardeningService {
   private findSdkDex(): string | null {
     const candidates = [
       path.resolve(process.cwd(), 'sdk-artifacts', 'classes-xcj.dex'),
-      path.resolve(
-        process.cwd(),
-        '..',
-        'sdk-android',
-        'defender-sdk',
-        'build',
-        'intermediates',
-        'aar_main_jar',
-        'release',
-        'classes.jar',
-      ),
+      path.resolve(process.cwd(), '..', 'sdk-android', 'defender-sdk', 'build', 'intermediates', 'aar_main_jar', 'release', 'classes.jar'),
     ];
-    for (const p of candidates) {
-      try {
-        statSync(p);
-        return p;
-      } catch {
-        /* not found */
-      }
-    }
+    for (const p of candidates) { try { statSync(p); return p; } catch { /* not found */ } }
     this.logger.warn('SDK DEX 未找到,跳过 DEX 注入');
     return null;
   }
@@ -443,191 +497,49 @@ export class HardeningService {
   private findSdkSo(abi: string): string | null {
     const candidates = [
       path.resolve(process.cwd(), 'sdk-artifacts', 'lib', abi, 'libxcj_defender.so'),
-      path.resolve(
-        process.cwd(),
-        '..',
-        'sdk-android',
-        'defender-sdk',
-        'build',
-        'intermediates',
-        'stripped_native_libs',
-        'release',
-        'stripReleaseDebugSymbols',
-        'out',
-        'lib',
-        abi,
-        'libxcj_defender.so',
-      ),
+      path.resolve(process.cwd(), '..', 'sdk-android', 'defender-sdk', 'build', 'intermediates', 'stripped_native_libs', 'release', 'stripReleaseDebugSymbols', 'out', 'lib', abi, 'libxcj_defender.so'),
     ];
-    for (const p of candidates) {
-      try {
-        statSync(p);
-        return p;
-      } catch {
-        /* not found */
-      }
-    }
+    for (const p of candidates) { try { statSync(p); return p; } catch { /* not found */ } }
     this.logger.warn(`SDK .so 未找到(${abi}),跳过 SO 注入`);
     return null;
   }
 
-  private async injectAsset(apkPath: string, assetPath: string, content: Buffer): Promise<void> {
-    const tmpFile = path.join(path.dirname(apkPath), path.basename(assetPath));
-    await fs.writeFile(tmpFile, content);
-    try {
-      await execFileAsync('zip', ['-j0', apkPath, tmpFile], { timeout: 30_000 });
-    } catch (e) {
-      throw new BadRequestException('ASSET_INJECT_FAILED', {
-        cause: `Failed to inject asset: ${(e as Error).message}`,
-      });
-    } finally {
-      await fs.unlink(tmpFile).catch(() => {});
-    }
+  /** adm-zip 注入文件到 APK(替代 execFile zip) */
+  private injectToZip(apkPath: string, entryName: string, data: Buffer): void {
+    const zip = new AdmZip(apkPath);
+    zip.addFile(entryName, data);
+    zip.writeZip(apkPath);
   }
 
-  private async injectNativeSo(
-    apkPath: string,
-    soPath: string,
-    randomName: string,
-    abi: string,
-  ): Promise<void> {
-    const tmpDir = path.join(path.dirname(apkPath), `_so_${abi}`);
-    await fs.mkdir(tmpDir, { recursive: true });
-    const libDir = path.join(tmpDir, 'lib', abi);
-    await fs.mkdir(libDir, { recursive: true });
-    await fs.copyFile(soPath, path.join(libDir, randomName));
-    try {
-      await execFileAsync('zip', ['-0', apkPath, `lib/${abi}/${randomName}`], {
-        timeout: 30_000,
-        cwd: tmpDir,
-      });
-    } finally {
-      await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
-    }
-  }
-
-  private async injectMetaSoName(
-    apkPath: string,
-    workDir: string,
-    randomSoName: string,
-  ): Promise<void> {
-    const decodedDir = path.join(workDir, 'decoded_meta');
-    try {
-      await execFileAsync('apktool', ['d', '-f', '-o', decodedDir, apkPath], {
-        timeout: 120_000,
-        maxBuffer: 10 * 1024 * 1024,
-      });
-      const manifestPath = path.join(decodedDir, 'AndroidManifest.xml');
-      let manifest = await fs.readFile(manifestPath, 'utf-8');
-      const metaTag = `<meta-data android:name="xcj.defender.lib" android:value="${randomSoName}" />`;
-      if (!manifest.includes('xcj.defender.lib')) {
-        manifest = manifest.replace(/(<application[^>]*>)/, `$1\n        ${metaTag}`);
-        await fs.writeFile(manifestPath, manifest, 'utf-8');
+  /** adm-zip 删除 META-INF(替代 execFile zip -d) */
+  private stripSignatureAdmZip(apkPath: string): void {
+    const zip = new AdmZip(apkPath);
+    const entries = zip.getEntries();
+    for (const entry of entries) {
+      if (entry.entryName.startsWith('META-INF/')) {
+        zip.deleteFile(entry.entryName);
       }
-      await execFileAsync('apktool', ['b', '-o', apkPath, decodedDir], {
-        timeout: 120_000,
-        maxBuffer: 10 * 1024 * 1024,
-      });
-    } catch (e) {
-      this.logger.warn(`Manifest meta-data 注入失败(降级): ${(e as Error).message}`);
-    } finally {
-      await fs.rm(decodedDir, { recursive: true, force: true }).catch(() => {});
     }
-  }
-
-  private async patchManifestForHardening(
-    apkPath: string,
-    workDir: string,
-    packageName: string,
-  ): Promise<void> {
-    const decodedDir = path.join(workDir, 'decoded_manifest');
-    try {
-      await execFileAsync('apktool', ['d', '-f', '-o', decodedDir, apkPath], {
-        timeout: 120_000,
-        maxBuffer: 10 * 1024 * 1024,
-      });
-      const manifestPath = path.join(decodedDir, 'AndroidManifest.xml');
-      let manifest = await fs.readFile(manifestPath, 'utf-8');
-      const insertItems: string[] = [];
-      if (!manifest.includes('android.permission.INTERNET')) {
-        insertItems.push('<uses-permission android:name="android.permission.INTERNET" />');
-      }
-      if (!manifest.includes('DefenderInitProvider')) {
-        insertItems.push(
-          `<provider android:name="com.xcj.defender.DefenderInitProvider" android:authorities="${packageName}.xcj.defender.init" android:exported="false" android:initOrder="100" />`,
-        );
-      }
-      if (insertItems.length > 0) {
-        const permissionStr = insertItems
-          .filter((i) => i.includes('uses-permission'))
-          .join('\n    ');
-        const providerStr = insertItems.filter((i) => i.includes('provider')).join('\n        ');
-        if (permissionStr)
-          manifest = manifest.replace(/(<manifest[^>]*>)/, `$1\n    ${permissionStr}`);
-        if (providerStr)
-          manifest = manifest.replace(/(<application[^>]*>)/, `$1\n        ${providerStr}`);
-        await fs.writeFile(manifestPath, manifest, 'utf-8');
-      }
-      await execFileAsync('apktool', ['b', '-o', apkPath, decodedDir], {
-        timeout: 120_000,
-        maxBuffer: 10 * 1024 * 1024,
-      });
-    } catch (e) {
-      this.logger.warn(`Manifest 修改失败(降级): ${(e as Error).message}`);
-    } finally {
-      await fs.rm(decodedDir, { recursive: true, force: true }).catch(() => {});
-    }
-  }
-
-  private async stripSignature(apkPath: string): Promise<void> {
-    try {
-      await execFileAsync('zip', ['-d', apkPath, 'META-INF/*'], { timeout: 10_000 });
-    } catch {
-      /* ignore */
-    }
+    zip.writeZip(apkPath);
   }
 
   private async resignApk(
-    apkPath: string,
-    keystorePath: string,
-    keystorePassword: string,
-    keyAlias: string,
-    keyPassword: string,
+    apkPath: string, keystorePath: string, keystorePassword: string,
+    keyAlias: string, keyPassword: string,
   ): Promise<void> {
     const apksigner = this.findApksigner();
     if (!apksigner) throw new BadRequestException('APKSIGNER_NOT_FOUND');
     const unsigned = apkPath + '-unsigned';
     await fs.rename(apkPath, unsigned);
     try {
-      await execFileAsync(
-        apksigner,
-        [
-          'sign',
-          '--ks',
-          keystorePath,
-          '--ks-pass',
-          `pass:${keystorePassword}`,
-          '--ks-key-alias',
-          keyAlias,
-          '--key-pass',
-          `pass:${keyPassword}`,
-          '--v1-signing-enabled',
-          'true',
-          '--v2-signing-enabled',
-          'true',
-          '--v3-signing-enabled',
-          'true',
-          '--in',
-          unsigned,
-          '--out',
-          apkPath,
-        ],
-        { timeout: 60_000 },
-      );
+      await execWithStderr(apksigner, [
+        'sign', '--ks', keystorePath, '--ks-pass', `pass:${keystorePassword}`,
+        '--ks-key-alias', keyAlias, '--key-pass', `pass:${keyPassword}`,
+        '--v1-signing-enabled', 'true', '--v2-signing-enabled', 'true', '--v3-signing-enabled', 'true',
+        '--in', unsigned, '--out', apkPath,
+      ], { timeout: 60_000 });
     } catch (e) {
-      throw new BadRequestException('RESIGN_FAILED', {
-        cause: `apksigner failed: ${(e as Error).message}`,
-      });
+      throw new BadRequestException('RESIGN_FAILED', { cause: (e as Error).message });
     } finally {
       await fs.unlink(unsigned).catch(() => {});
     }
@@ -635,13 +547,7 @@ export class HardeningService {
 
   private findApksigner(): string | null {
     const candidates = ['apksigner', '/opt/android-sdk/build-tools/34.0.0/apksigner'];
-    for (const c of candidates) {
-      try {
-        if (existsSync(c)) return c;
-      } catch {
-        /* ignore */
-      }
-    }
+    for (const c of candidates) { try { if (existsSync(c)) return c; } catch { /* ignore */ } }
     return 'apksigner';
   }
 }
