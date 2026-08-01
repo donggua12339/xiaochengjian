@@ -5,7 +5,7 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import AdmZip from 'adm-zip';
+// adm-zip 仅在 preflight 只读检查中使用,此处不再引入
 import { ApkAnalyzerService } from './apk-analyzer.service';
 import { SoInjector } from '../packer/so-injector';
 import { PreflightService } from './preflight.service';
@@ -323,15 +323,15 @@ export class HardeningService {
       );
       if (controller.signal.aborted) throw new Error('加固超时');
 
-      // Step 1: strip 签名 (10%) — 用 adm-zip 删 META-INF
+      // Step 1: strip 签名 (10%) — 用 zip -d 删 META-INF
       await this.updateProgress(task, 'strip', 10, '删除旧签名...');
-      this.stripSignatureAdmZip(workApk);
+      await this.stripSignature(workApk);
 
       // Step 2: 注入 config (15%)
       await this.updateProgress(task, 'config', 15, '注入 defender-config.json...');
       const defenderConfig = this.buildDefenderConfig(xuanjia, tianyan, params.config.killPolicy);
       const configJson = JSON.stringify(defenderConfig, null, 2);
-      this.injectToZip(workApk, 'assets/defender-config.json', Buffer.from(configJson));
+      await this.injectToZip(workApk, 'assets/defender-config.json', Buffer.from(configJson));
 
       // Step 3: 注入 DEX (25%)
       await this.updateProgress(task, 'dex', 25, '注入 SDK DEX 模块...');
@@ -343,7 +343,7 @@ export class HardeningService {
           const m = f.match(/classes(\d*)\.dex/);
           return Math.max(max, m ? (m[1] ? parseInt(m[1], 10) : 1) : 0);
         }, 0);
-        this.injectToZip(workApk, `classes${maxNum + 1}.dex`, dexContent);
+        await this.injectToZip(workApk, `classes${maxNum + 1}.dex`, dexContent);
       }
 
       // Step 4: 注入 SO arm64 (35%)
@@ -354,14 +354,14 @@ export class HardeningService {
           randomSoName = this.soInjector.pickRandomSoName();
           await this.updateProgress(task, 'so_arm64', 35, `注入 lib/arm64-v8a/${randomSoName}...`);
           const soData = await fs.readFile(soPath);
-          this.injectToZip(workApk, `lib/arm64-v8a/${randomSoName}`, soData);
+          await this.injectToZip(workApk, `lib/arm64-v8a/${randomSoName}`, soData);
 
           // Step 5: 注入 SO armv7 (40%)
           const soPathV7 = this.findSdkSo('armeabi-v7a');
           if (soPathV7 && params.analysis.nativeAbis.includes('armeabi-v7a')) {
             await this.updateProgress(task, 'so_armv7', 40, `注入 lib/armeabi-v7a/${randomSoName}...`);
             const soDataV7 = await fs.readFile(soPathV7);
-            this.injectToZip(workApk, `lib/armeabi-v7a/${randomSoName}`, soDataV7);
+            await this.injectToZip(workApk, `lib/armeabi-v7a/${randomSoName}`, soDataV7);
           }
         }
       }
@@ -505,23 +505,32 @@ export class HardeningService {
     return null;
   }
 
-  /** adm-zip 注入文件到 APK(替代 execFile zip) */
-  private injectToZip(apkPath: string, entryName: string, data: Buffer): void {
-    const zip = new AdmZip(apkPath);
-    zip.addFile(entryName, data);
-    zip.writeZip(apkPath);
+  /** 用 zip 命令行注入文件到 APK(保留原有条目对齐,不重写整个 zip) */
+  private async injectToZip(apkPath: string, entryName: string, data: Buffer): Promise<void> {
+    const tmpDir = path.join(path.dirname(apkPath), `_inject_${Date.now()}`);
+    const targetPath = path.join(tmpDir, entryName);
+    await fs.mkdir(path.dirname(targetPath), { recursive: true });
+    await fs.writeFile(targetPath, data);
+    try {
+      // .so 文件用 -0 (store 不压缩,保持页面对齐)
+      const isNative = entryName.endsWith('.so');
+      const flags = isNative ? ['-0', '-r'] : ['-r'];
+      await execWithStderr('zip', [...flags, apkPath, entryName], {
+        timeout: 30_000,
+        cwd: tmpDir,
+      });
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+    }
   }
 
-  /** adm-zip 删除 META-INF(替代 execFile zip -d) */
-  private stripSignatureAdmZip(apkPath: string): void {
-    const zip = new AdmZip(apkPath);
-    const entries = zip.getEntries();
-    for (const entry of entries) {
-      if (entry.entryName.startsWith('META-INF/')) {
-        zip.deleteFile(entry.entryName);
-      }
+  /** 用 zip -d 删除 META-INF 签名(不重写整个 zip) */
+  private async stripSignature(apkPath: string): Promise<void> {
+    try {
+      await execWithStderr('zip', ['-d', apkPath, 'META-INF/*'], { timeout: 10_000 });
+    } catch {
+      // META-INF 不存在时 zip -d 会返回非零,忽略
     }
-    zip.writeZip(apkPath);
   }
 
   private async resignApk(
