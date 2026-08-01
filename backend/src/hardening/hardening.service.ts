@@ -366,10 +366,10 @@ export class HardeningService {
         }
       }
 
-      // Step 6: apktool 解包 (50%) — 合并为一次
-      await this.updateProgress(task, 'apktool_d', 50, '解包 APK(修改 Manifest)...');
+      // Step 6: apktool 解包 (50%) — --no-src 跳过 DEX 反编译(省内存+省时间)
+      await this.updateProgress(task, 'apktool_d', 50, '解包 APK(修改 Manifest,跳过 DEX 反编译)...');
       const decodedDir = path.join(workDir, 'decoded');
-      await execWithStderr('apktool', ['d', '-f', '-o', decodedDir, workApk], { timeout: 120_000 });
+      await execWithStderr('apktool', ['d', '-f', '--no-src', '-o', decodedDir, workApk], { timeout: 180_000, maxBuffer: 20 * 1024 * 1024 });
 
       // Step 7: 修改 Manifest (60%) — 合并所有修改为一次
       await this.updateProgress(task, 'manifest', 60, '注入 meta-data + provider + permission...');
@@ -397,7 +397,7 @@ export class HardeningService {
 
       // Step 8: apktool 重建 (70%)
       await this.updateProgress(task, 'apktool_b', 70, '重建 APK...');
-      await execWithStderr('apktool', ['b', '-o', workApk, decodedDir], { timeout: 120_000 });
+      await execWithStderr('apktool', ['b', '-o', workApk, decodedDir], { timeout: 180_000, maxBuffer: 20 * 1024 * 1024 });
       // 清理 decoded 目录
       await fs.rm(decodedDir, { recursive: true, force: true }).catch(() => {});
 
