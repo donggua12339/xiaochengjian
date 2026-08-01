@@ -487,6 +487,7 @@ export class HardeningService {
   private findSdkDex(): string | null {
     const candidates = [
       path.resolve(process.cwd(), 'sdk-artifacts', 'classes-xcj.dex'),
+      path.resolve(process.cwd(), 'sdk-artifacts', 'classes.dex'),
       path.resolve(process.cwd(), '..', 'sdk-android', 'defender-sdk', 'build', 'intermediates', 'aar_main_jar', 'release', 'classes.jar'),
     ];
     for (const p of candidates) { try { statSync(p); return p; } catch { /* not found */ } }

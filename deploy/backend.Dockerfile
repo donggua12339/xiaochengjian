@@ -56,6 +56,8 @@ COPY backend/ ./backend/
 RUN cd backend && pnpm install --no-frozen-lockfile && pnpm prisma generate
 # 复制构建产物
 COPY --from=builder /app/backend/dist ./backend/dist
+# 内置 SDK 加固产物(classes.dex + libxcj_defender.so),使任意 APK 可加固
+COPY deploy/sdk-artifacts/ ./backend/sdk-artifacts/
 
 WORKDIR /app/backend
 

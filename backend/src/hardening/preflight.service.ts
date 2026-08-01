@@ -117,6 +117,7 @@ export class PreflightService {
   async validateSdkArtifacts(): Promise<void> {
     const candidates = [
       path.resolve(process.cwd(), 'sdk-artifacts', 'classes-xcj.dex'),
+      path.resolve(process.cwd(), 'sdk-artifacts', 'classes.dex'),
       path.resolve(process.cwd(), '..', 'sdk-android', 'defender-sdk', 'build',
         'intermediates', 'aar_main_jar', 'release', 'classes.jar'),
     ];
@@ -129,7 +130,7 @@ export class PreflightService {
       } catch { /* not found */ }
     }
     if (!found) {
-      throw new BadRequestException('SDK 未构建: 找不到 classes-xcj.dex 或 classes.jar');
+      throw new BadRequestException('SDK 未构建: 找不到 classes.dex 或 classes.jar');
     }
   }
 
