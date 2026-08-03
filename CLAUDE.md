@@ -100,7 +100,7 @@
 - 独立 .so 间通信:禁 `extern` 跨 .so 引用;用 setter 模式或 JNI_OnLoad `void* reserved` 传参
 - ELF 操作:mprotect 临时 RW → 写 → 恢复 R;只擦 e_ident(16 字节),禁擦 64 字节
 - 构建期密钥:禁明文出现在 .c/.h 源文件;用 CFF 碎片+运行时重建;`.gitignore` 必须挡 `x0_*.h`/`cff_params.h`
-- DEX 写入:禁 dexlib2 3.0.7 的 DexWriter(debug_info string_id bug);用 2.x 或 binary patch
+- DEX 写入:dexlib2 3.0.7(`com.android.tools.smali:smali-dexlib2`)读改可用,但其 DexWriter 有 debug_info string_id bug(重排 string table 后 `parameter_name` 索引越界)。现行方案=3.0.7 写出后**必须接 binary patch**(`EncryptStringsCommand.patchParameterNames` 等长 ULEB128 清零越界索引 + 先写 SHA-1 再算 adler32)。禁单独裸用 DexWriter 产物
 - smali 指令格式:`CONST_16`=21s,`MOVE_RESULT`=11x,`NEW_ARRAY`=22c,寄存器>15 用 3rc
 
 ### 异步任务模式(backend hardening)
