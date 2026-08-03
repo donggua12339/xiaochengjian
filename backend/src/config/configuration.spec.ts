@@ -237,5 +237,43 @@ describe('configuration', () => {
       expect(typeof config.port).toBe('number');
       expect(Array.isArray(config.corsOrigins)).toBe(true);
     });
+
+    describe('默认签名校验(P2-2 fail fast)', () => {
+      const setFullDefaultKs = () => {
+        process.env.DEFAULT_KS_ENABLED = 'true';
+        process.env.DEFAULT_KS_PATH = '/tmp/ks.jks';
+        process.env.DEFAULT_KS_PASSWORD = 'kspass';
+        process.env.DEFAULT_KS_ALIAS = 'key0';
+        process.env.DEFAULT_KS_KEY_PASSWORD = 'keypass';
+      };
+
+      it('未启用默认签名:字段缺失也不报错', () => {
+        setValidDevConfig();
+        process.env.DEFAULT_KS_ENABLED = 'false';
+        expect(() => validate({})).not.toThrow();
+      });
+
+      it('启用且字段齐全:通过', () => {
+        setValidDevConfig();
+        setFullDefaultKs();
+        expect(() => validate({})).not.toThrow();
+      });
+
+      it('启用但缺 PATH:拒绝并指明字段', () => {
+        setValidDevConfig();
+        setFullDefaultKs();
+        delete process.env.DEFAULT_KS_PATH;
+        expect(() => validate({})).toThrow(/DEFAULT_KS_PATH/);
+      });
+
+      it('启用但缺多个字段:全部列出', () => {
+        setValidDevConfig();
+        process.env.DEFAULT_KS_ENABLED = 'true';
+        // 不设任何 DEFAULT_KS_* 字段
+        expect(() => validate({})).toThrow(
+          /DEFAULT_KS_PATH.*DEFAULT_KS_PASSWORD.*DEFAULT_KS_ALIAS.*DEFAULT_KS_KEY_PASSWORD/,
+        );
+      });
+    });
   });
 });

@@ -135,6 +135,15 @@ export class AppConfig {
   integrityRsaPrivateKey?: string;
   // RSA 私钥文件路径(PEM,docker-compose 挂载,优先于 integrityRsaPrivateKey)
   integrityRsaPrivateKeyFile?: string;
+
+  // ============= 默认签名(开发/测试便捷,生产建议关闭)=============
+  defaultKeystore!: {
+    enabled: boolean;
+    path: string;
+    password: string;
+    alias: string;
+    keyPassword: string;
+  };
 }
 
 export const appConfig = (): AppConfig => ({
@@ -188,6 +197,14 @@ export const appConfig = (): AppConfig => ({
   integrityTokenSecret: process.env.INTEGRITY_TOKEN_SECRET || undefined,
   integrityRsaPrivateKey: process.env.INTEGRITY_RSA_PRIVATE_KEY || undefined,
   integrityRsaPrivateKeyFile: process.env.INTEGRITY_RSA_PRIVATE_KEY_FILE || undefined,
+  // 默认签名(开发/测试便捷)
+  defaultKeystore: {
+    enabled: process.env.DEFAULT_KS_ENABLED === 'true',
+    path: process.env.DEFAULT_KS_PATH ?? '',
+    password: process.env.DEFAULT_KS_PASSWORD ?? '',
+    alias: process.env.DEFAULT_KS_ALIAS ?? '',
+    keyPassword: process.env.DEFAULT_KS_KEY_PASSWORD ?? '',
+  },
 });
 
 export const validate = (_raw: unknown): AppConfig => {
@@ -200,6 +217,19 @@ export const validate = (_raw: unknown): AppConfig => {
   if (errors.length > 0) {
     const messages = errors.map((e) => Object.values(e.constraints ?? {}).join(', ')).join('; ');
     throw new Error(`配置校验失败: ${messages}`);
+  }
+
+  // 默认签名:启用则必需字段齐全(fail fast,避免运行时 400 才发现)
+  if (config.defaultKeystore?.enabled) {
+    const dk = config.defaultKeystore;
+    const missing: string[] = [];
+    if (!dk.path) missing.push('DEFAULT_KS_PATH');
+    if (!dk.password) missing.push('DEFAULT_KS_PASSWORD');
+    if (!dk.alias) missing.push('DEFAULT_KS_ALIAS');
+    if (!dk.keyPassword) missing.push('DEFAULT_KS_KEY_PASSWORD');
+    if (missing.length > 0) {
+      throw new Error(`DEFAULT_KS_ENABLED=true 但缺少配置: ${missing.join(', ')}`);
+    }
   }
 
   // 生产环境额外检查

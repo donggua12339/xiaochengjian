@@ -22,6 +22,12 @@ import { RedisModule } from '../redis/redis.module';
     PreflightService,
     { provide: APP_FILTER, useClass: MulterExceptionFilter },
   ],
-  exports: [HardeningService, ApkAnalyzerService, FileStorageService, ChunkStorageService, PreflightService],
+  exports: [
+    HardeningService,
+    ApkAnalyzerService,
+    FileStorageService,
+    ChunkStorageService,
+    PreflightService,
+  ],
 })
 export class HardeningModule {}

@@ -13,6 +13,7 @@ import {
   BadRequestException,
   NotFoundException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage, memoryStorage } from 'multer';
 import { ApiBearerAuth, ApiOperation, ApiTags, ApiConsumes } from '@nestjs/swagger';
@@ -26,6 +27,7 @@ import { HardeningService } from './hardening.service';
 import { FileStorageService } from './file-storage.service';
 import { ChunkStorageService } from './chunk-storage.service';
 import type { HardeningConfig } from './hardening-config.dto';
+import type { AppConfig } from '../config/configuration';
 
 /** APK magic bytes: PK\x03\x04 (ZIP format) */
 const APK_MAGIC = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
@@ -41,6 +43,7 @@ export class HardeningController {
     private readonly hardeningService: HardeningService,
     private readonly fileStorage: FileStorageService,
     private readonly chunkStorage: ChunkStorageService,
+    private readonly configService: ConfigService<AppConfig, true>,
   ) {}
 
   /**
@@ -58,7 +61,9 @@ export class HardeningController {
           // 临时目录,按开发者隔离
           const devId = (_req as unknown as { user?: { sub?: string } }).user?.sub ?? 'anonymous';
           const dir = path.join(process.cwd(), 'tmp', 'hardening', devId);
-          fs.mkdir(dir, { recursive: true }).then(() => cb(null, dir)).catch((e) => cb(e, ''));
+          fs.mkdir(dir, { recursive: true })
+            .then(() => cb(null, dir))
+            .catch((e) => cb(e, ''));
         },
         filename: (_req, file, cb) => {
           const id = randomUUID();
@@ -68,10 +73,7 @@ export class HardeningController {
       limits: { fileSize: 200 * 1024 * 1024 },
     }),
   )
-  async upload(
-    @UploadedFile() file: Express.Multer.File,
-    @CurrentDeveloper() developerId: string,
-  ) {
+  async upload(@UploadedFile() file: Express.Multer.File, @CurrentDeveloper() developerId: string) {
     if (!file) {
       throw new BadRequestException('请上传 APK 文件');
     }
@@ -99,13 +101,7 @@ export class HardeningController {
     }
 
     const fileId = randomUUID();
-    await this.fileStorage.save(
-      fileId,
-      developerId,
-      file.path,
-      file.originalname,
-      file.size,
-    );
+    await this.fileStorage.save(fileId, developerId, file.path, file.originalname, file.size);
 
     this.logger.log(`上传完成: fileId=${fileId} dev=${developerId} size=${file.size}`);
     return { fileId, fileName: file.originalname, fileSize: file.size };
@@ -160,12 +156,7 @@ export class HardeningController {
     if (isNaN(chunkIndex)) {
       throw new BadRequestException('chunkIndex 必须为数字');
     }
-    return this.chunkStorage.receiveChunk(
-      body.uploadId,
-      developerId,
-      chunkIndex,
-      chunkFile.buffer,
-    );
+    return this.chunkStorage.receiveChunk(body.uploadId, developerId, chunkIndex, chunkFile.buffer);
   }
 
   /**
@@ -190,10 +181,7 @@ export class HardeningController {
    */
   @Post('analyze')
   @ApiOperation({ summary: '传 fileId 启动异步分析(返回 taskId)' })
-  async analyze(
-    @Body() body: { fileId: string },
-    @CurrentDeveloper() developerId: string,
-  ) {
+  async analyze(@Body() body: { fileId: string }, @CurrentDeveloper() developerId: string) {
     if (!body?.fileId) {
       throw new BadRequestException('请提供 fileId');
     }
@@ -203,11 +191,7 @@ export class HardeningController {
     this.logger.log(`分析请求: dev=${developerId} fileId=${body.fileId} file=${meta.fileName}`);
 
     try {
-      const task = await this.hardeningService.startAnalysis(
-        meta.path,
-        developerId,
-        meta.fileName,
-      );
+      const task = await this.hardeningService.startAnalysis(meta.path, developerId, meta.fileName);
 
       // 分析启动后清理上传文件(分析过程会自己读文件)
       // 注意: 不立即删,因为分析是异步的,文件在分析期间需要存在
@@ -222,6 +206,7 @@ export class HardeningController {
   /**
    * POST /v1/hardening/harden
    * 传 fileId + keystore(memoryStorage 内存传) + 配置,执行加固。
+   * 支持 useDefaultSign=true 使用服务端预配置的默认 Keystore。
    */
   @Post('harden')
   @ApiOperation({ summary: '传 fileId + Keystore 执行加固(异步)' })
@@ -238,9 +223,10 @@ export class HardeningController {
     @Body()
     body: {
       fileId: string;
-      keystorePassword: string;
-      keyAlias: string;
-      keyPassword: string;
+      useDefaultSign?: string;
+      keystorePassword?: string;
+      keyAlias?: string;
+      keyPassword?: string;
       config: string;
       analysisJson: string;
       ownershipConfirmed: string;
@@ -248,19 +234,59 @@ export class HardeningController {
   ) {
     if (!body?.fileId) throw new BadRequestException('请提供 fileId');
     if (!body.config) throw new BadRequestException('请提供加固配置');
-    if (!body.keystorePassword || !body.keyAlias || !body.keyPassword) {
-      throw new BadRequestException('请提供 Keystore 密码和别名');
-    }
     if (body.ownershipConfirmed !== 'true') {
       throw new BadRequestException('请确认 APK 所有权声明(ADR 0097)');
-    }
-    if (!keystoreFile) {
-      throw new BadRequestException('请上传 Keystore 文件');
     }
 
     const meta = await this.fileStorage.get(body.fileId, developerId);
     const config: HardeningConfig = JSON.parse(body.config);
     const analysis = JSON.parse(body.analysisJson);
+
+    // 解析签名来源
+    let keystorePath: string;
+    let keystorePassword: string;
+    let keyAlias: string;
+    let keyPassword: string;
+    let signMethod: 'upload' | 'default';
+    let tmpKeystorePath: string | null = null;
+
+    if (body.useDefaultSign === 'true') {
+      if (keystoreFile) {
+        throw new BadRequestException('使用默认签名时不能同时上传 Keystore 文件');
+      }
+      const dk = this.configService.get('defaultKeystore');
+      if (!dk?.enabled) {
+        throw new BadRequestException('默认签名未启用');
+      }
+      try {
+        await fs.stat(dk.path);
+      } catch {
+        throw new BadRequestException('默认 Keystore 文件不存在');
+      }
+      keystorePath = dk.path;
+      keystorePassword = dk.password;
+      keyAlias = dk.alias;
+      keyPassword = dk.keyPassword;
+      signMethod = 'default';
+    } else {
+      if (!body.keystorePassword || !body.keyAlias || !body.keyPassword) {
+        throw new BadRequestException('请提供 Keystore 密码和别名');
+      }
+      if (!keystoreFile) {
+        throw new BadRequestException('请上传 Keystore 文件');
+      }
+      // Keystore 写入临时文件(内存 → 磁盘,apksigner 需要文件路径)
+      const tmpDir = path.join(process.cwd(), 'tmp', 'hardening', developerId);
+      await fs.mkdir(tmpDir, { recursive: true });
+      tmpKeystorePath = path.join(tmpDir, `ks_${Date.now()}.jks`);
+      await fs.writeFile(tmpKeystorePath, keystoreFile.buffer);
+      keystoreFile.buffer.fill(0);
+      keystorePath = tmpKeystorePath;
+      keystorePassword = body.keystorePassword;
+      keyAlias = body.keyAlias;
+      keyPassword = body.keyPassword;
+      signMethod = 'upload';
+    }
 
     // ADR 0097 审计日志
     this.logger.warn(
@@ -269,25 +295,17 @@ export class HardeningController {
         `ownershipConfirmed=${body.ownershipConfirmed} ` +
         `productLine=${config.productLine} ` +
         `preset=${config.preset ?? 'manual'} ` +
+        `signMethod=${signMethod} ` +
         `timestamp=${new Date().toISOString()}`,
     );
-
-    // Keystore 写入临时文件(内存 → 磁盘,apksigner 需要文件路径)
-    const tmpDir = path.join(process.cwd(), 'tmp', 'hardening', developerId);
-    await fs.mkdir(tmpDir, { recursive: true });
-    const keystorePath = path.join(tmpDir, `ks_${Date.now()}.jks`);
-    await fs.writeFile(keystorePath, keystoreFile.buffer);
-
-    // 清除内存中的 keystore buffer
-    keystoreFile.buffer.fill(0);
 
     try {
       const task = await this.hardeningService.harden({
         apkPath: meta.path,
         keystorePath,
-        keystorePassword: body.keystorePassword,
-        keyAlias: body.keyAlias,
-        keyPassword: body.keyPassword,
+        keystorePassword,
+        keyAlias,
+        keyPassword,
         config,
         analysis,
         developerId,
@@ -295,9 +313,21 @@ export class HardeningController {
 
       return { taskId: task.id, status: task.status, message: task.message };
     } catch (e) {
-      await fs.unlink(keystorePath).catch(() => {});
+      if (tmpKeystorePath) await fs.unlink(tmpKeystorePath).catch(() => {});
       throw e;
     }
+  }
+
+  /**
+   * GET /v1/hardening/default-sign-status
+   * 查询默认签名是否可用(不返回密码)
+   */
+  @Get('default-sign-status')
+  @ApiOperation({ summary: '查询默认签名是否可用' })
+  defaultSignStatus(): { enabled: boolean; alias?: string } {
+    const dk = this.configService.get('defaultKeystore');
+    if (!dk?.enabled) return { enabled: false };
+    return { enabled: true, alias: dk.alias };
   }
 
   /**
@@ -358,10 +388,7 @@ export class HardeningController {
    */
   @Delete('tasks/:taskId')
   @ApiOperation({ summary: '取消加固/分析任务' })
-  async cancelTask(
-    @Param('taskId') taskId: string,
-    @CurrentDeveloper() developerId: string,
-  ) {
+  async cancelTask(@Param('taskId') taskId: string, @CurrentDeveloper() developerId: string) {
     const task = await this.hardeningService.getTask(taskId);
     if (!task) throw new NotFoundException('任务不存在');
     if (task.developerId !== developerId) throw new NotFoundException('任务不存在');

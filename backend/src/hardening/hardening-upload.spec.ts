@@ -1,4 +1,5 @@
 import { Test } from '@nestjs/testing';
+import { ConfigService } from '@nestjs/config';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { HardeningController } from './hardening.controller';
 import { HardeningService } from './hardening.service';
@@ -10,7 +11,12 @@ describe('HardeningController.upload', () => {
   let controller: HardeningController;
   let fileStorage: { save: jest.Mock; get: jest.Mock; delete: jest.Mock };
   let chunkStorage: { createUpload: jest.Mock; receiveChunk: jest.Mock; mergeChunks: jest.Mock };
-  let hardeningService: { startAnalysis: jest.Mock; harden: jest.Mock; getTask: jest.Mock; getUserTasks: jest.Mock };
+  let hardeningService: {
+    startAnalysis: jest.Mock;
+    harden: jest.Mock;
+    getTask: jest.Mock;
+    getUserTasks: jest.Mock;
+  };
 
   beforeEach(async () => {
     fileStorage = { save: jest.fn(), get: jest.fn(), delete: jest.fn() };
@@ -27,6 +33,7 @@ describe('HardeningController.upload', () => {
         { provide: HardeningService, useValue: hardeningService },
         { provide: FileStorageService, useValue: fileStorage },
         { provide: ChunkStorageService, useValue: chunkStorage },
+        { provide: ConfigService, useValue: { get: jest.fn() } },
       ],
     })
       .overrideGuard(JwtAuthGuard)
@@ -37,7 +44,13 @@ describe('HardeningController.upload', () => {
 
   describe('upload', () => {
     const mockFile = (buffer: Buffer, name: string, size: number) =>
-      ({ buffer, originalname: name, size, mimetype: 'application/octet-stream', path: `/tmp/${name}` } as Express.Multer.File);
+      ({
+        buffer,
+        originalname: name,
+        size,
+        mimetype: 'application/octet-stream',
+        path: `/tmp/${name}`,
+      }) as Express.Multer.File;
 
     it('should return fileId for valid APK', async () => {
       // APK magic bytes: PK\x03\x04
@@ -84,12 +97,18 @@ describe('HardeningController.upload', () => {
 
       const result = await controller.analyze({ fileId: 'f1' }, 'dev1');
       expect(result.taskId).toBe('task-1');
-      expect(hardeningService.startAnalysis).toHaveBeenCalledWith('/tmp/f1.apk', 'dev1', 'test.apk');
+      expect(hardeningService.startAnalysis).toHaveBeenCalledWith(
+        '/tmp/f1.apk',
+        'dev1',
+        'test.apk',
+      );
     });
 
     it('should reject invalid fileId', async () => {
       fileStorage.get.mockRejectedValue(new NotFoundException('not found'));
-      await expect(controller.analyze({ fileId: 'nope' }, 'dev1')).rejects.toThrow(NotFoundException);
+      await expect(controller.analyze({ fileId: 'nope' }, 'dev1')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 });
