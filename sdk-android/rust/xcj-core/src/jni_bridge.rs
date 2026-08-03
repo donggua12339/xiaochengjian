@@ -62,13 +62,19 @@ pub extern "system" fn Java_com_xcj_sdk_XcjNative_init(
     app_secret: JString,
     server_url: JString,
 ) -> jint {
-    let Ok(app_id) = env.get_string(&app_id) else { return -2 };
+    let Ok(app_id) = env.get_string(&app_id) else {
+        return -2;
+    };
     let app_id: String = app_id.into();
 
-    let Ok(app_secret) = env.get_string(&app_secret) else { return -2 };
+    let Ok(app_secret) = env.get_string(&app_secret) else {
+        return -2;
+    };
     let app_secret: String = app_secret.into();
 
-    let Ok(server_url) = env.get_string(&server_url) else { return -2 };
+    let Ok(server_url) = env.get_string(&server_url) else {
+        return -2;
+    };
     let server_url: String = server_url.into();
 
     let mut guard = match SDK_CONFIG.lock() {
@@ -98,7 +104,10 @@ pub extern "system" fn Java_com_xcj_sdk_XcjNative_generateMachineId(
     media_drm_id: JString,
     hardware_fingerprint: JString,
 ) -> jstring {
-    let android_id: String = env.get_string(&android_id).map(|s| s.into()).unwrap_or_default();
+    let android_id: String = env
+        .get_string(&android_id)
+        .map(|s| s.into())
+        .unwrap_or_default();
     let media_drm_id: Option<String> = env
         .get_string(&media_drm_id)
         .ok()
@@ -109,7 +118,11 @@ pub extern "system" fn Java_com_xcj_sdk_XcjNative_generateMachineId(
         .map(|s| s.into())
         .unwrap_or_default();
 
-    let machine_id = machine_id::generate_machine_id(&android_id, media_drm_id.as_deref(), &hardware_fingerprint);
+    let machine_id = machine_id::generate_machine_id(
+        &android_id,
+        media_drm_id.as_deref(),
+        &hardware_fingerprint,
+    );
 
     env.new_string(machine_id)
         .map(|s| s.into_raw())
@@ -123,8 +136,15 @@ pub extern "system" fn Java_com_xcj_sdk_XcjNative_validateCardKey(
     _class: JClass,
     card_key: JString,
 ) -> jint {
-    let card_key: String = env.get_string(&card_key).map(|s| s.into()).unwrap_or_default();
-    if card_key::validate_card_key(&card_key) { 1 } else { 0 }
+    let card_key: String = env
+        .get_string(&card_key)
+        .map(|s| s.into())
+        .unwrap_or_default();
+    if card_key::validate_card_key(&card_key) {
+        1
+    } else {
+        0
+    }
 }
 
 /// 加密离线缓存
@@ -138,12 +158,24 @@ pub extern "system" fn Java_com_xcj_sdk_XcjNative_encryptCache(
     device_fingerprint: JString,
     plaintext: JString,
 ) -> jstring {
-    let cache_key: String = env.get_string(&cache_key).map(|s| s.into()).unwrap_or_default();
-    let device_fingerprint: String = env.get_string(&device_fingerprint).map(|s| s.into()).unwrap_or_default();
-    let plaintext: String = env.get_string(&plaintext).map(|s| s.into()).unwrap_or_default();
+    let cache_key: String = env
+        .get_string(&cache_key)
+        .map(|s| s.into())
+        .unwrap_or_default();
+    let device_fingerprint: String = env
+        .get_string(&device_fingerprint)
+        .map(|s| s.into())
+        .unwrap_or_default();
+    let plaintext: String = env
+        .get_string(&plaintext)
+        .map(|s| s.into())
+        .unwrap_or_default();
 
     match cache::encrypt_cache(&cache_key, &device_fingerprint, &plaintext) {
-        Ok(encoded) => env.new_string(encoded).map(|s| s.into_raw()).unwrap_or(std::ptr::null_mut()),
+        Ok(encoded) => env
+            .new_string(encoded)
+            .map(|s| s.into_raw())
+            .unwrap_or(std::ptr::null_mut()),
         Err(_) => std::ptr::null_mut(),
     }
 }
@@ -159,12 +191,24 @@ pub extern "system" fn Java_com_xcj_sdk_XcjNative_decryptCache(
     device_fingerprint: JString,
     encoded: JString,
 ) -> jstring {
-    let cache_key: String = env.get_string(&cache_key).map(|s| s.into()).unwrap_or_default();
-    let device_fingerprint: String = env.get_string(&device_fingerprint).map(|s| s.into()).unwrap_or_default();
-    let encoded: String = env.get_string(&encoded).map(|s| s.into()).unwrap_or_default();
+    let cache_key: String = env
+        .get_string(&cache_key)
+        .map(|s| s.into())
+        .unwrap_or_default();
+    let device_fingerprint: String = env
+        .get_string(&device_fingerprint)
+        .map(|s| s.into())
+        .unwrap_or_default();
+    let encoded: String = env
+        .get_string(&encoded)
+        .map(|s| s.into())
+        .unwrap_or_default();
 
     match cache::decrypt_cache(&cache_key, &device_fingerprint, &encoded) {
-        Ok(plaintext) => env.new_string(plaintext).map(|s| s.into_raw()).unwrap_or(std::ptr::null_mut()),
+        Ok(plaintext) => env
+            .new_string(plaintext)
+            .map(|s| s.into_raw())
+            .unwrap_or(std::ptr::null_mut()),
         Err(_) => std::ptr::null_mut(),
     }
 }
@@ -184,8 +228,14 @@ pub extern "system" fn Java_com_xcj_sdk_XcjNative_encryptRequest(
     aes_key_hex: JString,
     plaintext: JString,
 ) -> jstring {
-    let aes_key_hex: String = env.get_string(&aes_key_hex).map(|s| s.into()).unwrap_or_default();
-    let plaintext: String = env.get_string(&plaintext).map(|s| s.into()).unwrap_or_default();
+    let aes_key_hex: String = env
+        .get_string(&aes_key_hex)
+        .map(|s| s.into())
+        .unwrap_or_default();
+    let plaintext: String = env
+        .get_string(&plaintext)
+        .map(|s| s.into())
+        .unwrap_or_default();
 
     let Ok(aes_key_bytes) = hex::decode(&aes_key_hex) else {
         return std::ptr::null_mut();
@@ -200,7 +250,9 @@ pub extern "system" fn Java_com_xcj_sdk_XcjNative_encryptRequest(
         Ok(encrypted) => {
             use base64::Engine;
             let encoded = base64::engine::general_purpose::STANDARD.encode(&encrypted);
-            env.new_string(encoded).map(|s| s.into_raw()).unwrap_or(std::ptr::null_mut())
+            env.new_string(encoded)
+                .map(|s| s.into_raw())
+                .unwrap_or(std::ptr::null_mut())
         }
         Err(_) => std::ptr::null_mut(),
     }
@@ -221,8 +273,14 @@ pub extern "system" fn Java_com_xcj_sdk_XcjNative_decryptResponse(
     aes_key_hex: JString,
     encoded: JString,
 ) -> jstring {
-    let aes_key_hex: String = env.get_string(&aes_key_hex).map(|s| s.into()).unwrap_or_default();
-    let encoded: String = env.get_string(&encoded).map(|s| s.into()).unwrap_or_default();
+    let aes_key_hex: String = env
+        .get_string(&aes_key_hex)
+        .map(|s| s.into())
+        .unwrap_or_default();
+    let encoded: String = env
+        .get_string(&encoded)
+        .map(|s| s.into())
+        .unwrap_or_default();
 
     let Ok(aes_key_bytes) = hex::decode(&aes_key_hex) else {
         return std::ptr::null_mut();
@@ -239,12 +297,13 @@ pub extern "system" fn Java_com_xcj_sdk_XcjNative_decryptResponse(
     };
 
     match crypto::aes_decrypt(&key, &combined) {
-        Ok(plaintext_bytes) => {
-            match String::from_utf8(plaintext_bytes) {
-                Ok(plaintext) => env.new_string(plaintext).map(|s| s.into_raw()).unwrap_or(std::ptr::null_mut()),
-                Err(_) => std::ptr::null_mut(),
-            }
-        }
+        Ok(plaintext_bytes) => match String::from_utf8(plaintext_bytes) {
+            Ok(plaintext) => env
+                .new_string(plaintext)
+                .map(|s| s.into_raw())
+                .unwrap_or(std::ptr::null_mut()),
+            Err(_) => std::ptr::null_mut(),
+        },
         Err(_) => std::ptr::null_mut(),
     }
 }
@@ -264,15 +323,23 @@ pub extern "system" fn Java_com_xcj_sdk_XcjNative_signRequest(
     aes_key_hex: JString,
     message: JString,
 ) -> jstring {
-    let aes_key_hex: String = env.get_string(&aes_key_hex).map(|s| s.into()).unwrap_or_default();
-    let message: String = env.get_string(&message).map(|s| s.into()).unwrap_or_default();
+    let aes_key_hex: String = env
+        .get_string(&aes_key_hex)
+        .map(|s| s.into())
+        .unwrap_or_default();
+    let message: String = env
+        .get_string(&message)
+        .map(|s| s.into())
+        .unwrap_or_default();
 
     let Ok(aes_key_bytes) = hex::decode(&aes_key_hex) else {
         return std::ptr::null_mut();
     };
 
     let signature = crypto::hmac_sign(&aes_key_bytes, &message);
-    env.new_string(signature).map(|s| s.into_raw()).unwrap_or(std::ptr::null_mut())
+    env.new_string(signature)
+        .map(|s| s.into_raw())
+        .unwrap_or(std::ptr::null_mut())
 }
 
 /// RSA 公钥加密(用于 handshake 加密临时 AES 密钥)
@@ -290,8 +357,14 @@ pub extern "system" fn Java_com_xcj_sdk_XcjNative_rsaEncrypt(
     public_key_pem: JString,
     plaintext_hex: JString,
 ) -> jstring {
-    let public_key_pem: String = env.get_string(&public_key_pem).map(|s| s.into()).unwrap_or_default();
-    let plaintext_hex: String = env.get_string(&plaintext_hex).map(|s| s.into()).unwrap_or_default();
+    let public_key_pem: String = env
+        .get_string(&public_key_pem)
+        .map(|s| s.into())
+        .unwrap_or_default();
+    let plaintext_hex: String = env
+        .get_string(&plaintext_hex)
+        .map(|s| s.into())
+        .unwrap_or_default();
 
     // hex 字符串解码成字节(64 字符 hex -> 32 字节)
     let Ok(plaintext_bytes) = hex::decode(&plaintext_hex) else {
@@ -302,7 +375,9 @@ pub extern "system" fn Java_com_xcj_sdk_XcjNative_rsaEncrypt(
         Ok(encrypted) => {
             use base64::Engine;
             let encoded = base64::engine::general_purpose::STANDARD.encode(&encrypted);
-            env.new_string(encoded).map(|s| s.into_raw()).unwrap_or(std::ptr::null_mut())
+            env.new_string(encoded)
+                .map(|s| s.into_raw())
+                .unwrap_or(std::ptr::null_mut())
         }
         Err(_) => std::ptr::null_mut(),
     }
@@ -319,7 +394,9 @@ pub extern "system" fn Java_com_xcj_sdk_XcjNative_generateAesKey(
 ) -> jstring {
     let key = crypto::generate_aes_key();
     let hex_key = hex::encode(key);
-    env.new_string(hex_key).map(|s| s.into_raw()).unwrap_or(std::ptr::null_mut())
+    env.new_string(hex_key)
+        .map(|s| s.into_raw())
+        .unwrap_or(std::ptr::null_mut())
 }
 
 /// 生成随机 nonce(请求签名防重放用)
@@ -332,7 +409,9 @@ pub extern "system" fn Java_com_xcj_sdk_XcjNative_generateNonce(
     _class: JClass,
 ) -> jstring {
     let nonce = crypto::generate_nonce();
-    env.new_string(nonce).map(|s| s.into_raw()).unwrap_or(std::ptr::null_mut())
+    env.new_string(nonce)
+        .map(|s| s.into_raw())
+        .unwrap_or(std::ptr::null_mut())
 }
 
 // ============= 可选 opaque-jni feature =============
@@ -368,7 +447,13 @@ mod opaque {
         media_drm_id: JString,
         hardware_fingerprint: JString,
     ) -> jstring {
-        Java_com_xcj_sdk_XcjNative_generateMachineId(env, class, android_id, media_drm_id, hardware_fingerprint)
+        Java_com_xcj_sdk_XcjNative_generateMachineId(
+            env,
+            class,
+            android_id,
+            media_drm_id,
+            hardware_fingerprint,
+        )
     }
 
     /// native03 = validateCardKey
@@ -390,7 +475,13 @@ mod opaque {
         device_fingerprint: JString,
         plaintext: JString,
     ) -> jstring {
-        Java_com_xcj_sdk_XcjNative_encryptCache(env, class, cache_key, device_fingerprint, plaintext)
+        Java_com_xcj_sdk_XcjNative_encryptCache(
+            env,
+            class,
+            cache_key,
+            device_fingerprint,
+            plaintext,
+        )
     }
 
     /// native05 = decryptCache

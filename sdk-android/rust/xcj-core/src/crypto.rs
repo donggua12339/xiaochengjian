@@ -12,8 +12,8 @@ use aes_gcm::aead::{Aead, KeyInit};
 use aes_gcm::{Aes256Gcm, Nonce};
 use hmac::{Hmac, Mac};
 use rand::RngCore;
-use rsa::{Oaep, RsaPublicKey};
 use rsa::pkcs8::DecodePublicKey;
+use rsa::{Oaep, RsaPublicKey};
 use sha2::{Digest, Sha256};
 
 type HmacSha256 = Hmac<Sha256>;
@@ -26,8 +26,8 @@ type HmacSha256 = Hmac<Sha256>;
 /// - `public_key_pem`: PEM 格式的 RSA 公钥
 /// - `plaintext`: 待加密数据(通常是 32 字节 AES 密钥)
 pub fn rsa_encrypt(public_key_pem: &str, plaintext: &[u8]) -> Result<Vec<u8>, &'static str> {
-    let public_key = RsaPublicKey::from_public_key_pem(public_key_pem)
-        .map_err(|_| "INVALID_PUBLIC_KEY")?;
+    let public_key =
+        RsaPublicKey::from_public_key_pem(public_key_pem).map_err(|_| "INVALID_PUBLIC_KEY")?;
     let padding = Oaep::new::<Sha256>();
     public_key
         .encrypt(&mut rand::thread_rng(), padding, plaintext)

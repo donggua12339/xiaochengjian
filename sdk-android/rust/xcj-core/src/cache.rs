@@ -156,7 +156,10 @@ mod tests {
         let result = decrypt_cache("key2", "fp", &encrypted);
         assert!(result.is_err());
         // HMAC 验证失败(因为派生密钥不同)
-        assert!(matches!(result.unwrap_err(), "HMAC_VERIFICATION_FAILED" | "AES_DECRYPT_FAILED"));
+        assert!(matches!(
+            result.unwrap_err(),
+            "HMAC_VERIFICATION_FAILED" | "AES_DECRYPT_FAILED"
+        ));
     }
 
     #[test]

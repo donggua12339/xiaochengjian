@@ -49,10 +49,15 @@ pub fn validate_card_key(card_key: &str) -> bool {
 fn verify_luhn_mod32(chars: &[u8]) -> bool {
     let digits: Vec<usize> = chars
         .iter()
-        .map(|c| CARD_CHARSET.iter().position(|&x| x == *c).unwrap_or(usize::MAX))
+        .map(|c| {
+            CARD_CHARSET
+                .iter()
+                .position(|&x| x == *c)
+                .unwrap_or(usize::MAX)
+        })
         .collect();
 
-    if digits.iter().any(|&d| d == usize::MAX) {
+    if digits.contains(&usize::MAX) {
         return false;
     }
 
@@ -71,7 +76,7 @@ fn verify_luhn_mod32(chars: &[u8]) -> bool {
         double = !double;
     }
 
-    sum % 32 == 0
+    sum.is_multiple_of(32)
 }
 
 #[cfg(test)]
@@ -102,10 +107,22 @@ mod tests {
         let check_char = CARD_CHARSET[check] as char;
         let key = format!(
             "{}{}{}{}-{}{}{}{}-{}{}{}{}-{}{}{}{}",
-            prefix[0] as char, prefix[1] as char, prefix[2] as char, prefix[3] as char,
-            prefix[4] as char, prefix[5] as char, prefix[6] as char, prefix[7] as char,
-            prefix[8] as char, prefix[9] as char, prefix[10] as char, prefix[11] as char,
-            prefix[12] as char, prefix[13] as char, prefix[14] as char, check_char,
+            prefix[0] as char,
+            prefix[1] as char,
+            prefix[2] as char,
+            prefix[3] as char,
+            prefix[4] as char,
+            prefix[5] as char,
+            prefix[6] as char,
+            prefix[7] as char,
+            prefix[8] as char,
+            prefix[9] as char,
+            prefix[10] as char,
+            prefix[11] as char,
+            prefix[12] as char,
+            prefix[13] as char,
+            prefix[14] as char,
+            check_char,
         );
         assert!(validate_card_key(&key));
     }
@@ -146,18 +163,26 @@ mod tests {
         let check_char = CARD_CHARSET[check] as char;
         let key = format!(
             "{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}",
-            prefix[0] as char, prefix[1] as char, prefix[2] as char, prefix[3] as char,
-            prefix[4] as char, prefix[5] as char, prefix[6] as char, prefix[7] as char,
-            prefix[8] as char, prefix[9] as char, prefix[10] as char, prefix[11] as char,
-            prefix[12] as char, prefix[13] as char, prefix[14] as char, check_char,
+            prefix[0] as char,
+            prefix[1] as char,
+            prefix[2] as char,
+            prefix[3] as char,
+            prefix[4] as char,
+            prefix[5] as char,
+            prefix[6] as char,
+            prefix[7] as char,
+            prefix[8] as char,
+            prefix[9] as char,
+            prefix[10] as char,
+            prefix[11] as char,
+            prefix[12] as char,
+            prefix[13] as char,
+            prefix[14] as char,
+            check_char,
         );
         // 篡改第一个字符
         let tampered_first = b"3".to_vec();
-        let tampered = format!(
-            "{}{}",
-            tampered_first[0] as char,
-            &key[1..]
-        );
+        let tampered = format!("{}{}", tampered_first[0] as char, &key[1..]);
         assert!(!validate_card_key(&tampered));
     }
 
@@ -172,7 +197,9 @@ mod tests {
             let mut v = d;
             if double {
                 v *= 2;
-                if v >= 32 { v -= 32; }
+                if v >= 32 {
+                    v -= 32;
+                }
             }
             sum += v;
             double = !double;
@@ -181,10 +208,22 @@ mod tests {
         let check_char = CARD_CHARSET[check] as char;
         let key = format!(
             "{}{}{}{}-{}{}{}{}-{}{}{}{}-{}{}{}{}",
-            prefix[0] as char, prefix[1] as char, prefix[2] as char, prefix[3] as char,
-            prefix[4] as char, prefix[5] as char, prefix[6] as char, prefix[7] as char,
-            prefix[8] as char, prefix[9] as char, prefix[10] as char, prefix[11] as char,
-            prefix[12] as char, prefix[13] as char, prefix[14] as char, check_char,
+            prefix[0] as char,
+            prefix[1] as char,
+            prefix[2] as char,
+            prefix[3] as char,
+            prefix[4] as char,
+            prefix[5] as char,
+            prefix[6] as char,
+            prefix[7] as char,
+            prefix[8] as char,
+            prefix[9] as char,
+            prefix[10] as char,
+            prefix[11] as char,
+            prefix[12] as char,
+            prefix[13] as char,
+            prefix[14] as char,
+            check_char,
         );
         assert!(validate_card_key(&key.to_lowercase()));
     }
@@ -199,7 +238,9 @@ mod tests {
             let mut v = d;
             if double {
                 v *= 2;
-                if v >= 32 { v -= 32; }
+                if v >= 32 {
+                    v -= 32;
+                }
             }
             sum += v;
             double = !double;
@@ -208,10 +249,22 @@ mod tests {
         let check_char = CARD_CHARSET[check] as char;
         let key = format!(
             "  {}{}{}{}-{}{}{}{}-{}{}{}{}-{}{}{}{}  ",
-            prefix[0] as char, prefix[1] as char, prefix[2] as char, prefix[3] as char,
-            prefix[4] as char, prefix[5] as char, prefix[6] as char, prefix[7] as char,
-            prefix[8] as char, prefix[9] as char, prefix[10] as char, prefix[11] as char,
-            prefix[12] as char, prefix[13] as char, prefix[14] as char, check_char,
+            prefix[0] as char,
+            prefix[1] as char,
+            prefix[2] as char,
+            prefix[3] as char,
+            prefix[4] as char,
+            prefix[5] as char,
+            prefix[6] as char,
+            prefix[7] as char,
+            prefix[8] as char,
+            prefix[9] as char,
+            prefix[10] as char,
+            prefix[11] as char,
+            prefix[12] as char,
+            prefix[13] as char,
+            prefix[14] as char,
+            check_char,
         );
         assert!(validate_card_key(&key));
     }
@@ -232,14 +285,17 @@ mod tests {
             let mut v = d;
             if double {
                 v *= 2;
-                if v >= 32 { v -= 32; }
+                if v >= 32 {
+                    v -= 32;
+                }
             }
             sum += v;
             double = !double;
         }
         let check = (32 - (sum % 32)) % 32;
         let check_char = CARD_CHARSET[check] as char;
-        let key: String = prefix.iter().map(|&b| b as char).collect::<String>() + &check_char.to_string();
+        let key: String =
+            prefix.iter().map(|&b| b as char).collect::<String>() + &check_char.to_string();
         assert!(validate_card_key(&key));
     }
 
@@ -254,7 +310,7 @@ mod tests {
         // 32 字符,不含 0/O/1/I
         assert_eq!(CARD_CHARSET.len(), 32);
         for &c in CARD_CHARSET {
-            assert!(![b'0', b'O', b'1', b'I'].contains(&c));
+            assert!(!b"0O1I".contains(&c));
         }
     }
 }

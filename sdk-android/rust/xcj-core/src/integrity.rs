@@ -71,7 +71,10 @@ mod tests {
     #[test]
     fn test_verify_apk_signature_nonexistent_file() {
         // 文件不存在 + 非空白名单 -> false
-        assert!(!verify_apk_signature("nonexistent.apk", &["hash1".to_string()]));
+        assert!(!verify_apk_signature(
+            "nonexistent.apk",
+            &["hash1".to_string()]
+        ));
     }
 
     #[test]
@@ -130,11 +133,7 @@ mod tests {
         drop(f);
 
         let actual = compute_apk_signature_hash(tmp.to_str().unwrap()).unwrap();
-        let allow: Vec<String> = vec![
-            "wrong1".to_string(),
-            actual.clone(),
-            "wrong2".to_string(),
-        ];
+        let allow: Vec<String> = vec!["wrong1".to_string(), actual.clone(), "wrong2".to_string()];
         assert!(verify_apk_signature(tmp.to_str().unwrap(), &allow));
 
         std::fs::remove_file(&tmp).ok();
