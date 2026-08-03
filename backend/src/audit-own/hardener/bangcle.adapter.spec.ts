@@ -17,6 +17,17 @@ describe('BangcleAdapter', () => {
   });
 
   it('应生成含梆梆 so 文件的完整性报告', async () => {
+    // yauzl 从 apkBuffer 读真实 .so 内容算 hash;测试用假 buffer 解不开,
+    // spy extractFileFromZip 返回确定内容,隔离 zip 读取、只验报告组装 + 哈希逻辑
+    const soContent = Buffer.from('fake-so-binary-content');
+    const extractSpy = jest
+      .spyOn(
+        adapter as unknown as { extractFileFromZip: (b: Buffer, e: string) => Promise<Buffer> },
+        'extractFileFromZip',
+      )
+      .mockResolvedValue(soContent);
+    const expectedSha = require('crypto').createHash('sha256').update(soContent).digest('hex');
+
     const report = await adapter.generateReport({
       apkEntries: [
         'lib/arm64-v8a/libSecShell.so',
@@ -32,12 +43,15 @@ describe('BangcleAdapter', () => {
     expect(report.hardener).toBe('bangcle');
     expect(report.soFiles).toHaveLength(2);
     expect(report.soFiles[0].name).toBe('libSecShell.so');
-    expect(report.soFiles[0].sha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(report.soFiles[0].sha256).toBe(expectedSha);
+    expect(report.soFiles[0].size).toBe(soContent.length);
     expect(report.soFiles[0].loadPath).toBe('lib/arm64-v8a/');
     expect(report.entryClass).toBe('com.bangcle.test.MainApplication');
     expect(report.signatures).toEqual({ v1: true, v2: true, v3: false });
     expect(report.scanVersion).toBe('1.0.0');
     expect(report.scanTime).toBeTruthy();
+
+    extractSpy.mockRestore();
   });
 
   it('无梆梆 so 时 soFiles 应为空数组', async () => {

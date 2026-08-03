@@ -1,10 +1,6 @@
 import { Test } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
-import {
-  BadRequestException,
-  ForbiddenException,
-  PayloadTooLargeException,
-} from '@nestjs/common';
+import { BadRequestException, ForbiddenException, PayloadTooLargeException } from '@nestjs/common';
 import * as crypto from 'crypto';
 import { AuditOwnService } from './audit-own.service';
 import { AuditOwnValidators } from './audit-own-validators';
@@ -119,9 +115,7 @@ describe('AuditOwnService', () => {
         operation: 'ANALYZE',
       });
       expect(result.taskId).toMatch(/^audit-/);
-      expect(result.apkHash).toBe(
-        crypto.createHash('sha256').update(apkBuffer).digest('hex'),
-      );
+      expect(result.apkHash).toBe(crypto.createHash('sha256').update(apkBuffer).digest('hex'));
       expect(result.apkSize).toBe(apkBuffer.length);
       expect(result.workDir).toMatch(/[/\\]audit-test[/\\]audit-/);
       expect(result.apkPath).toContain('test.apk');
@@ -147,9 +141,7 @@ describe('AuditOwnService', () => {
 
   describe('runTripleCheck - 校验 1 失败', () => {
     it('包名不在白名单应抛 ForbiddenException + 记录 REJECTED 日志', async () => {
-      validators.validatePackageName.mockRejectedValue(
-        new ForbiddenException('APP_NOT_OWNED'),
-      );
+      validators.validatePackageName.mockRejectedValue(new ForbiddenException('APP_NOT_OWNED'));
 
       // 准备一个最小的 APK buffer(让 prepareApk 通过)
       const apkBuffer = Buffer.from('fake-apk');
@@ -371,9 +363,19 @@ describe('AuditOwnService', () => {
       );
       sigSpy.mockResolvedValue('old-hash');
 
+      // M17: computeNonMetaInfHash 用 yauzl 按路径读工作副本,测试未真建文件 → mock 掉
+      // 返回一致 hash 让"重签只动 META-INF"校验(pre === post)通过
+      const hashSpy = jest.spyOn(
+        service as unknown as { computeNonMetaInfHash: (p: string) => Promise<string> },
+        'computeNonMetaInfHash',
+      );
+      hashSpy.mockResolvedValue('content-hash');
+
       // mock execFileAsync 私有方法(已重构为可 mock)
       const execSpy = jest.spyOn(
-        service as unknown as { execFileAsync: (...args: unknown[]) => Promise<{ stdout: string; stderr: string }> },
+        service as unknown as {
+          execFileAsync: (...args: unknown[]) => Promise<{ stdout: string; stderr: string }>;
+        },
         'execFileAsync',
       );
       execSpy.mockResolvedValue({ stdout: '', stderr: '' });
@@ -383,7 +385,9 @@ describe('AuditOwnService', () => {
       const copySpy = jest.spyOn(fs, 'copyFile').mockResolvedValue(undefined);
       // apksigner --out resignedPath,service 后续 readFile 读它
       // 让 readFile 返回固定内容(模拟 apksigner 已写出)
-      const readSpy = jest.spyOn(fs, 'readFile').mockResolvedValue(Buffer.from('resigned-apk-content'));
+      const readSpy = jest
+        .spyOn(fs, 'readFile')
+        .mockResolvedValue(Buffer.from('resigned-apk-content'));
       const writeSpy = jest.spyOn(fs, 'writeFile').mockResolvedValue(undefined);
       const rmSpy = jest.spyOn(fs, 'rm').mockResolvedValue(undefined);
 
@@ -424,6 +428,7 @@ describe('AuditOwnService', () => {
 
       parseSpy.mockRestore();
       sigSpy.mockRestore();
+      hashSpy.mockRestore();
       execSpy.mockRestore();
       copySpy.mockRestore();
       readSpy.mockRestore();
@@ -451,8 +456,17 @@ describe('AuditOwnService', () => {
       );
       sigSpy.mockResolvedValue('old-hash');
 
+      // M17: computeNonMetaInfHash 在 apksigner 前调用,需 mock 否则先 ENOENT
+      const hashSpy = jest.spyOn(
+        service as unknown as { computeNonMetaInfHash: (p: string) => Promise<string> },
+        'computeNonMetaInfHash',
+      );
+      hashSpy.mockResolvedValue('content-hash');
+
       const execSpy = jest.spyOn(
-        service as unknown as { execFileAsync: (...args: unknown[]) => Promise<{ stdout: string; stderr: string }> },
+        service as unknown as {
+          execFileAsync: (...args: unknown[]) => Promise<{ stdout: string; stderr: string }>;
+        },
         'execFileAsync',
       );
       execSpy.mockRejectedValue(new Error('apksigner failed'));
@@ -480,6 +494,7 @@ describe('AuditOwnService', () => {
 
       parseSpy.mockRestore();
       sigSpy.mockRestore();
+      hashSpy.mockRestore();
       execSpy.mockRestore();
       copySpy.mockRestore();
       writeSpy.mockRestore();
@@ -653,9 +668,7 @@ describe('AuditOwnService', () => {
     });
 
     it('三重校验失败应抛错 + 不调 detector', async () => {
-      validators.validatePackageName.mockRejectedValue(
-        new ForbiddenException('APP_NOT_OWNED'),
-      );
+      validators.validatePackageName.mockRejectedValue(new ForbiddenException('APP_NOT_OWNED'));
 
       const parseSpy = jest.spyOn(
         service as unknown as { parsePackageName: (a: string, b: string) => Promise<string> },

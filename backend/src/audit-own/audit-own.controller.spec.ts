@@ -88,7 +88,13 @@ describe('AuditOwnController', () => {
 
     it('originalName 缺失时用 file.originalname', async () => {
       const file = { buffer: Buffer.from('apk'), originalname: 'fallback.apk' } as any;
-      await controller.analyze('dev-1', makeReq(), null as unknown as string, undefined, file as any);
+      await controller.analyze(
+        'dev-1',
+        makeReq(),
+        null as unknown as string,
+        undefined,
+        file as any,
+      );
       expect(auditOwnService.analyze).toHaveBeenCalledWith(
         expect.objectContaining({ originalName: 'fallback.apk' }),
       );
@@ -101,17 +107,21 @@ describe('AuditOwnController', () => {
       keyAlias: 'key0',
       keyPassword: 'pass',
     };
+    function makeRes() {
+      return { set: jest.fn() } as any;
+    }
 
     it('缺 APK file 应抛 BadRequestException', async () => {
+      const ks = { buffer: Buffer.from('ks') } as any;
       await expect(
-        controller.resign('dev-1', makeReq(), validBody, {} as any, undefined as any),
+        controller.resign('dev-1', makeReq(), makeRes(), validBody, { keystore: [ks] } as any),
       ).rejects.toThrow(BadRequestException);
     });
 
     it('缺 keystore file 应抛 BadRequestException', async () => {
       const file = { buffer: Buffer.from('apk'), originalname: 'a.apk' } as any;
       await expect(
-        controller.resign('dev-1', makeReq(), validBody, undefined as any, file),
+        controller.resign('dev-1', makeReq(), makeRes(), validBody, { apk: [file] } as any),
       ).rejects.toThrow(BadRequestException);
     });
 
@@ -122,23 +132,35 @@ describe('AuditOwnController', () => {
         controller.resign(
           'dev-1',
           makeReq(),
+          makeRes(),
           { keystorePassword: '', keyAlias: '', keyPassword: '' },
-          ks,
-          file,
+          { apk: [file], keystore: [ks] } as any,
         ),
       ).rejects.toThrow(BadRequestException);
     });
 
-    it('正常应调 service.resign 返回 base64', async () => {
+    it('正常应调 service.resign 返回二进制 + 设置 header(M16 契约)', async () => {
       const file = { buffer: Buffer.from('apk'), originalname: 'a.apk' } as any;
       const ks = { buffer: Buffer.from('ks') } as any;
-      const result = await controller.resign('dev-1', makeReq(), validBody, ks, file);
+      const res = makeRes();
+      const result = await controller.resign('dev-1', makeReq(), res, validBody, {
+        apk: [file],
+        keystore: [ks],
+      } as any);
       expect(auditOwnService.resign).toHaveBeenCalledWith(
         expect.objectContaining({ developerId: 'dev-1' }),
       );
-      expect(result.taskId).toBe('t-2');
-      expect(result.resignedApkBase64).toBe(Buffer.from('resigned').toString('base64'));
-      expect(result.resignedApkSize).toBe(8);
+      // M16: 返回二进制 Buffer(非 base64)
+      expect(result).toEqual(Buffer.from('resigned'));
+      // 元数据走 response header
+      expect(res.set).toHaveBeenCalledWith(
+        expect.objectContaining({
+          'X-Task-Id': 't-2',
+          'X-Old-Hash': 'oldhash',
+          'X-New-Hash': 'newhash',
+          'X-Apk-Size': '8',
+        }),
+      );
     });
   });
 
@@ -198,13 +220,15 @@ describe('AuditOwnController', () => {
     });
 
     it('version 缺失(body 为空)应抛 BadRequestException', async () => {
-      await expect(
-        controller.acceptEula('dev-1', makeReq(), undefined as any),
-      ).rejects.toThrow(BadRequestException);
+      await expect(controller.acceptEula('dev-1', makeReq(), undefined as any)).rejects.toThrow(
+        BadRequestException,
+      );
     });
 
     it('正常应调 validateVersion + recordAcceptance', async () => {
-      const result = await controller.acceptEula('dev-1', makeReq({ 'user-agent': 'UA' }), { version: '1.0.0' });
+      const result = await controller.acceptEula('dev-1', makeReq({ 'user-agent': 'UA' }), {
+        version: '1.0.0',
+      });
       expect(hardenerEulaService.validateVersion).toHaveBeenCalledWith('1.0.0');
       expect(hardenerEulaService.recordAcceptance).toHaveBeenCalledWith(
         'dev-1',
@@ -217,7 +241,9 @@ describe('AuditOwnController', () => {
     });
 
     it('x-forwarded-for 存在时优先用', async () => {
-      await controller.acceptEula('dev-1', makeReq({ 'x-forwarded-for': '5.6.7.8' }), { version: '1.0.0' });
+      await controller.acceptEula('dev-1', makeReq({ 'x-forwarded-for': '5.6.7.8' }), {
+        version: '1.0.0',
+      });
       expect(hardenerEulaService.recordAcceptance).toHaveBeenCalledWith(
         'dev-1',
         '5.6.7.8',
@@ -234,13 +260,7 @@ describe('AuditOwnController', () => {
         report: { hardener: 'bangcle' },
       }) as any;
       const file = { buffer: Buffer.from('apk'), originalname: 'a.apk' } as any;
-      const result = await controller.analyze(
-        'dev-1',
-        makeReq(),
-        'a.apk',
-        'bangcle',
-        file,
-      );
+      const result = await controller.analyze('dev-1', makeReq(), 'a.apk', 'bangcle', file);
       expect(hardenerEulaService.validateAccepted).toHaveBeenCalledWith('dev-1', 'bangcle');
       expect(auditOwnService.analyzeHardener).toHaveBeenCalled();
       expect(auditOwnService.analyze).not.toHaveBeenCalled();
@@ -254,11 +274,13 @@ describe('AuditOwnController', () => {
       expect(auditOwnService.analyze).toHaveBeenCalled();
     });
 
-    it('hardener=unknown 应走普通 analyze(不触发梆梆)', async () => {
+    it('hardener=unknown 应抛 UNSUPPORTED_HARDENER(参数校验,非 fall-through)', async () => {
       const file = { buffer: Buffer.from('apk'), originalname: 'a.apk' } as any;
-      await controller.analyze('dev-1', makeReq(), 'a.apk', 'unknown', file);
+      await expect(
+        controller.analyze('dev-1', makeReq(), 'a.apk', 'unknown', file),
+      ).rejects.toThrow(BadRequestException);
       expect(hardenerEulaService.validateAccepted).not.toHaveBeenCalled();
-      expect(auditOwnService.analyze).toHaveBeenCalled();
+      expect(auditOwnService.analyze).not.toHaveBeenCalled();
     });
   });
 });

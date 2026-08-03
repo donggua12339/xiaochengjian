@@ -8,10 +8,12 @@ import {
   Query,
   Req,
   Res,
+  UploadedFile,
+  UploadedFiles,
   BadRequestException,
 } from '@nestjs/common';
 import type { Response } from 'express';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { FileInterceptor, FileFieldsInterceptor } from '@nestjs/platform-express';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -80,7 +82,7 @@ export class AuditOwnController {
     @Req() req: AuthenticatedRequest,
     @Body('originalName') originalName: string,
     @Query('hardener') hardener: string | undefined,
-    file: Express.Multer.File,
+    @UploadedFile() file: Express.Multer.File,
   ) {
     if (!file) {
       throw new BadRequestException('APK_FILE_REQUIRED');
@@ -157,9 +159,13 @@ export class AuditOwnController {
     },
   })
   @UseInterceptors(
-    FileInterceptor('apk', {
-      limits: { fileSize: 200 * 1024 * 1024 },
-    }),
+    FileFieldsInterceptor(
+      [
+        { name: 'apk', maxCount: 1 },
+        { name: 'keystore', maxCount: 1 },
+      ],
+      { limits: { fileSize: 200 * 1024 * 1024 } },
+    ),
   )
   async resign(
     @CurrentDeveloper() developerId: string,
@@ -172,9 +178,14 @@ export class AuditOwnController {
       keyPassword: string;
       originalName?: string;
     },
-    @Body('keystore') keystoreFile: Express.Multer.File,
-    file: Express.Multer.File,
+    @UploadedFiles()
+    files: {
+      apk?: Express.Multer.File[];
+      keystore?: Express.Multer.File[];
+    },
   ) {
+    const file = files?.apk?.[0];
+    const keystoreFile = files?.keystore?.[0];
     if (!file) {
       throw new BadRequestException('APK_FILE_REQUIRED');
     }

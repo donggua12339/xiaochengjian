@@ -24,10 +24,7 @@ describe('PackerValidators', () => {
       application: { findFirst: jest.fn() },
     };
     const moduleRef = await Test.createTestingModule({
-      providers: [
-        PackerValidators,
-        { provide: PrismaService, useValue: prisma },
-      ],
+      providers: [PackerValidators, { provide: PrismaService, useValue: prisma }],
     }).compile();
     service = moduleRef.get(PackerValidators);
   });
@@ -45,9 +42,9 @@ describe('PackerValidators', () => {
 
     it('包名不在白名单应抛 ForbiddenException', async () => {
       prisma.application.findFirst.mockResolvedValue(null);
-      await expect(
-        service.validateObjectLock('dev-1', 'com.evil.app', 'abc123'),
-      ).rejects.toThrow(ForbiddenException);
+      await expect(service.validateObjectLock('dev-1', 'com.evil.app', 'abc123')).rejects.toThrow(
+        ForbiddenException,
+      );
     });
 
     it('签名 hash 不匹配应抛 ForbiddenException', async () => {
@@ -67,9 +64,9 @@ describe('PackerValidators', () => {
         name: 'Test',
         signHashAllowList: [],
       });
-      await expect(
-        service.validateObjectLock('dev-1', 'com.test.app', 'abc123'),
-      ).rejects.toThrow(ForbiddenException);
+      await expect(service.validateObjectLock('dev-1', 'com.test.app', 'abc123')).rejects.toThrow(
+        ForbiddenException,
+      );
     });
   });
 
@@ -84,7 +81,9 @@ describe('PackerValidators', () => {
 
     it('hash 在白名单应通过', () => {
       expect(() =>
-        service.validateContentLock('d624e2a9243ffbb9e5b3e6ada5ce8e05ec993580a253f9a01090b9e60ae462be'),
+        service.validateContentLock(
+          'd624e2a9243ffbb9e5b3e6ada5ce8e05ec993580a253f9a01090b9e60ae462be',
+        ),
       ).not.toThrow();
     });
 
@@ -100,6 +99,7 @@ describe('PackerValidators', () => {
           applicationNameChanged: true,
           metaDataAdded: ['xcj.appId', 'xcj.serverUrl'],
           permissionsAdded: ['android.permission.INTERNET'],
+          defenderProviderAdded: true,
           otherChanges: [],
         }),
       ).not.toThrow();
@@ -111,6 +111,7 @@ describe('PackerValidators', () => {
           applicationNameChanged: true,
           metaDataAdded: [],
           permissionsAdded: [],
+          defenderProviderAdded: false,
           otherChanges: ['changed theme'],
         }),
       ).toThrow(ForbiddenException);
@@ -122,6 +123,7 @@ describe('PackerValidators', () => {
           applicationNameChanged: false,
           metaDataAdded: ['com.evil.tracker'],
           permissionsAdded: [],
+          defenderProviderAdded: false,
           otherChanges: [],
         }),
       ).toThrow(ForbiddenException);
@@ -133,6 +135,7 @@ describe('PackerValidators', () => {
           applicationNameChanged: false,
           metaDataAdded: [],
           permissionsAdded: ['android.permission.READ_CONTACTS'],
+          defenderProviderAdded: false,
           otherChanges: [],
         }),
       ).toThrow(ForbiddenException);

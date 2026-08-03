@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import type { Prisma } from '@prisma/client';
+import type { AuditLogOwn } from '@prisma/client';
 
 /**
  * 自有 APK 诊断审计日志服务(ADR 0077 §4)
@@ -100,7 +100,7 @@ export class AuditLogOwnService {
   async listByDeveloper(
     developerId: string,
     options: { limit?: number; offset?: number } = {},
-  ): Promise<Prisma.AuditLogOwnGetPayload<{}>[]> {
+  ): Promise<AuditLogOwn[]> {
     const { limit = 50, offset = 0 } = options;
     return this.prisma.auditLogOwn.findMany({
       where: { developerId },
