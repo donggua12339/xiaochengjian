@@ -1,5 +1,12 @@
 <script setup lang="ts">
-import { NConfigProvider, NMessageProvider, NDialogProvider, NLoadingBarProvider, zhCN, dateZhCN } from 'naive-ui';
+import {
+  NConfigProvider,
+  NMessageProvider,
+  NDialogProvider,
+  NLoadingBarProvider,
+  zhCN,
+  dateZhCN,
+} from 'naive-ui';
 </script>
 
 <template>

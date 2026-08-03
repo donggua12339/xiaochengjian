@@ -125,7 +125,7 @@ describe('api/client', () => {
         {
           status: 408,
           data: { code: 'TIMEOUT', message: '请求超时' },
-        } as any,
+        } as unknown as import('axios').AxiosResponse,
       );
       const result = client.extractApiError(fakeError);
       expect(result.code).toBe('TIMEOUT');

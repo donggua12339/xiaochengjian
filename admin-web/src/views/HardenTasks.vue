@@ -12,7 +12,12 @@
 import { ref, onMounted, onUnmounted } from 'vue';
 import { NCard, NButton, NSpace, NTag, NText, NEmpty, NProgress, NAlert } from 'naive-ui';
 import { useRouter } from 'vue-router';
-import { getHardeningTasks, getHardeningStatus, downloadHardenedApk, cancelHardeningTask } from '@/api/hardening';
+import {
+  getHardeningTasks,
+  getHardeningStatus,
+  downloadHardenedApk,
+  cancelHardeningTask,
+} from '@/api/hardening';
 import type { HardeningTaskSummary } from '@/api/hardening';
 
 const router = useRouter();
@@ -44,7 +49,9 @@ async function loadTasks() {
 }
 
 async function refreshActive() {
-  const active = tasks.value.filter((t) => !['completed', 'failed', 'cancelled'].includes(t.status));
+  const active = tasks.value.filter(
+    (t) => !['completed', 'failed', 'cancelled'].includes(t.status),
+  );
   for (const t of active) {
     try {
       const s = (await getHardeningStatus(t.id)) as HardeningTaskSummary;

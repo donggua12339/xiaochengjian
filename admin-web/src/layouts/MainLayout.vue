@@ -1,7 +1,16 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
-import { NLayout, NLayoutSider, NLayoutHeader, NLayoutContent, NMenu, NButton, NSpace, NText } from 'naive-ui';
+import {
+  NLayout,
+  NLayoutSider,
+  NLayoutHeader,
+  NLayoutContent,
+  NMenu,
+  NButton,
+  NSpace,
+  NText,
+} from 'naive-ui';
 import { useAuthStore } from '@/stores/auth';
 import type { MenuOption } from 'naive-ui';
 
@@ -67,11 +76,7 @@ const activeKey = computed(() => {
       <div class="logo">
         <h2>小城笺</h2>
       </div>
-      <NMenu
-        :options="menuOptions"
-        :value="activeKey"
-        @update:value="handleMenuSelect"
-      />
+      <NMenu :options="menuOptions" :value="activeKey" @update:value="handleMenuSelect" />
     </NLayoutSider>
     <NLayout>
       <NLayoutHeader bordered class="header">

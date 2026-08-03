@@ -16,13 +16,37 @@
 
 import { ref, h, onMounted, computed } from 'vue';
 import {
-  NCard, NTabs, NTabPane, NUpload, NButton, NSpace, NText, NAlert,
-  NForm, NFormItem, NInput, NTag, NDataTable, NCode,
-  NSpin, NDescriptions, NDescriptionsItem, NPopconfirm,
-  NSelect, NModal,
-  useMessage, type UploadFileInfo, type DataTableColumns,
+  NCard,
+  NTabs,
+  NTabPane,
+  NUpload,
+  NButton,
+  NSpace,
+  NText,
+  NAlert,
+  NForm,
+  NFormItem,
+  NInput,
+  NTag,
+  NDataTable,
+  NCode,
+  NSpin,
+  NDescriptions,
+  NDescriptionsItem,
+  NPopconfirm,
+  NSelect,
+  NModal,
+  useMessage,
+  type UploadFileInfo,
+  type DataTableColumns,
 } from 'naive-ui';
-import { auditApi, type AuditLogOwnItem, type AnalyzeReport, type ResignResponse, type WatermarkTraceResponse } from '@/api/audit';
+import {
+  auditApi,
+  type AuditLogOwnItem,
+  type AnalyzeReport,
+  type ResignResponse,
+  type WatermarkTraceResponse,
+} from '@/api/audit';
 import { useAuthStore } from '@/stores/auth';
 
 const message = useMessage();
@@ -45,7 +69,7 @@ async function loadEula() {
   try {
     eulaInfo.value = await auditApi.getEula();
     eulaAccepted.value = false;
-  } catch (error) {
+  } catch {
     // EULA 加载失败不阻塞诊断 Tab(只影响梆梆自检)
   }
 }
@@ -87,9 +111,13 @@ async function doAnalyze() {
   analyzing.value = true;
   analyzeReport.value = null;
   try {
-    const result = hardenerSelect.value !== 'none'
-      ? await auditApi.analyzeBangcle(analyzeApkFile.value, hardenerSelect.value as 'bangcle' | 'legu' | 'qihoo360')
-      : await auditApi.analyze(analyzeApkFile.value);
+    const result =
+      hardenerSelect.value !== 'none'
+        ? await auditApi.analyzeBangcle(
+            analyzeApkFile.value,
+            hardenerSelect.value as 'bangcle' | 'legu' | 'qihoo360',
+          )
+        : await auditApi.analyze(analyzeApkFile.value);
     analyzeReport.value = result.report;
     message.success(hardenerSelect.value !== 'none' ? '梆梆自检完成' : '诊断完成');
   } catch (error) {
@@ -130,9 +158,11 @@ async function doResign() {
     message.warning('请选择 keystore 文件');
     return;
   }
-  if (!resignCredentials.value.keystorePassword ||
-      !resignCredentials.value.keyAlias ||
-      !resignCredentials.value.keyPassword) {
+  if (
+    !resignCredentials.value.keystorePassword ||
+    !resignCredentials.value.keyAlias ||
+    !resignCredentials.value.keyPassword
+  ) {
     message.warning('请填写 keystore 密码 / key 别名 / key 密码');
     return;
   }
@@ -188,13 +218,20 @@ async function loadHistory() {
   }
 }
 
-function statusTagType(status: AuditLogOwnItem['status']): 'success' | 'warning' | 'error' | 'info' {
+function statusTagType(
+  status: AuditLogOwnItem['status'],
+): 'success' | 'warning' | 'error' | 'info' {
   switch (status) {
-    case 'SUCCESS': return 'success';
-    case 'RESIGN': return 'info';
-    case 'REJECTED': return 'warning';
-    case 'FAILED': return 'error';
-    default: return 'info';
+    case 'SUCCESS':
+      return 'success';
+    case 'RESIGN':
+      return 'info';
+    case 'REJECTED':
+      return 'warning';
+    case 'FAILED':
+      return 'error';
+    default:
+      return 'info';
   }
 }
 
@@ -215,24 +252,55 @@ function formatTime(iso: string): string {
 
 const historyColumns: DataTableColumns<AuditLogOwnItem> = [
   { title: '时间', key: 'createdAt', render: (row) => formatTime(row.createdAt), width: 180 },
-  { title: '操作', key: 'operation', width: 90, render: (row) =>
-    h(NTag, { type: row.operation === 'RESIGN' ? 'info' : 'default', size: 'small' }, () =>
-      row.operation === 'RESIGN' ? '签名回填' : '诊断') },
-  { title: '状态', key: 'status', width: 110, render: (row) =>
-    h(NTag, { type: statusTagType(row.status), size: 'small' }, () => row.status) },
+  {
+    title: '操作',
+    key: 'operation',
+    width: 90,
+    render: (row) =>
+      h(NTag, { type: row.operation === 'RESIGN' ? 'info' : 'default', size: 'small' }, () =>
+        row.operation === 'RESIGN' ? '签名回填' : '诊断',
+      ),
+  },
+  {
+    title: '状态',
+    key: 'status',
+    width: 110,
+    render: (row) => h(NTag, { type: statusTagType(row.status), size: 'small' }, () => row.status),
+  },
   { title: '包名', key: 'packageName', width: 200, ellipsis: { tooltip: true } },
   { title: 'APK hash', key: 'apkHash', width: 180, render: (row) => formatHash(row.apkHash) },
   { title: 'APK 大小', key: 'apkSize', width: 100, render: (row) => formatSize(row.apkSize) },
-  { title: '校验 1', key: 'check1Passed', width: 80, render: (row) =>
-    h(NTag, { type: row.check1Passed ? 'success' : 'error', size: 'small' }, () =>
-      row.check1Passed ? '通过' : '失败') },
-  { title: '校验 2', key: 'check2Passed', width: 80, render: (row) =>
-    h(NTag, { type: row.check2Passed ? 'success' : 'error', size: 'small' }, () =>
-      row.check2Passed ? '通过' : '失败') },
-  { title: '拒绝原因', key: 'rejectReason', width: 150, ellipsis: { tooltip: true },
-    render: (row) => row.rejectReason ?? '-' },
-  { title: '回填后 hash', key: 'resignToHash', width: 180, render: (row) =>
-    row.resignToHash ? formatHash(row.resignToHash) : '-' },
+  {
+    title: '校验 1',
+    key: 'check1Passed',
+    width: 80,
+    render: (row) =>
+      h(NTag, { type: row.check1Passed ? 'success' : 'error', size: 'small' }, () =>
+        row.check1Passed ? '通过' : '失败',
+      ),
+  },
+  {
+    title: '校验 2',
+    key: 'check2Passed',
+    width: 80,
+    render: (row) =>
+      h(NTag, { type: row.check2Passed ? 'success' : 'error', size: 'small' }, () =>
+        row.check2Passed ? '通过' : '失败',
+      ),
+  },
+  {
+    title: '拒绝原因',
+    key: 'rejectReason',
+    width: 150,
+    ellipsis: { tooltip: true },
+    render: (row) => row.rejectReason ?? '-',
+  },
+  {
+    title: '回填后 hash',
+    key: 'resignToHash',
+    width: 180,
+    render: (row) => (row.resignToHash ? formatHash(row.resignToHash) : '-'),
+  },
 ];
 
 onMounted(() => {
@@ -304,7 +372,7 @@ function formatTimestamp(ms: number): string {
 <template>
   <NCard title="自有 APK 诊断(ADR 0077)" :bordered="false">
     <template #header-extra>
-      <NText depth="3" style="font-size: 12px;">
+      <NText depth="3" style="font-size: 12px">
         三重校验强制 · 仅限开发者自有 APK · 例外 A 签名回填
       </NText>
     </template>
@@ -315,7 +383,8 @@ function formatTimestamp(ms: number): string {
         <NSpace vertical size="large">
           <NAlert type="info" :show-icon="true">
             诊断对 APK 做只读分析:AndroidManifest 解析 + 签名信息 + 权限扫描。
-            <strong>不修改 APK</strong>,三重校验通过后才执行。
+            <strong>不修改 APK</strong>
+            ,三重校验通过后才执行。
           </NAlert>
 
           <NCard title="上传 APK" size="small">
@@ -329,15 +398,23 @@ function formatTimestamp(ms: number): string {
                     { label: '腾讯乐固自检(ADR 0082-B,需 EULA)', value: 'legu' },
                     { label: '360 加固保自检(ADR 0082-A,需 EULA)', value: 'qihoo360' },
                   ]"
-                  style="width: 320px;"
+                  style="width: 320px"
                 />
               </NFormItem>
 
-              <NAlert v-if="hardenerSelect === 'bangcle' && !eulaAccepted" type="warning" :show-icon="true">
+              <NAlert
+                v-if="hardenerSelect === 'bangcle' && !eulaAccepted"
+                type="warning"
+                :show-icon="true"
+              >
                 梆梆自检需先接受 EULA(锁 B)。
                 <NButton text type="primary" @click="showEulaModal = true">查看 EULA</NButton>
               </NAlert>
-              <NAlert v-else-if="hardenerSelect === 'bangcle' && eulaAccepted" type="success" :show-icon="true">
+              <NAlert
+                v-else-if="hardenerSelect === 'bangcle' && eulaAccepted"
+                type="success"
+                :show-icon="true"
+              >
                 EULA v{{ eulaInfo?.version }} 已接受,可执行梆梆自检(锁 A 仅梆梆 / 锁 C 仅完整性报告)
               </NAlert>
 
@@ -392,7 +469,7 @@ function formatTimestamp(ms: number): string {
 
               <div>
                 <NText strong>Manifest 权限({{ analyzeReport.manifest.permissions.length }})</NText>
-                <NSpace style="margin-top: 8px;">
+                <NSpace style="margin-top: 8px">
                   <NTag v-for="perm in analyzeReport.manifest.permissions" :key="perm" size="small">
                     {{ perm }}
                   </NTag>
@@ -414,10 +491,9 @@ function formatTimestamp(ms: number): string {
       <NTabPane name="resign" tab="签名回填(例外 A)">
         <NSpace vertical size="large">
           <NAlert type="warning" :show-icon="true">
-            <strong>例外 A 约束(ADR 0077 §2.1)</strong>:
-            仅修改 META-INF/ 签名文件,不动 dex/resource/manifest;
-            必须使用开发者自有 keystore;V1+V2+V3 签名;
-            回填后 APK hash 自动入白名单;三重校验前置。
+            <strong>例外 A 约束(ADR 0077 §2.1)</strong>
+            : 仅修改 META-INF/ 签名文件,不动 dex/resource/manifest; 必须使用开发者自有
+            keystore;V1+V2+V3 签名; 回填后 APK hash 自动入白名单;三重校验前置。
           </NAlert>
 
           <NCard title="上传 APK + keystore" size="small">
@@ -478,9 +554,7 @@ function formatTimestamp(ms: number): string {
                   </template>
                   确认 APK 是开发者自有,keystore 凭证已正确填写?
                 </NPopconfirm>
-                <NText v-if="resignApkFile" depth="3">
-                  APK: {{ resignApkFile.name }}
-                </NText>
+                <NText v-if="resignApkFile" depth="3">APK: {{ resignApkFile.name }}</NText>
                 <NText v-if="resignKeystoreFile" depth="3">
                   keystore: {{ resignKeystoreFile.name }}
                 </NText>
@@ -507,9 +581,7 @@ function formatTimestamp(ms: number): string {
                 </NDescriptionsItem>
               </NDescriptions>
 
-              <NButton type="primary" @click="downloadResignedApk">
-                下载重签后的 APK
-              </NButton>
+              <NButton type="primary" @click="downloadResignedApk">下载重签后的 APK</NButton>
             </NSpace>
           </NCard>
         </NSpace>
@@ -519,10 +591,8 @@ function formatTimestamp(ms: number): string {
       <NTabPane name="history" tab="诊断历史">
         <NSpace vertical size="large">
           <NSpace>
-            <NButton @click="loadHistory" :loading="historyLoading">刷新</NButton>
-            <NButton @click="exportCsv" :loading="exporting" type="primary" ghost>
-              导出 CSV
-            </NButton>
+            <NButton :loading="historyLoading" @click="loadHistory">刷新</NButton>
+            <NButton :loading="exporting" type="primary" ghost @click="exportCsv">导出 CSV</NButton>
             <NText depth="3">
               显示最近 {{ historyLimit }} 条(从第 {{ historyOffset + 1 }} 条起)
             </NText>
@@ -544,10 +614,11 @@ function formatTimestamp(ms: number): string {
       <NTabPane v-if="isAdmin" name="trace" tab="水印追溯(ADMIN)">
         <NSpace vertical size="large">
           <NAlert type="warning" :show-icon="true">
-            <strong>水印追溯(ADR 0030 §c 追溯闭环)</strong>:
-            上传含 <code>META-INF/xcj-watermark.enc.txt</code> 的 APK,
-            后端用 AES-256-GCM 解密,返回水印明文(version / watermarkId / timestamp / nonce)。
-            仅 ADMIN 可用,用于滥用追溯调查。
+            <strong>水印追溯(ADR 0030 §c 追溯闭环)</strong>
+            : 上传含
+            <code>META-INF/xcj-watermark.enc.txt</code>
+            的 APK, 后端用 AES-256-GCM 解密,返回水印明文(version / watermarkId / timestamp /
+            nonce)。 仅 ADMIN 可用,用于滥用追溯调查。
           </NAlert>
 
           <NCard title="上传 APK" size="small">
@@ -583,12 +654,21 @@ function formatTimestamp(ms: number): string {
             <NAlert
               :type="traceResult.found ? 'success' : 'warning'"
               :show-icon="true"
-              style="margin-bottom: 16px;"
+              style="margin-bottom: 16px"
             >
-              {{ traceResult.found ? '水印已找到并解密成功' : 'APK 中未找到水印文件(可能未用 injector sign 加水印,或被擦除)' }}
+              {{
+                traceResult.found
+                  ? '水印已找到并解密成功'
+                  : 'APK 中未找到水印文件(可能未用 injector sign 加水印,或被擦除)'
+              }}
             </NAlert>
 
-            <NDescriptions v-if="traceResult.found && traceResult.watermark" :column="1" label-placement="left" bordered>
+            <NDescriptions
+              v-if="traceResult.found && traceResult.watermark"
+              :column="1"
+              label-placement="left"
+              bordered
+            >
               <NDescriptionsItem label="水印版本">
                 {{ traceResult.watermark.version }}
               </NDescriptionsItem>
@@ -597,7 +677,7 @@ function formatTimestamp(ms: number): string {
               </NDescriptionsItem>
               <NDescriptionsItem label="注入时间">
                 {{ formatTimestamp(traceResult.watermark.timestamp) }}
-                <NText depth="3" style="margin-left: 12px;">
+                <NText depth="3" style="margin-left: 12px">
                   (Unix ms: {{ traceResult.watermark.timestamp }})
                 </NText>
               </NDescriptionsItem>
@@ -618,13 +698,17 @@ function formatTimestamp(ms: number): string {
       v-model:show="showEulaModal"
       preset="card"
       :title="`梆梆加固自检 EULA v${eulaInfo?.version ?? ''}`"
-      style="max-width: 700px;"
+      style="max-width: 700px"
     >
       <NSpace vertical>
         <NAlert type="info" :show-icon="true">
           生效日期:{{ eulaInfo?.effectiveDate ?? '-' }}。接受后才能使用梆梆加固自检功能(锁 B)。
         </NAlert>
-        <NCode :code="eulaInfo?.text ?? '加载中...'" language="text" style="white-space: pre-wrap; max-height: 400px; overflow: auto;" />
+        <NCode
+          :code="eulaInfo?.text ?? '加载中...'"
+          language="text"
+          style="white-space: pre-wrap; max-height: 400px; overflow: auto"
+        />
         <NSpace justify="end">
           <NButton @click="showEulaModal = false">取消</NButton>
           <NButton type="primary" :loading="eulaLoading" @click="acceptEula">

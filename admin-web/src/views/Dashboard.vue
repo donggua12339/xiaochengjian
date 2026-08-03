@@ -1,8 +1,18 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
 import {
-  NCard, NGrid, NGridItem, NStatistic, NSpace, NButton, NEmpty, NSpin,
-  NText, NAlert, NSteps, NStep,
+  NCard,
+  NGrid,
+  NGridItem,
+  NStatistic,
+  NSpace,
+  NButton,
+  NEmpty,
+  NSpin,
+  NText,
+  NAlert,
+  NSteps,
+  NStep,
 } from 'naive-ui';
 import { useRouter } from 'vue-router';
 import { appsApi, type AppItem } from '@/api/apps';
@@ -36,7 +46,8 @@ function dismissWelcome() {
     <!-- 首次访问欢迎引导 -->
     <NCard v-if="isFirstVisit" title="欢迎使用小城笺加固平台">
       <NAlert type="info" style="margin-bottom: 16px">
-        小城笺提供玄甲(开源免费)和天衍(付费高级)两套加固方案，保护您的 APK 免受逆向、篡改、脱壳等攻击。
+        小城笺提供玄甲(开源免费)和天衍(付费高级)两套加固方案，保护您的 APK
+        免受逆向、篡改、脱壳等攻击。
       </NAlert>
 
       <NText strong style="font-size: 16px">3 步完成加固</NText>
@@ -50,9 +61,7 @@ function dismissWelcome() {
         <NButton type="primary" size="large" @click="router.push('/harden-upload')">
           立即加固我的 APK
         </NButton>
-        <NButton size="large" @click="router.push('/sdk-guide')">
-          了解 SDK 集成方式
-        </NButton>
+        <NButton size="large" @click="router.push('/sdk-guide')">了解 SDK 集成方式</NButton>
         <NButton quaternary @click="dismissWelcome">关闭引导</NButton>
       </NSpace>
     </NCard>
@@ -70,9 +79,7 @@ function dismissWelcome() {
             <div style="font-size: 32px; margin-bottom: 8px">🛡️</div>
             <NText strong style="font-size: 16px">加固 APK</NText>
             <br />
-            <NText depth="3" style="font-size: 12px">
-              上传 APK → 选模块 → 一键加固 → 下载
-            </NText>
+            <NText depth="3" style="font-size: 12px">上传 APK → 选模块 → 一键加固 → 下载</NText>
           </NCard>
         </NGridItem>
         <NGridItem>
@@ -85,9 +92,7 @@ function dismissWelcome() {
             <div style="font-size: 32px; margin-bottom: 8px">📊</div>
             <NText strong style="font-size: 16px">质量报告</NText>
             <br />
-            <NText depth="3" style="font-size: 12px">
-              查看加固效果评分和改进建议
-            </NText>
+            <NText depth="3" style="font-size: 12px">查看加固效果评分和改进建议</NText>
           </NCard>
         </NGridItem>
         <NGridItem>
@@ -100,9 +105,7 @@ function dismissWelcome() {
             <div style="font-size: 32px; margin-bottom: 8px">🔍</div>
             <NText strong style="font-size: 16px">APK 诊断</NText>
             <br />
-            <NText depth="3" style="font-size: 12px">
-              分析 APK 安全性和加固状态
-            </NText>
+            <NText depth="3" style="font-size: 12px">分析 APK 安全性和加固状态</NText>
           </NCard>
         </NGridItem>
       </NGrid>

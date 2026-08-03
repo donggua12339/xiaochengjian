@@ -18,13 +18,38 @@
 
 import { ref, h, onMounted } from 'vue';
 import {
-  NCard, NTabs, NTabPane, NUpload, NButton, NSpace, NText, NAlert,
-  NForm, NFormItem, NInput, NTag, NDataTable, NCode,
-  NSpin, NDescriptions, NDescriptionsItem, NPopconfirm,
-  NSwitch, NSelect, NInputNumber, NDivider,
-  useMessage, type UploadFileInfo, type DataTableColumns,
+  NCard,
+  NTabs,
+  NTabPane,
+  NUpload,
+  NButton,
+  NSpace,
+  NText,
+  NAlert,
+  NForm,
+  NFormItem,
+  NInput,
+  NTag,
+  NDataTable,
+  NCode,
+  NSpin,
+  NDescriptions,
+  NDescriptionsItem,
+  NPopconfirm,
+  NSwitch,
+  NSelect,
+  NInputNumber,
+  NDivider,
+  useMessage,
+  type UploadFileInfo,
+  type DataTableColumns,
 } from 'naive-ui';
-import { packerApi, type PackerLogItem, type PackResponse, type DefenderConfig } from '@/api/packer';
+import {
+  packerApi,
+  type PackerLogItem,
+  type PackResponse,
+  type DefenderConfig,
+} from '@/api/packer';
 import { useAuthStore } from '@/stores/auth';
 
 const message = useMessage();
@@ -39,12 +64,18 @@ const credentials = ref({
   keyAlias: '',
   keyPassword: '',
 });
-const sdkConfigText = ref(JSON.stringify({
-  appId: '',
-  serverUrl: 'https://xcj.winmelon.cn',
-  offlineCacheDays: 7,
-  oaidEnabled: true,
-}, null, 2));
+const sdkConfigText = ref(
+  JSON.stringify(
+    {
+      appId: '',
+      serverUrl: 'https://xcj.winmelon.cn',
+      offlineCacheDays: 7,
+      oaidEnabled: true,
+    },
+    null,
+    2,
+  ),
+);
 const packing = ref(false);
 const packResult = ref<PackResponse | null>(null);
 
@@ -95,10 +126,23 @@ function handleDexChange(data: { fileList: UploadFileInfo[] }) {
 }
 
 async function doPack() {
-  if (!apkFile.value) { message.warning('请选择 APK 文件'); return; }
-  if (!keystoreFile.value) { message.warning('请选择 Keystore 文件'); return; }
-  if (!xcjAuthSdkDexFile.value) { message.warning('请选择 classes-xcj.dex 文件'); return; }
-  if (!credentials.value.keystorePassword || !credentials.value.keyAlias || !credentials.value.keyPassword) {
+  if (!apkFile.value) {
+    message.warning('请选择 APK 文件');
+    return;
+  }
+  if (!keystoreFile.value) {
+    message.warning('请选择 Keystore 文件');
+    return;
+  }
+  if (!xcjAuthSdkDexFile.value) {
+    message.warning('请选择 classes-xcj.dex 文件');
+    return;
+  }
+  if (
+    !credentials.value.keystorePassword ||
+    !credentials.value.keyAlias ||
+    !credentials.value.keyPassword
+  ) {
     message.warning('请填写 Keystore 密码 / key 别名 / key 密码');
     return;
   }
@@ -195,30 +239,71 @@ function formatTime(iso: string): string {
 }
 function statusTagType(status: PackerLogItem['status']): 'success' | 'warning' | 'error' | 'info' {
   switch (status) {
-    case 'SUCCESS': return 'success';
-    case 'REJECTED': return 'warning';
-    case 'FAILED': return 'error';
-    default: return 'info';
+    case 'SUCCESS':
+      return 'success';
+    case 'REJECTED':
+      return 'warning';
+    case 'FAILED':
+      return 'error';
+    default:
+      return 'info';
   }
 }
 
 const historyColumns: DataTableColumns<PackerLogItem> = [
   { title: '时间', key: 'createdAt', render: (row) => formatTime(row.createdAt), width: 180 },
-  { title: '状态', key: 'status', width: 110, render: (row) =>
-    h(NTag, { type: statusTagType(row.status), size: 'small' }, () => row.status) },
+  {
+    title: '状态',
+    key: 'status',
+    width: 110,
+    render: (row) => h(NTag, { type: statusTagType(row.status), size: 'small' }, () => row.status),
+  },
   { title: '包名', key: 'packageName', width: 200, ellipsis: { tooltip: true } },
   { title: '原 APK hash', key: 'apkHash', width: 180, render: (row) => formatHash(row.apkHash) },
-  { title: '七锁', key: 'locks', width: 120, render: (row) => {
-    const locks = [row.check1Passed, row.check2Passed, row.check3Passed, row.check4Passed, row.check5Passed, row.check6Passed, row.check7Passed];
-    const passed = locks.filter(Boolean).length;
-    return h(NTag, { type: passed === 7 ? 'success' : 'error', size: 'small' }, () => `${passed}/7`);
-  } },
-  { title: 'dex 注入', key: 'dexInjected', width: 90, render: (row) =>
-    h(NTag, { type: row.dexInjected ? 'success' : 'error', size: 'small' }, () => row.dexInjected ? '是' : '否') },
-  { title: '封装后 hash', key: 'resignedApkHash', width: 180, render: (row) =>
-    row.resignedApkHash ? formatHash(row.resignedApkHash) : '-' },
-  { title: '拒绝原因', key: 'rejectReason', width: 150, ellipsis: { tooltip: true },
-    render: (row) => row.rejectReason ?? '-' },
+  {
+    title: '七锁',
+    key: 'locks',
+    width: 120,
+    render: (row) => {
+      const locks = [
+        row.check1Passed,
+        row.check2Passed,
+        row.check3Passed,
+        row.check4Passed,
+        row.check5Passed,
+        row.check6Passed,
+        row.check7Passed,
+      ];
+      const passed = locks.filter(Boolean).length;
+      return h(
+        NTag,
+        { type: passed === 7 ? 'success' : 'error', size: 'small' },
+        () => `${passed}/7`,
+      );
+    },
+  },
+  {
+    title: 'dex 注入',
+    key: 'dexInjected',
+    width: 90,
+    render: (row) =>
+      h(NTag, { type: row.dexInjected ? 'success' : 'error', size: 'small' }, () =>
+        row.dexInjected ? '是' : '否',
+      ),
+  },
+  {
+    title: '封装后 hash',
+    key: 'resignedApkHash',
+    width: 180,
+    render: (row) => (row.resignedApkHash ? formatHash(row.resignedApkHash) : '-'),
+  },
+  {
+    title: '拒绝原因',
+    key: 'rejectReason',
+    width: 150,
+    ellipsis: { tooltip: true },
+    render: (row) => row.rejectReason ?? '-',
+  },
 ];
 
 onMounted(() => {
@@ -229,9 +314,7 @@ onMounted(() => {
 <template>
   <NCard title="自有 APK SDK 封装(ADR 0081)" :bordered="false">
     <template #header-extra>
-      <NText depth="3" style="font-size: 12px;">
-        七锁架构 · 仅限开发者自有 APK · 律师预审通过
-      </NText>
+      <NText depth="3" style="font-size: 12px">七锁架构 · 仅限开发者自有 APK · 律师预审通过</NText>
     </template>
 
     <NTabs type="line" animated>
@@ -239,31 +322,43 @@ onMounted(() => {
       <NTabPane name="pack" tab="SDK 封装">
         <NSpace vertical size="large">
           <NAlert type="warning" :show-icon="true">
-            <strong>七锁合规约束(ADR 0081)</strong>:
-            仅限自有 APK(锁 1)· 仅注入固定 classes-xcj.dex(锁 2)·
-            Manifest 修改仅限 Application 委托(锁 3)· 强制自备 Keystore(锁 4)·
-            JWT 开发者自身(锁 5)· SDK 仅 OAID + 包信息(锁 6)· 客户端签名自检(锁 7)
+            <strong>七锁合规约束(ADR 0081)</strong>
+            : 仅限自有 APK(锁 1)· 仅注入固定 classes-xcj.dex(锁 2)· Manifest 修改仅限 Application
+            委托(锁 3)· 强制自备 Keystore(锁 4)· JWT 开发者自身(锁 5)· SDK 仅 OAID + 包信息(锁 6)·
+            客户端签名自检(锁 7)
           </NAlert>
 
           <NCard title="上传文件" size="small">
             <NSpace vertical>
               <NFormItem label="自有 APK" label-placement="left">
-                <NUpload :max="1" accept=".apk,application/vnd.android.package-archive"
-                  :default-upload="false" @change="handleApkChange">
+                <NUpload
+                  :max="1"
+                  accept=".apk,application/vnd.android.package-archive"
+                  :default-upload="false"
+                  @change="handleApkChange"
+                >
                   <NButton>选择 APK 文件</NButton>
                 </NUpload>
               </NFormItem>
 
               <NFormItem label="自备 Keystore" label-placement="left">
-                <NUpload :max="1" accept=".jks,.keystore,application/octet-stream"
-                  :default-upload="false" @change="handleKeystoreChange">
+                <NUpload
+                  :max="1"
+                  accept=".jks,.keystore,application/octet-stream"
+                  :default-upload="false"
+                  @change="handleKeystoreChange"
+                >
                   <NButton>选择 Keystore(.jks/.keystore)</NButton>
                 </NUpload>
               </NFormItem>
 
               <NFormItem label="classes-xcj.dex" label-placement="left">
-                <NUpload :max="1" accept=".dex,application/octet-stream"
-                  :default-upload="false" @change="handleDexChange">
+                <NUpload
+                  :max="1"
+                  accept=".dex,application/octet-stream"
+                  :default-upload="false"
+                  @change="handleDexChange"
+                >
                   <NButton>选择 xcj-auth-sdk 编译产物(.dex)</NButton>
                 </NUpload>
               </NFormItem>
@@ -273,19 +368,31 @@ onMounted(() => {
           <NCard title="Keystore 凭证 + SDK 配置" size="small">
             <NForm label-placement="left" label-width="140">
               <NFormItem label="Keystore 密码">
-                <NInput v-model:value="credentials.keystorePassword" type="password"
-                  show-password-on="click" placeholder="Keystore 密码" />
+                <NInput
+                  v-model:value="credentials.keystorePassword"
+                  type="password"
+                  show-password-on="click"
+                  placeholder="Keystore 密码"
+                />
               </NFormItem>
               <NFormItem label="key 别名">
                 <NInput v-model:value="credentials.keyAlias" placeholder="如 key0 / mykey" />
               </NFormItem>
               <NFormItem label="key 密码">
-                <NInput v-model:value="credentials.keyPassword" type="password"
-                  show-password-on="click" placeholder="key 密码" />
+                <NInput
+                  v-model:value="credentials.keyPassword"
+                  type="password"
+                  show-password-on="click"
+                  placeholder="key 密码"
+                />
               </NFormItem>
               <NFormItem label="SDK 配置(JSON)">
-                <NInput v-model:value="sdkConfigText" type="textarea" :rows="6"
-                  placeholder='{"appId":"...","serverUrl":"...","offlineCacheDays":7,"oaidEnabled":true}' />
+                <NInput
+                  v-model:value="sdkConfigText"
+                  type="textarea"
+                  :rows="6"
+                  placeholder='{"appId":"...","serverUrl":"...","offlineCacheDays":7,"oaidEnabled":true}'
+                />
               </NFormItem>
             </NForm>
           </NCard>
@@ -293,14 +400,14 @@ onMounted(() => {
           <NCard title="defender-sdk 防护配置(ADR 0088,可选)" size="small">
             <NSpace vertical>
               <NAlert type="info" :show-icon="true">
-                defender-sdk 是防守内核(9 模块),通过 Packer 注入到自有 APK。
-                默认仅 signatureVerify + integrityCheck 开启(防误杀)。
-                启用后 Packer 会注入 .so(30 池随机名)+ classes-defender.dex + defender-config.json。
+                defender-sdk 是防守内核(9 模块),通过 Packer 注入到自有 APK。 默认仅 signatureVerify
+                + integrityCheck 开启(防误杀)。 启用后 Packer 会注入 .so(30 池随机名)+
+                classes-defender.dex + defender-config.json。
               </NAlert>
 
               <NFormItem label="启用 defender-sdk" label-placement="left">
                 <NSwitch v-model:value="defenderEnabled" />
-                <NText depth="3" style="margin-left: 12px; font-size: 12px;">
+                <NText depth="3" style="margin-left: 12px; font-size: 12px">
                   {{ defenderEnabled ? '已启用(将注入 defender-sdk)' : '未启用(仅封装 auth-sdk)' }}
                 </NText>
               </NFormItem>
@@ -312,67 +419,95 @@ onMounted(() => {
                   <NFormItem label="签名校验">
                     <NSpace>
                       <NSwitch v-model:value="defenderConfig.signatureVerify!.enabled" />
-                      <NSelect v-model:value="defenderConfig.signatureVerify!.onViolation"
-                        :options="violationOptions" style="width: 180px" />
+                      <NSelect
+                        v-model:value="defenderConfig.signatureVerify!.onViolation"
+                        :options="violationOptions"
+                        style="width: 180px"
+                      />
                     </NSpace>
                   </NFormItem>
 
                   <NFormItem label="反调试">
                     <NSpace>
                       <NSwitch v-model:value="defenderConfig.antiDebug!.enabled" />
-                      <NSelect v-model:value="defenderConfig.antiDebug!.onViolation"
-                        :options="violationOptions" style="width: 180px" />
+                      <NSelect
+                        v-model:value="defenderConfig.antiDebug!.onViolation"
+                        :options="violationOptions"
+                        style="width: 180px"
+                      />
                     </NSpace>
                   </NFormItem>
 
                   <NFormItem label="防 Frida">
                     <NSpace>
                       <NSwitch v-model:value="defenderConfig.antiFrida!.enabled" />
-                      <NSelect v-model:value="defenderConfig.antiFrida!.onViolation"
-                        :options="violationOptions" style="width: 180px" />
+                      <NSelect
+                        v-model:value="defenderConfig.antiFrida!.onViolation"
+                        :options="violationOptions"
+                        style="width: 180px"
+                      />
                     </NSpace>
                   </NFormItem>
 
                   <NFormItem label="防 Dump">
                     <NSpace>
                       <NSwitch v-model:value="defenderConfig.antiDump!.enabled" />
-                      <NSelect v-model:value="defenderConfig.antiDump!.onViolation"
-                        :options="violationOptions" style="width: 180px" />
+                      <NSelect
+                        v-model:value="defenderConfig.antiDump!.onViolation"
+                        :options="violationOptions"
+                        style="width: 180px"
+                      />
                     </NSpace>
                   </NFormItem>
 
                   <NFormItem label="Root 检测">
                     <NSpace>
                       <NSwitch v-model:value="defenderConfig.rootDetect!.enabled" />
-                      <NSelect v-model:value="defenderConfig.rootDetect!.onViolation"
-                        :options="violationOptions" style="width: 180px" />
+                      <NSelect
+                        v-model:value="defenderConfig.rootDetect!.onViolation"
+                        :options="violationOptions"
+                        style="width: 180px"
+                      />
                     </NSpace>
                   </NFormItem>
 
                   <NFormItem label="Xposed 检测">
                     <NSpace>
                       <NSwitch v-model:value="defenderConfig.xposedDetect!.enabled" />
-                      <NSelect v-model:value="defenderConfig.xposedDetect!.onViolation"
-                        :options="violationOptions" style="width: 180px" />
-                      <NText depth="3" style="font-size: 12px;">kill 阈值:</NText>
-                      <NInputNumber v-model:value="defenderConfig.xposedDetect!.killThreshold"
-                        :min="0" :max="100" style="width: 100px" />
+                      <NSelect
+                        v-model:value="defenderConfig.xposedDetect!.onViolation"
+                        :options="violationOptions"
+                        style="width: 180px"
+                      />
+                      <NText depth="3" style="font-size: 12px">kill 阈值:</NText>
+                      <NInputNumber
+                        v-model:value="defenderConfig.xposedDetect!.killThreshold"
+                        :min="0"
+                        :max="100"
+                        style="width: 100px"
+                      />
                     </NSpace>
                   </NFormItem>
 
                   <NFormItem label="模拟器检测">
                     <NSpace>
                       <NSwitch v-model:value="defenderConfig.emulatorDetect!.enabled" />
-                      <NSelect v-model:value="defenderConfig.emulatorDetect!.onViolation"
-                        :options="violationOptions" style="width: 180px" />
+                      <NSelect
+                        v-model:value="defenderConfig.emulatorDetect!.onViolation"
+                        :options="violationOptions"
+                        style="width: 180px"
+                      />
                     </NSpace>
                   </NFormItem>
 
                   <NFormItem label="完整性校验">
                     <NSpace>
                       <NSwitch v-model:value="defenderConfig.integrityCheck!.enabled" />
-                      <NSelect v-model:value="defenderConfig.integrityCheck!.onViolation"
-                        :options="violationOptions" style="width: 180px" />
+                      <NSelect
+                        v-model:value="defenderConfig.integrityCheck!.onViolation"
+                        :options="violationOptions"
+                        style="width: 180px"
+                      />
                     </NSpace>
                   </NFormItem>
 
@@ -384,23 +519,36 @@ onMounted(() => {
                 <NDivider title-placement="left">kill 响应策略</NDivider>
                 <NForm label-placement="left" label-width="140" size="small">
                   <NFormItem label="终止方式">
-                    <NSelect v-model:value="defenderConfig.onViolationKill!.method"
-                      :options="killMethodOptions" style="width: 240px" />
+                    <NSelect
+                      v-model:value="defenderConfig.onViolationKill!.method"
+                      :options="killMethodOptions"
+                      style="width: 240px"
+                    />
                   </NFormItem>
                   <NFormItem label="延迟最小(ms)">
-                    <NInputNumber v-model:value="defenderConfig.onViolationKill!.delayMinMs"
-                      :min="0" :max="60000" style="width: 180px" />
+                    <NInputNumber
+                      v-model:value="defenderConfig.onViolationKill!.delayMinMs"
+                      :min="0"
+                      :max="60000"
+                      style="width: 180px"
+                    />
                   </NFormItem>
                   <NFormItem label="延迟最大(ms)">
-                    <NInputNumber v-model:value="defenderConfig.onViolationKill!.delayMaxMs"
-                      :min="0" :max="60000" style="width: 180px" />
+                    <NInputNumber
+                      v-model:value="defenderConfig.onViolationKill!.delayMaxMs"
+                      :min="0"
+                      :max="60000"
+                      style="width: 180px"
+                    />
                   </NFormItem>
                   <NFormItem label="显示 Toast">
                     <NSwitch v-model:value="defenderConfig.onViolationKill!.showToast" />
                   </NFormItem>
                   <NFormItem label="Toast 文案">
-                    <NInput v-model:value="defenderConfig.onViolationKill!.toastMessage"
-                      style="width: 300px" />
+                    <NInput
+                      v-model:value="defenderConfig.onViolationKill!.toastMessage"
+                      style="width: 300px"
+                    />
                   </NFormItem>
                 </NForm>
 
@@ -410,15 +558,23 @@ onMounted(() => {
                     <NSwitch v-model:value="defenderConfig.report!.enabled" />
                   </NFormItem>
                   <NFormItem label="限流周期(ms)">
-                    <NInputNumber v-model:value="defenderConfig.report!.throttleMs"
-                      :min="0" :step="60000" style="width: 180px" />
+                    <NInputNumber
+                      v-model:value="defenderConfig.report!.throttleMs"
+                      :min="0"
+                      :step="60000"
+                      style="width: 180px"
+                    />
                   </NFormItem>
                 </NForm>
 
                 <NDivider title-placement="left">防截屏排除列表</NDivider>
                 <NFormItem label="excludeActivities" label-placement="top">
-                  <NInput v-model:value="excludeActivitiesText" type="textarea" :rows="3"
-                    placeholder="每行一个 Activity 全限定名(这些 Activity 不加 FLAG_SECURE)&#10;如:com.example.LoginActivity" />
+                  <NInput
+                    v-model:value="excludeActivitiesText"
+                    type="textarea"
+                    :rows="3"
+                    placeholder="每行一个 Activity 全限定名(这些 Activity 不加 FLAG_SECURE)&#10;如:com.example.LoginActivity"
+                  />
                 </NFormItem>
               </template>
             </NSpace>
@@ -427,8 +583,11 @@ onMounted(() => {
           <NSpace>
             <NPopconfirm @positive-click="doPack">
               <template #trigger>
-                <NButton type="warning" :loading="packing"
-                  :disabled="!apkFile || !keystoreFile || !xcjAuthSdkDexFile">
+                <NButton
+                  type="warning"
+                  :loading="packing"
+                  :disabled="!apkFile || !keystoreFile || !xcjAuthSdkDexFile"
+                >
                   执行 SDK 封装(七锁校验)
                 </NButton>
               </template>
@@ -450,7 +609,10 @@ onMounted(() => {
                 <NDescriptionsItem label="注入 dex hash(auth)">
                   <NCode :code="packResult.injectedDexHash" language="text" />
                 </NDescriptionsItem>
-                <NDescriptionsItem v-if="packResult.injectedDefenderDexHash" label="注入 dex hash(defender)">
+                <NDescriptionsItem
+                  v-if="packResult.injectedDefenderDexHash"
+                  label="注入 dex hash(defender)"
+                >
                   <NCode :code="packResult.injectedDefenderDexHash" language="text" />
                 </NDescriptionsItem>
                 <NDescriptionsItem v-if="packResult.defenderSoName" label="defender .so 名(随机)">
@@ -466,9 +628,7 @@ onMounted(() => {
                   {{ formatSize(packResult.packedApkSize) }}
                 </NDescriptionsItem>
               </NDescriptions>
-              <NButton type="primary" @click="downloadPackedApk">
-                下载封装后 APK
-              </NButton>
+              <NButton type="primary" @click="downloadPackedApk">下载封装后 APK</NButton>
             </NSpace>
           </NCard>
         </NSpace>
@@ -478,11 +638,18 @@ onMounted(() => {
       <NTabPane name="history" tab="封装历史">
         <NSpace vertical size="large">
           <NSpace>
-            <NButton @click="loadHistory" :loading="historyLoading">刷新</NButton>
+            <NButton :loading="historyLoading" @click="loadHistory">刷新</NButton>
             <NText depth="3">显示最近 50 条封装记录</NText>
           </NSpace>
-          <NDataTable :columns="historyColumns" :data="historyLogs" :loading="historyLoading"
-            :bordered="true" :single-line="false" size="small" :scroll="{ x: 1400 }" />
+          <NDataTable
+            :columns="historyColumns"
+            :data="historyLogs"
+            :loading="historyLoading"
+            :bordered="true"
+            :single-line="false"
+            size="small"
+            :scroll="{ x: 1400 }"
+          />
         </NSpace>
       </NTabPane>
     </NTabs>

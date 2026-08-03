@@ -2,16 +2,35 @@
 import { onMounted, ref, h, computed } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import {
-  NCard, NTabs, NTabPane, NDataTable, NButton, NSpace, NModal, NForm, NFormItem,
-  NInput, NInputNumber, NSelect, NTag, NPopconfirm,
-  NStatistic, NGrid, NGridItem, useMessage, type DataTableColumns,
+  NCard,
+  NTabs,
+  NTabPane,
+  NDataTable,
+  NButton,
+  NSpace,
+  NModal,
+  NForm,
+  NFormItem,
+  NInput,
+  NInputNumber,
+  NSelect,
+  NTag,
+  NPopconfirm,
+  NStatistic,
+  NGrid,
+  NGridItem,
+  useMessage,
+  type DataTableColumns,
 } from 'naive-ui';
 import { appsApi, type AppDetail } from '@/api/apps';
 import { cardsApi, type CardKeyItem, type GenerateCardsDto } from '@/api/cards';
 import { getAppOverviewStats, type AppOverviewStats } from '@/api/stats';
 import {
-  CARD_KEY_TYPE_LABELS, BINDING_STRATEGY_LABELS, CARD_STATUS_LABELS,
-  type CardKeyType, type BindingStrategy,
+  CARD_KEY_TYPE_LABELS,
+  BINDING_STRATEGY_LABELS,
+  CARD_STATUS_LABELS,
+  type CardKeyType,
+  type BindingStrategy,
 } from '@/api/types';
 import { useAuthStore } from '@/stores/auth';
 
@@ -199,30 +218,87 @@ function downloadGeneratedKeys() {
 }
 
 const cardColumns: DataTableColumns<CardKeyItem> = [
-  { title: '前缀', key: 'cardKeyPrefix', width: 80, render: (r) => h(NTag, { size: 'small' }, () => r.cardKeyPrefix) },
-  { title: '类型', key: 'type', width: 80, render: (r) => CARD_KEY_TYPE_LABELS[r.type as CardKeyType] },
-  { title: '绑定', key: 'bindingStrategy', width: 120, render: (r) => BINDING_STRATEGY_LABELS[r.bindingStrategy as BindingStrategy] },
-  { title: '状态', key: 'status', width: 80, render: (r) => {
+  {
+    title: '前缀',
+    key: 'cardKeyPrefix',
+    width: 80,
+    render: (r) => h(NTag, { size: 'small' }, () => r.cardKeyPrefix),
+  },
+  {
+    title: '类型',
+    key: 'type',
+    width: 80,
+    render: (r) => CARD_KEY_TYPE_LABELS[r.type as CardKeyType],
+  },
+  {
+    title: '绑定',
+    key: 'bindingStrategy',
+    width: 120,
+    render: (r) => BINDING_STRATEGY_LABELS[r.bindingStrategy as BindingStrategy],
+  },
+  {
+    title: '状态',
+    key: 'status',
+    width: 80,
+    render: (r) => {
       const label = CARD_STATUS_LABELS[r.status] ?? r.status;
-      const type = r.status === 'ACTIVE' ? 'success' : r.status === 'DISABLED' ? 'error' : 'default';
+      const type =
+        r.status === 'ACTIVE' ? 'success' : r.status === 'DISABLED' ? 'error' : 'default';
       return h(NTag, { size: 'small', type }, () => label);
-    }
+    },
   },
   { title: '已绑设备', key: 'boundDevicesCount', width: 80 },
-  { title: '激活时间', key: 'activatedAt', width: 160, render: (r) => r.activatedAt ? new Date(r.activatedAt).toLocaleString() : '-' },
-  { title: '创建时间', key: 'createdAt', width: 160, render: (r) => new Date(r.createdAt).toLocaleString() },
   {
-    title: '操作', key: 'actions', width: 120,
-    render: (r) => h(NSpace, { size: 'small' }, () => [
-      r.status === 'ACTIVE'
-        ? h(NButton, { size: 'tiny', type: 'warning', quaternary: true, onClick: () => handleDisableCard(r) }, () => '禁用')
-        : h(NButton, { size: 'tiny', type: 'success', quaternary: true, onClick: () => handleEnableCard(r) }, () => '启用'),
-    ]),
+    title: '激活时间',
+    key: 'activatedAt',
+    width: 160,
+    render: (r) => (r.activatedAt ? new Date(r.activatedAt).toLocaleString() : '-'),
+  },
+  {
+    title: '创建时间',
+    key: 'createdAt',
+    width: 160,
+    render: (r) => new Date(r.createdAt).toLocaleString(),
+  },
+  {
+    title: '操作',
+    key: 'actions',
+    width: 120,
+    render: (r) =>
+      h(NSpace, { size: 'small' }, () => [
+        r.status === 'ACTIVE'
+          ? h(
+              NButton,
+              {
+                size: 'tiny',
+                type: 'warning',
+                quaternary: true,
+                onClick: () => handleDisableCard(r),
+              },
+              () => '禁用',
+            )
+          : h(
+              NButton,
+              {
+                size: 'tiny',
+                type: 'success',
+                quaternary: true,
+                onClick: () => handleEnableCard(r),
+              },
+              () => '启用',
+            ),
+      ]),
   },
 ];
 
-const typeOptions = Object.entries(CARD_KEY_TYPE_LABELS).map(([value, label]) => ({ value, label }));
-const bindingOptions = Object.entries(BINDING_STRATEGY_LABELS).map(([value, label]) => ({ value, label }));
+const typeOptions = Object.entries(CARD_KEY_TYPE_LABELS).map(([value, label]) => ({
+  value,
+  label,
+}));
+const bindingOptions = Object.entries(BINDING_STRATEGY_LABELS).map(([value, label]) => ({
+  value,
+  label,
+}));
 
 onMounted(async () => {
   await loadApp();
@@ -266,8 +342,15 @@ onMounted(async () => {
                 itemCount: cardsTotal,
                 showSizePicker: true,
                 pageSizes: [20, 50, 100],
-                onUpdatePage: (p: number) => { cardsPage = p; loadCards(); },
-                onUpdatePageSize: (s: number) => { cardsPageSize = s; cardsPage = 1; loadCards(); },
+                onUpdatePage: (p: number) => {
+                  cardsPage = p;
+                  loadCards();
+                },
+                onUpdatePageSize: (s: number) => {
+                  cardsPageSize = s;
+                  cardsPage = 1;
+                  loadCards();
+                },
               }"
             />
           </NSpace>
@@ -277,12 +360,20 @@ onMounted(async () => {
         <NTabPane name="stats" tab="统计">
           <NGrid :cols="4" :x-gap="16" :y-gap="16">
             <NGridItem><NStatistic label="卡密总数" :value="stats?.cards.total ?? 0" /></NGridItem>
-            <NGridItem><NStatistic label="活跃设备(30天)" :value="stats?.devices.active30d ?? 0" /></NGridItem>
-            <NGridItem><NStatistic label="今日验证" :value="stats?.validations.today ?? 0" /></NGridItem>
-            <NGridItem><NStatistic label="累计激活" :value="stats?.cards.activated ?? 0" /></NGridItem>
+            <NGridItem>
+              <NStatistic label="活跃设备(30天)" :value="stats?.devices.active30d ?? 0" />
+            </NGridItem>
+            <NGridItem>
+              <NStatistic label="今日验证" :value="stats?.validations.today ?? 0" />
+            </NGridItem>
+            <NGridItem>
+              <NStatistic label="累计激活" :value="stats?.cards.activated ?? 0" />
+            </NGridItem>
           </NGrid>
           <NText depth="3" style="display: block; margin-top: 16px">
-            验证失败率:{{ stats?.validations.todayFailRate ?? 0 }}% · 设备总数:{{ stats?.devices.total ?? 0 }}
+            验证失败率:{{ stats?.validations.todayFailRate ?? 0 }}% · 设备总数:{{
+              stats?.devices.total ?? 0
+            }}
           </NText>
         </NTabPane>
 
@@ -292,10 +383,18 @@ onMounted(async () => {
             <NCard title="限流与缓存配置" size="small">
               <NForm label-placement="left" :label-width="180">
                 <NFormItem label="IP 限流(次/分钟)">
-                  <NInputNumber v-model:value="settingsForm.rateLimitIpPerMinute" :min="1" :max="10000" />
+                  <NInputNumber
+                    v-model:value="settingsForm.rateLimitIpPerMinute"
+                    :min="1"
+                    :max="10000"
+                  />
                 </NFormItem>
                 <NFormItem label="设备限流(次/分钟)">
-                  <NInputNumber v-model:value="settingsForm.rateLimitDevicePerMinute" :min="1" :max="10000" />
+                  <NInputNumber
+                    v-model:value="settingsForm.rateLimitDevicePerMinute"
+                    :min="1"
+                    :max="10000"
+                  />
                 </NFormItem>
                 <NFormItem label="离线缓存天数">
                   <NInputNumber v-model:value="settingsForm.offlineCacheDays" :min="1" :max="30" />
@@ -306,7 +405,9 @@ onMounted(async () => {
 
             <NCard title="appSecret" size="small">
               <NSpace vertical>
-                <NText depth="3">重置 appSecret 后,旧 SDK 集成将无法验证。请通知所有客户端更新。</NText>
+                <NText depth="3">
+                  重置 appSecret 后,旧 SDK 集成将无法验证。请通知所有客户端更新。
+                </NText>
                 <NPopconfirm @positive-click="handleRotateSecret">
                   <template #trigger>
                     <NButton type="warning">重置 appSecret</NButton>
@@ -357,7 +458,12 @@ onMounted(async () => {
     </NModal>
 
     <!-- 生成结果弹窗 -->
-    <NModal :show="!!generatedKeys" title="卡密已生成(仅此一次,请保存)" preset="dialog" style="width: 700px">
+    <NModal
+      :show="!!generatedKeys"
+      title="卡密已生成(仅此一次,请保存)"
+      preset="dialog"
+      style="width: 700px"
+    >
       <NSpace vertical>
         <NText depth="3">批次 ID: {{ generatedBatchId }}</NText>
         <NInput
@@ -378,7 +484,12 @@ onMounted(async () => {
     </NModal>
 
     <!-- 新 appSecret 弹窗 -->
-    <NModal :show="!!newAppSecret" title="新 appSecret(仅此一次)" preset="dialog" style="width: 600px">
+    <NModal
+      :show="!!newAppSecret"
+      title="新 appSecret(仅此一次)"
+      preset="dialog"
+      style="width: 600px"
+    >
       <NInput :value="newAppSecret ?? ''" type="textarea" readonly :rows="3" />
       <template #action>
         <NButton type="primary" @click="newAppSecret = null">我已保存</NButton>

@@ -67,19 +67,37 @@ if (result.success) {
     </NCard>
 
     <NAlert type="warning" title="合规边界">
-      <ul style="margin: 0; padding-left: 20px;">
-        <li><b>允许</b>:集成到你自有著作权的 Android 应用</li>
-        <li><b>禁止</b>:重打包他人 APK(即使单次)</li>
-        <li><b>禁止</b>:绕过其他验证系统 / 为外挂破解提供支持</li>
+      <ul style="margin: 0; padding-left: 20px">
+        <li>
+          <b>允许</b>
+          :集成到你自有著作权的 Android 应用
+        </li>
+        <li>
+          <b>禁止</b>
+          :重打包他人 APK(即使单次)
+        </li>
+        <li>
+          <b>禁止</b>
+          :绕过其他验证系统 / 为外挂破解提供支持
+        </li>
       </ul>
     </NAlert>
 
     <NCard title="集成步骤">
       <NSpace vertical size="large">
         <NSteps vertical>
-          <NStep title="在 Web 后台创建应用" description="登录后进入「应用管理」创建应用,获得 appId + appSecret(appSecret 仅显示一次,务必保存)" />
-          <NStep title="用 injector CLI 生成集成模板" description="java -jar xcj-injector-all.jar init --output ./xcj-integration --app-id your-app-id --server-url https://xcj.winmelon.cn" />
-          <NStep title="添加 gradle 依赖" description="复制到 app/build.gradle.kts 的 dependencies 块" />
+          <NStep
+            title="在 Web 后台创建应用"
+            description="登录后进入「应用管理」创建应用,获得 appId + appSecret(appSecret 仅显示一次,务必保存)"
+          />
+          <NStep
+            title="用 injector CLI 生成集成模板"
+            description="java -jar xcj-injector-all.jar init --output ./xcj-integration --app-id your-app-id --server-url https://xcj.winmelon.cn"
+          />
+          <NStep
+            title="添加 gradle 依赖"
+            description="复制到 app/build.gradle.kts 的 dependencies 块"
+          />
           <NStep title="创建 Application 类" description="复制模板到项目,改包名" />
           <NStep title="配置 AndroidManifest" description="注册 Application + 添加网络权限" />
           <NStep title="配置 BuildConfig" description="在 build.gradle.kts 配置 appSecret" />
@@ -110,14 +128,38 @@ if (result.success) {
 
     <NCard title="错误码说明">
       <NSpace vertical>
-        <div><NText code>INVALID_CARD_KEY_FORMAT</NText> - 卡密格式错误</div>
-        <div><NText code>CARD_NOT_FOUND</NText> - 卡密不存在</div>
-        <div><NText code>CARD_DISABLED</NText> - 卡密已禁用</div>
-        <div><NText code>CARD_EXPIRED</NText> - 卡密已过期</div>
-        <div><NText code>CARD_ALREADY_BOUND_TO_OTHER_DEVICE</NText> - 已绑其他设备(FIRST_BIND)</div>
-        <div><NText code>MAX_DEVICES_REACHED</NText> - 超过设备数上限(N_DEVICES)</div>
-        <div><NText code>TRIAL_ALREADY_CLAIMED_BY_OTHER_DEVICE</NText> - 试用卡已被认领</div>
-        <div><NText code>DEVICE_NOT_BOUND</NText> - 设备未绑定</div>
+        <div>
+          <NText code>INVALID_CARD_KEY_FORMAT</NText>
+          - 卡密格式错误
+        </div>
+        <div>
+          <NText code>CARD_NOT_FOUND</NText>
+          - 卡密不存在
+        </div>
+        <div>
+          <NText code>CARD_DISABLED</NText>
+          - 卡密已禁用
+        </div>
+        <div>
+          <NText code>CARD_EXPIRED</NText>
+          - 卡密已过期
+        </div>
+        <div>
+          <NText code>CARD_ALREADY_BOUND_TO_OTHER_DEVICE</NText>
+          - 已绑其他设备(FIRST_BIND)
+        </div>
+        <div>
+          <NText code>MAX_DEVICES_REACHED</NText>
+          - 超过设备数上限(N_DEVICES)
+        </div>
+        <div>
+          <NText code>TRIAL_ALREADY_CLAIMED_BY_OTHER_DEVICE</NText>
+          - 试用卡已被认领
+        </div>
+        <div>
+          <NText code>DEVICE_NOT_BOUND</NText>
+          - 设备未绑定
+        </div>
       </NSpace>
     </NCard>
 

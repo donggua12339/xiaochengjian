@@ -2,8 +2,18 @@
 import { onMounted, ref, h } from 'vue';
 import { useRouter } from 'vue-router';
 import {
-  NCard, NButton, NSpace, NDataTable, NModal, NForm, NFormItem, NInput,
-  NTag, NPopconfirm, useMessage, type DataTableColumns,
+  NCard,
+  NButton,
+  NSpace,
+  NDataTable,
+  NModal,
+  NForm,
+  NFormItem,
+  NInput,
+  NTag,
+  NPopconfirm,
+  useMessage,
+  type DataTableColumns,
 } from 'naive-ui';
 import { appsApi, type AppItem } from '@/api/apps';
 import { useAuthStore } from '@/stores/auth';
@@ -80,21 +90,39 @@ function copySecret() {
 }
 
 const columns: DataTableColumns<AppItem> = [
-  { title: '应用名称', key: 'name', render: (row) => h('a', { onClick: () => router.push(`/apps/${row.id}`) }, row.name) },
+  {
+    title: '应用名称',
+    key: 'name',
+    render: (row) => h('a', { onClick: () => router.push(`/apps/${row.id}`) }, row.name),
+  },
   { title: '包名', key: 'packageName' },
-  { title: 'appSecret 前缀', key: 'appSecretPrefix', render: (row) => h(NTag, { size: 'small' }, () => row.appSecretPrefix) },
+  {
+    title: 'appSecret 前缀',
+    key: 'appSecretPrefix',
+    render: (row) => h(NTag, { size: 'small' }, () => row.appSecretPrefix),
+  },
   { title: '离线缓存(天)', key: 'offlineCacheDays' },
-  { title: '创建时间', key: 'createdAt', render: (row) => new Date(row.createdAt).toLocaleString() },
+  {
+    title: '创建时间',
+    key: 'createdAt',
+    render: (row) => new Date(row.createdAt).toLocaleString(),
+  },
   {
     title: '操作',
     key: 'actions',
     render: (row) =>
       h(NSpace, {}, () => [
         h(NButton, { size: 'small', onClick: () => router.push(`/apps/${row.id}`) }, () => '管理'),
-        h(NPopconfirm, { onPositiveClick: () => handleDelete(row) }, {
-          trigger: () => h(NButton, { size: 'small', type: 'error', quaternary: true }, () => '删除'),
-          default: () => `确认删除应用「${row.name}」?此操作会级联删除所有卡密和设备记录,不可恢复。`,
-        }),
+        h(
+          NPopconfirm,
+          { onPositiveClick: () => handleDelete(row) },
+          {
+            trigger: () =>
+              h(NButton, { size: 'small', type: 'error', quaternary: true }, () => '删除'),
+            default: () =>
+              `确认删除应用「${row.name}」?此操作会级联删除所有卡密和设备记录,不可恢复。`,
+          },
+        ),
       ]),
   },
 ];
@@ -128,7 +156,12 @@ onMounted(loadApps);
       </template>
     </NModal>
 
-    <NModal :show="!!newAppSecret" title="appSecret(仅此一次,请保存)" preset="dialog" style="width: 600px">
+    <NModal
+      :show="!!newAppSecret"
+      title="appSecret(仅此一次,请保存)"
+      preset="dialog"
+      style="width: 600px"
+    >
       <NSpace vertical>
         <NInput :value="newAppSecret ?? ''" type="textarea" readonly :rows="3" />
         <NButton type="primary" block @click="copySecret">复制到剪贴板</NButton>
@@ -139,8 +172,3 @@ onMounted(loadApps);
     </NModal>
   </NSpace>
 </template>
-
-<script lang="ts">
-import { NText } from 'naive-ui';
-export default { components: { NText } };
-</script>

@@ -1,7 +1,18 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
-import { NCard, NForm, NFormItem, NInput, NButton, NSpace, NTabs, NTabPane, NText, useMessage } from 'naive-ui';
+import {
+  NCard,
+  NForm,
+  NFormItem,
+  NInput,
+  NButton,
+  NSpace,
+  NTabs,
+  NTabPane,
+  NText,
+  useMessage,
+} from 'naive-ui';
 import { useAuthStore } from '@/stores/auth';
 
 const router = useRouter();
@@ -69,7 +80,9 @@ async function handleBackupLogin() {
             <NFormItem label="8 位备份码">
               <NInput v-model:value="backupCode" placeholder="A1B2C3D4" maxlength="8" />
             </NFormItem>
-            <NButton type="primary" block :loading="loading" @click="handleBackupLogin">使用备份码</NButton>
+            <NButton type="primary" block :loading="loading" @click="handleBackupLogin">
+              使用备份码
+            </NButton>
           </NForm>
         </NTabPane>
       </NTabs>

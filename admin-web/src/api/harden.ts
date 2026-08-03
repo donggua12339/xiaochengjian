@@ -28,15 +28,33 @@ export function getHardenConfig(appId: string) {
 }
 
 export function saveHardenConfig(appId: string, config: Partial<HardenConfig>) {
-  return request<HardenConfig>({ method: 'PUT', url: `/apps/${appId}/harden/config`, data: config });
+  return request<HardenConfig>({
+    method: 'PUT',
+    url: `/apps/${appId}/harden/config`,
+    data: config,
+  });
 }
 
-export function submitQualityReport(appId: string, report: {
-  overallScore: number; grade: string; dimensions: unknown; raw: unknown;
-}) {
-  return request<QualityReportItem>({ method: 'POST', url: `/apps/${appId}/harden/report`, data: report });
+export function submitQualityReport(
+  appId: string,
+  report: {
+    overallScore: number;
+    grade: string;
+    dimensions: unknown;
+    raw: unknown;
+  },
+) {
+  return request<QualityReportItem>({
+    method: 'POST',
+    url: `/apps/${appId}/harden/report`,
+    data: report,
+  });
 }
 
 export function getQualityReports(appId: string, limit = 10) {
-  return request<QualityReportItem[]>({ method: 'GET', url: `/apps/${appId}/harden/reports`, params: { limit } });
+  return request<QualityReportItem[]>({
+    method: 'GET',
+    url: `/apps/${appId}/harden/reports`,
+    params: { limit },
+  });
 }

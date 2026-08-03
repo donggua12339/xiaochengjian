@@ -40,13 +40,16 @@ export interface GenerateCardsResult {
 }
 
 export const cardsApi = {
-  list: (appId: string, params: {
-    page?: number;
-    pageSize?: number;
-    type?: CardKeyType;
-    status?: string;
-    batchId?: string;
-  }) =>
+  list: (
+    appId: string,
+    params: {
+      page?: number;
+      pageSize?: number;
+      type?: CardKeyType;
+      status?: string;
+      batchId?: string;
+    },
+  ) =>
     request<CardKeyListResult>({
       method: 'GET',
       url: `/apps/${appId}/cards`,

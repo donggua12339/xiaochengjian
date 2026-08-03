@@ -33,13 +33,35 @@ describe('SdkConfig.vue', () => {
   });
 
   it('应渲染 3 个复选框', () => {
-    const wrapper = mount(SdkConfig, { global: { stubs: { NCard: true, NSpace: true, NCode: true, NButton: true, NDivider: true, NText: true } } });
+    const wrapper = mount(SdkConfig, {
+      global: {
+        stubs: {
+          NCard: true,
+          NSpace: true,
+          NCode: true,
+          NButton: true,
+          NDivider: true,
+          NText: true,
+        },
+      },
+    });
     const checkboxes = wrapper.findAllComponents(NCheckbox);
     expect(checkboxes.length).toBe(3);
   });
 
   it('初始状态 Cargo.toml [features] 应含 default = []', () => {
-    const wrapper = mount(SdkConfig, { global: { stubs: { NCard: true, NSpace: true, NCode: true, NButton: true, NDivider: true, NText: true } } });
+    const wrapper = mount(SdkConfig, {
+      global: {
+        stubs: {
+          NCard: true,
+          NSpace: true,
+          NCode: true,
+          NButton: true,
+          NDivider: true,
+          NText: true,
+        },
+      },
+    });
     const text = wrapper.text();
     expect(text).toContain('[features]');
     expect(text).toContain('default = []');

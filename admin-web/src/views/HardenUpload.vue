@@ -7,7 +7,7 @@
  * 刷新页面后可从"加固任务"tab 恢复
  */
 
-import { ref, computed, onUnmounted, onActivated, onDeactivated } from 'vue';
+import { ref, computed, onMounted, onUnmounted, onActivated, onDeactivated } from 'vue';
 import {
   NCard,
   NButton,
@@ -29,7 +29,15 @@ import {
 } from 'naive-ui';
 import type { UploadFileInfo } from 'naive-ui';
 import axios from 'axios';
-import { chunkedUpload, analyzeApk, hardenApk, getHardeningStatus, downloadHardenedApk, MAX_FILE_SIZE } from '@/api/hardening';
+import {
+  chunkedUpload,
+  analyzeApk,
+  hardenApk,
+  getHardeningStatus,
+  downloadHardenedApk,
+  getDefaultSignStatus,
+  MAX_FILE_SIZE,
+} from '@/api/hardening';
 import type { ApkAnalysis, HardeningRequestConfig, HardeningTaskStatus } from '@/api/hardening';
 
 const message = useMessage();
@@ -171,6 +179,16 @@ function stopPolling() {
 }
 
 onUnmounted(() => stopPolling());
+
+onMounted(async () => {
+  try {
+    const status = await getDefaultSignStatus();
+    defaultSignAvailable.value = status.enabled;
+    defaultSignAlias.value = status.alias ?? '';
+  } catch {
+    defaultSignAvailable.value = false;
+  }
+});
 
 // KeepAlive 钩子: 离开页面停止轮询,回来时重置卡住状态
 onDeactivated(() => stopPolling());
@@ -318,6 +336,9 @@ const ksPassword = ref('');
 const ksAlias = ref('');
 const ksKeyPassword = ref('');
 const ownershipConfirmed = ref(false);
+const useDefaultSign = ref(false);
+const defaultSignAvailable = ref(false);
+const defaultSignAlias = ref('');
 
 function handleKeystoreUpload({ file }: { file: UploadFileInfo }) {
   if (file.file) keystoreFile.value = file.file;
@@ -331,13 +352,15 @@ async function startHardening() {
     message.error('请先上传 APK');
     return;
   }
-  if (!keystoreFile.value) {
-    message.error('请选择 Keystore 文件');
-    return;
-  }
-  if (!ksPassword.value || !ksAlias.value || !ksKeyPassword.value) {
-    message.error('请填写 Keystore 信息');
-    return;
+  if (!useDefaultSign.value) {
+    if (!keystoreFile.value) {
+      message.error('请选择 Keystore 文件');
+      return;
+    }
+    if (!ksPassword.value || !ksAlias.value || !ksKeyPassword.value) {
+      message.error('请填写 Keystore 信息');
+      return;
+    }
   }
   if (enabledCount.value === 0) {
     message.warning('请至少选择一个加固模块');
@@ -345,6 +368,11 @@ async function startHardening() {
   }
   if (!ownershipConfirmed.value) {
     message.error('请确认 APK 所有权声明');
+    return;
+  }
+  const currentAnalysis = analysis.value;
+  if (!currentAnalysis) {
+    message.error('APK 分析未完成,请先等待分析');
     return;
   }
 
@@ -370,12 +398,13 @@ async function startHardening() {
 
     const res = await hardenApk({
       fileId: fileId.value,
-      keystoreFile: keystoreFile.value,
-      keystorePassword: ksPassword.value,
-      keyAlias: ksAlias.value,
-      keyPassword: ksKeyPassword.value,
+      useDefaultSign: useDefaultSign.value,
+      keystoreFile: useDefaultSign.value ? undefined : (keystoreFile.value ?? undefined),
+      keystorePassword: useDefaultSign.value ? undefined : ksPassword.value,
+      keyAlias: useDefaultSign.value ? undefined : ksAlias.value,
+      keyPassword: useDefaultSign.value ? undefined : ksKeyPassword.value,
       config,
-      analysis: analysis.value!,
+      analysis: currentAnalysis,
       ownershipConfirmed: ownershipConfirmed.value,
     });
 
@@ -398,12 +427,16 @@ async function startHardening() {
 }
 
 // ========== 下载 ==========
+const downloading = ref(false);
 async function downloadApk() {
   if (!taskStatus.value?.id) return;
+  downloading.value = true;
   try {
     await downloadHardenedApk(taskStatus.value.id);
   } catch (e: unknown) {
     message.error(`下载失败: ${errMsg(e)}`);
+  } finally {
+    downloading.value = false;
   }
 }
 
@@ -417,6 +450,7 @@ function resetAll() {
   ksPassword.value = '';
   ksAlias.value = '';
   ksKeyPassword.value = '';
+  useDefaultSign.value = false;
   ownershipConfirmed.value = false;
   uploadProgress.value = 0;
   uploadPhase.value = 'idle';
@@ -426,7 +460,10 @@ function resetAll() {
 
 /** Bug F: 重试分析(不重传文件,用已有 fileId) */
 async function retryAnalysis() {
-  if (!fileId.value) { resetAll(); return; }
+  if (!fileId.value) {
+    resetAll();
+    return;
+  }
   globalError.value = '';
   analyzing.value = true;
   uploadPhase.value = 'analyzing';
@@ -434,9 +471,14 @@ async function retryAnalysis() {
   try {
     const { taskId } = await analyzeApk(fileId.value);
     taskStatus.value = {
-      id: taskId, status: 'analyzing', progress: 0,
-      message: '正在重新分析...', step: 'queued', detail: '',
-      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+      id: taskId,
+      status: 'analyzing',
+      progress: 0,
+      message: '正在重新分析...',
+      step: 'queued',
+      detail: '',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     } as HardeningTaskStatus;
     startPolling(taskId, 'analysis');
   } catch (e: unknown) {
@@ -448,7 +490,15 @@ async function retryAnalysis() {
 
 /** Bug F: 重试加固(不重传文件,用已有 fileId + keystore) */
 async function retryHarden() {
-  if (!fileId.value || !keystoreFile.value) { resetAll(); return; }
+  if (!fileId.value || (!useDefaultSign.value && !keystoreFile.value)) {
+    resetAll();
+    return;
+  }
+  const currentAnalysis = analysis.value;
+  if (!currentAnalysis) {
+    resetAll();
+    return;
+  }
   globalError.value = '';
   hardening.value = true;
   currentStep.value = 4;
@@ -459,19 +509,34 @@ async function retryHarden() {
       xuanjia: xuanjiaModules.value,
       ...(productLine.value === 'tianyan' ? { tianyan: tianyanModules.value } : {}),
       killPolicy: {
-        strongEvidence: killAction.value as NonNullable<HardeningRequestConfig['killPolicy']>['strongEvidence'],
-        weakScoreThreshold: weakThreshold.value, delayMinMs: 0, delayMaxMs: 1000,
+        strongEvidence: killAction.value as NonNullable<
+          HardeningRequestConfig['killPolicy']
+        >['strongEvidence'],
+        weakScoreThreshold: weakThreshold.value,
+        delayMinMs: 0,
+        delayMaxMs: 1000,
       },
     };
     const res = await hardenApk({
-      fileId: fileId.value, keystoreFile: keystoreFile.value,
-      keystorePassword: ksPassword.value, keyAlias: ksAlias.value, keyPassword: ksKeyPassword.value,
-      config, analysis: analysis.value!, ownershipConfirmed: ownershipConfirmed.value,
+      fileId: fileId.value,
+      useDefaultSign: useDefaultSign.value,
+      keystoreFile: useDefaultSign.value ? undefined : (keystoreFile.value ?? undefined),
+      keystorePassword: useDefaultSign.value ? undefined : ksPassword.value,
+      keyAlias: useDefaultSign.value ? undefined : ksAlias.value,
+      keyPassword: useDefaultSign.value ? undefined : ksKeyPassword.value,
+      config,
+      analysis: currentAnalysis,
+      ownershipConfirmed: ownershipConfirmed.value,
     });
     taskStatus.value = {
-      id: res.taskId, status: 'hardening', progress: 0,
-      message: '正在重新加固...', step: 'init', detail: '',
-      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+      id: res.taskId,
+      status: 'hardening',
+      progress: 0,
+      message: '正在重新加固...',
+      step: 'init',
+      detail: '',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     } as HardeningTaskStatus;
     startPolling(res.taskId, 'hardening');
   } catch (e: unknown) {
@@ -520,11 +585,7 @@ const stepIcons: Record<string, string> = {
   <div style="max-width: 900px; margin: 0 auto; padding: 24px">
     <NCard title="APK 加固">
       <!-- 步骤条 -->
-      <NSteps
-        :current="currentStep === 1 ? 1 : currentStep >= 5 ? 5 : currentStep"
-        size="small"
-        style="margin-bottom: 20px"
-      >
+      <NSteps :current="currentStep + 1" size="small" style="margin-bottom: 20px">
         <NStep title="上传" />
         <NStep title="分析" />
         <NStep title="选模块" />
@@ -562,7 +623,12 @@ const stepIcons: Record<string, string> = {
               </NText>
             </div>
           </NSpace>
-          <NProgress type="line" :percentage="uploadProgress" :show-indicator="true" status="info" />
+          <NProgress
+            type="line"
+            :percentage="uploadProgress"
+            :show-indicator="true"
+            status="info"
+          />
         </NCard>
 
         <!-- 分析进度 -->
@@ -612,7 +678,9 @@ const stepIcons: Record<string, string> = {
           {{ taskStatus.error }}
           <div style="margin-top: 8px">
             <NSpace :size="8">
-              <NButton v-if="fileId" size="small" type="warning" @click="retryAnalysis">重试分析</NButton>
+              <NButton v-if="fileId" size="small" type="warning" @click="retryAnalysis">
+                重试分析
+              </NButton>
               <NButton size="small" @click="resetAll">重新上传</NButton>
             </NSpace>
           </div>
@@ -623,7 +691,9 @@ const stepIcons: Record<string, string> = {
           {{ globalError }}
           <div style="margin-top: 8px">
             <NSpace :size="8">
-              <NButton v-if="fileId" size="small" type="warning" @click="retryAnalysis">重试分析</NButton>
+              <NButton v-if="fileId" size="small" type="warning" @click="retryAnalysis">
+                重试分析
+              </NButton>
               <NButton size="small" @click="resetAll">重新上传</NButton>
             </NSpace>
           </div>
@@ -706,31 +776,39 @@ const stepIcons: Record<string, string> = {
       <template v-if="currentStep === 3">
         <NDivider title-placement="left">签名配置</NDivider>
         <NSpace vertical :size="12">
-          <NUpload
-            :max="1"
-            accept=".jks,.keystore"
-            :default-upload="false"
-            :show-file-list="false"
-            @change="handleKeystoreUpload"
-          >
-            <NButton>{{ keystoreFile ? '重新选择 Keystore' : '选择 Keystore(.jks)' }}</NButton>
-          </NUpload>
-          <NText v-if="keystoreFile" depth="3" style="font-size: 12px">
-            ✅ {{ keystoreFile.name }} ({{ (keystoreFile.size / 1024).toFixed(1) }} KB)
+          <NCheckbox v-if="defaultSignAvailable" v-model:checked="useDefaultSign">
+            使用默认签名 ({{ defaultSignAlias }})
+          </NCheckbox>
+          <template v-if="!useDefaultSign">
+            <NUpload
+              :max="1"
+              accept=".jks,.keystore"
+              :default-upload="false"
+              :show-file-list="false"
+              @change="handleKeystoreUpload"
+            >
+              <NButton>{{ keystoreFile ? '重新选择 Keystore' : '选择 Keystore(.jks)' }}</NButton>
+            </NUpload>
+            <NText v-if="keystoreFile" depth="3" style="font-size: 12px">
+              ✅ {{ keystoreFile.name }} ({{ (keystoreFile.size / 1024).toFixed(1) }} KB)
+            </NText>
+            <NInput
+              v-model:value="ksPassword"
+              type="password"
+              placeholder="Keystore 密码"
+              show-password-on="click"
+            />
+            <NInput v-model:value="ksAlias" placeholder="Key 别名" />
+            <NInput
+              v-model:value="ksKeyPassword"
+              type="password"
+              placeholder="Key 密码"
+              show-password-on="click"
+            />
+          </template>
+          <NText v-else depth="3" style="font-size: 12px">
+            ✅ 将使用服务端预配置的签名: {{ defaultSignAlias }}
           </NText>
-          <NInput
-            v-model:value="ksPassword"
-            type="password"
-            placeholder="Keystore 密码"
-            show-password-on="click"
-          />
-          <NInput v-model:value="ksAlias" placeholder="Key 别名" />
-          <NInput
-            v-model:value="ksKeyPassword"
-            type="password"
-            placeholder="Key 密码"
-            show-password-on="click"
-          />
         </NSpace>
 
         <NDivider title-placement="left">所有权声明(ADR 0097)</NDivider>
@@ -772,7 +850,14 @@ const stepIcons: Record<string, string> = {
           {{ globalError }}
           <div style="margin-top: 8px">
             <NSpace :size="8">
-              <NButton v-if="fileId && keystoreFile" size="small" type="warning" @click="retryHarden">重试加固</NButton>
+              <NButton
+                v-if="fileId && (useDefaultSign || keystoreFile)"
+                size="small"
+                type="warning"
+                @click="retryHarden"
+              >
+                重试加固
+              </NButton>
               <NButton size="small" @click="resetAll">重新开始</NButton>
             </NSpace>
           </div>
@@ -786,7 +871,9 @@ const stepIcons: Record<string, string> = {
           已启用 {{ enabledCount }} 个加固模块,APK 已重签。
         </NAlert>
         <NSpace vertical :size="12">
-          <NButton type="primary" size="large" block @click="downloadApk">下载加固后的 APK</NButton>
+          <NButton type="primary" size="large" block :loading="downloading" @click="downloadApk">
+            {{ downloading ? '正在下载...' : '下载加固后的 APK' }}
+          </NButton>
           <NButton block @click="resetAll">加固另一个 APK</NButton>
         </NSpace>
       </template>

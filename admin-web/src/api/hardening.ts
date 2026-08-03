@@ -126,23 +126,29 @@ export async function cancelHardeningTask(taskId: string): Promise<{ cancelled: 
  * Step 3: 传 fileId + keystore 执行加固
  * APK 不再重新上传,通过 fileId 引用。
  * Keystore 通过 multipart 内存传输(不落盘)。
+ * useDefaultSign=true 时使用服务端预配置的默认 Keystore,无需上传文件。
  */
 export async function hardenApk(params: {
   fileId: string;
-  keystoreFile: File;
-  keystorePassword: string;
-  keyAlias: string;
-  keyPassword: string;
+  useDefaultSign?: boolean;
+  keystoreFile?: File;
+  keystorePassword?: string;
+  keyAlias?: string;
+  keyPassword?: string;
   config: HardeningRequestConfig;
   analysis: ApkAnalysis;
   ownershipConfirmed: boolean;
 }): Promise<{ taskId: string; status: string; message: string }> {
   const formData = new FormData();
   formData.append('fileId', params.fileId);
-  formData.append('keystore', params.keystoreFile);
-  formData.append('keystorePassword', params.keystorePassword);
-  formData.append('keyAlias', params.keyAlias);
-  formData.append('keyPassword', params.keyPassword);
+  if (params.useDefaultSign) {
+    formData.append('useDefaultSign', 'true');
+  } else {
+    if (params.keystoreFile) formData.append('keystore', params.keystoreFile);
+    if (params.keystorePassword) formData.append('keystorePassword', params.keystorePassword);
+    if (params.keyAlias) formData.append('keyAlias', params.keyAlias);
+    if (params.keyPassword) formData.append('keyPassword', params.keyPassword);
+  }
   formData.append('config', JSON.stringify(params.config));
   formData.append('analysisJson', JSON.stringify(params.analysis));
   formData.append('ownershipConfirmed', params.ownershipConfirmed ? 'true' : 'false');
@@ -164,7 +170,17 @@ export async function downloadHardenedApk(taskId: string): Promise<void> {
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  // 延迟释放 blob URL,确保浏览器已启动下载
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
+/** 查询默认签名是否可用 */
+export async function getDefaultSignStatus(): Promise<{ enabled: boolean; alias?: string }> {
+  const res = await request<{ enabled: boolean; alias?: string }>({
+    method: 'GET',
+    url: '/hardening/default-sign-status',
+  });
+  return res;
 }
 
 // ========== 分片上传 ==========
@@ -238,7 +254,9 @@ export async function chunkedUpload(
   try {
     const saved = sessionStorage.getItem(ssKey);
     if (saved) completedSet = new Set(JSON.parse(saved) as number[]);
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
 
   // 每片当前进度(用于精确总进度计算)
   const chunkProgress = new Map<number, number>();
@@ -282,10 +300,16 @@ export async function chunkedUpload(
   let queueIdx = 0;
 
   await new Promise<void>((resolve, reject) => {
-    if (signal?.aborted) { reject(new Error('上传已取消')); return; }
+    if (signal?.aborted) {
+      reject(new Error('上传已取消'));
+      return;
+    }
 
     function tryNext() {
-      if (signal?.aborted) { reject(new Error('上传已取消')); return; }
+      if (signal?.aborted) {
+        reject(new Error('上传已取消'));
+        return;
+      }
 
       while (inFlight < MAX_CONCURRENT && queueIdx < queue.length) {
         const chunkIdx = queue[queueIdx++];
@@ -297,9 +321,16 @@ export async function chunkedUpload(
             completedCount++;
             chunkProgress.delete(chunkIdx);
             onProgress(computeTotalProgress());
-            try { sessionStorage.setItem(ssKey, JSON.stringify([...completedSet])); } catch { /* ignore */ }
+            try {
+              sessionStorage.setItem(ssKey, JSON.stringify([...completedSet]));
+            } catch {
+              /* ignore */
+            }
             inFlight--;
-            if (completedCount === totalChunks) { resolve(); return; }
+            if (completedCount === totalChunks) {
+              resolve();
+              return;
+            }
             tryNext();
           })
           .catch((err) => {
@@ -309,12 +340,19 @@ export async function chunkedUpload(
       }
     }
 
-    if (queue.length === 0) { resolve(); return; }
+    if (queue.length === 0) {
+      resolve();
+      return;
+    }
     tryNext();
   });
 
   // 清理 sessionStorage
-  try { sessionStorage.removeItem(ssKey); } catch { /* ignore */ }
+  try {
+    sessionStorage.removeItem(ssKey);
+  } catch {
+    /* ignore */
+  }
 
   // Step 3: complete(含缺片补传重试)
   onProgress(99);

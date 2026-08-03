@@ -49,8 +49,7 @@ export const appsApi = {
   update: (id: string, dto: UpdateAppDto) =>
     request<AppDetail>({ method: 'PATCH', url: `/apps/${id}`, data: dto }),
 
-  delete: (id: string) =>
-    request<{ success: boolean }>({ method: 'DELETE', url: `/apps/${id}` }),
+  delete: (id: string) => request<{ success: boolean }>({ method: 'DELETE', url: `/apps/${id}` }),
 
   rotateSecret: (id: string) =>
     request<{ appSecret: string; appSecretPrefix: string }>({

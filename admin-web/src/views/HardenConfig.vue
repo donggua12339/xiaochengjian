@@ -39,15 +39,20 @@ const loading = ref(false);
 onMounted(async () => {
   try {
     const list = await appsApi.list();
-    apps.value = (list as any[]).map((a: any) => ({ label: `${a.name} (${a.packageName})`, value: a.id }));
-  } catch { /* ignore */ }
+    apps.value = list.map((a) => ({
+      label: `${a.name} (${a.packageName})`,
+      value: a.id,
+    }));
+  } catch {
+    /* ignore */
+  }
 });
 
 async function loadConfig() {
   if (!selectedAppId.value) return;
   loading.value = true;
   try {
-    const c = await getHardenConfig(selectedAppId.value) as any;
+    const c = await getHardenConfig(selectedAppId.value);
     encryptStrings.value = c.encryptStrings ?? true;
     vmpProtect.value = c.vmpProtect ?? true;
     segmentStrings.value = c.segmentStrings ?? false;
@@ -59,7 +64,7 @@ async function loadConfig() {
     delayMax.value = c.delayMaxMs ?? 1000;
     if (c.detectionModules) {
       for (const [k, v] of Object.entries(c.detectionModules)) {
-        if (k in modules.value) (modules.value as any)[k] = v;
+        if (k in modules.value) modules.value[k] = v;
       }
     }
     message.success('配置已加载');
@@ -71,7 +76,10 @@ async function loadConfig() {
 }
 
 async function saveConfig() {
-  if (!selectedAppId.value) { message.warning('请先选择应用'); return; }
+  if (!selectedAppId.value) {
+    message.warning('请先选择应用');
+    return;
+  }
   try {
     await saveHardenConfig(selectedAppId.value, {
       encryptStrings: encryptStrings.value,
@@ -106,7 +114,7 @@ const segmentStrings = ref(false);
 const soEncrypt = ref(true);
 
 // 检测模块
-const modules = ref({
+const modules = ref<Record<string, boolean>>({
   antiDebug: true,
   antiFrida: true,
   antiDump: true,
@@ -140,20 +148,24 @@ const delayMax = ref(1000);
 
 // 生成 harden.json
 const hardenJson = computed(() => {
-  return JSON.stringify({
-    encryptStrings: encryptStrings.value,
-    vmpProtect: vmpProtect.value,
-    segmentStrings: segmentStrings.value,
-    soEncrypt: soEncrypt.value,
-    detectionModules: modules.value,
-    killPolicy: {
-      strongEvidence: killAction.value,
-      weakScoreThreshold: weakThreshold.value,
-      delayMinMs: delayMin.value,
-      delayMaxMs: delayMax.value,
+  return JSON.stringify(
+    {
+      encryptStrings: encryptStrings.value,
+      vmpProtect: vmpProtect.value,
+      segmentStrings: segmentStrings.value,
+      soEncrypt: soEncrypt.value,
+      detectionModules: modules.value,
+      killPolicy: {
+        strongEvidence: killAction.value,
+        weakScoreThreshold: weakThreshold.value,
+        delayMinMs: delayMin.value,
+        delayMaxMs: delayMax.value,
+      },
+      strength: strength.value,
     },
-    strength: strength.value,
-  }, null, 2);
+    null,
+    2,
+  );
 });
 
 // 生成 CLI 命令
@@ -202,7 +214,11 @@ function applyPreset(val: string) {
       </NSpace>
       <NDivider />
       <template #header-extra>
-        <NTag :type="strength === 'paranoid' ? 'error' : strength === 'aggressive' ? 'warning' : 'success'">
+        <NTag
+          :type="
+            strength === 'paranoid' ? 'error' : strength === 'aggressive' ? 'warning' : 'success'
+          "
+        >
           {{ strength }}
         </NTag>
       </template>

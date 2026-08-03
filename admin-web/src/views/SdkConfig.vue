@@ -148,14 +148,16 @@ function resetAll() {
   <div>
     <h2>SDK 配置</h2>
     <NText depth="3" style="margin-bottom: 16px; display: block">
-      按需勾选反逆向 features,生成定制 Cargo.toml + 编译命令。不提供编译服务(ADR 0068),开发者自行编译。
+      按需勾选反逆向 features,生成定制 Cargo.toml + 编译命令。不提供编译服务(ADR
+      0068),开发者自行编译。
     </NText>
 
     <!-- 1. Feature 选择 -->
     <NCard title="1. 选择反逆向 features" size="small" style="margin-bottom: 16px">
       <NSpace vertical :size="12">
         <NCheckbox v-model:checked="enableObfstr">
-          <strong>obfstr</strong> - 字符串混淆(编译时加密 URL/密钥/错误码,ADR 0071)
+          <strong>obfstr</strong>
+          - 字符串混淆(编译时加密 URL/密钥/错误码,ADR 0071)
         </NCheckbox>
         <NText depth="3" style="font-size: 12px; padding-left: 24px">
           启用后 RSA 公钥指纹 / 错误信息 / URL 等常量在编译产物中不可直接搜索
@@ -164,7 +166,8 @@ function resetAll() {
         <NDivider style="margin: 4px 0" />
 
         <NCheckbox v-model:checked="enableOpaqueJni">
-          <strong>opaque-jni</strong> - JNI 函数名非语义化(ADR 0071)
+          <strong>opaque-jni</strong>
+          - JNI 函数名非语义化(ADR 0071)
         </NCheckbox>
         <NText depth="3" style="font-size: 12px; padding-left: 24px">
           启用后额外导出 native01-08 别名,Kotlin 侧可用非语义化声明(语义化命名仍保留)
@@ -173,7 +176,8 @@ function resetAll() {
         <NDivider style="margin: 4px 0" />
 
         <NCheckbox v-model:checked="enableControlFlowFlatten" :disabled="!cffAvailable">
-          <strong>control-flow-flattening</strong> - 控制流平坦化(ADR 0073)
+          <strong>control-flow-flattening</strong>
+          - 控制流平坦化(ADR 0073)
           <NText v-if="!cffAvailable" depth="3" style="font-size: 12px">
             (未来工作,当前不可用)
           </NText>
@@ -209,7 +213,9 @@ function resetAll() {
     <!-- 4. 生成的 Cargo.toml -->
     <NCard title="3. 定制 Cargo.toml [features] 段" size="small" style="margin-bottom: 16px">
       <NText depth="3" style="font-size: 12px; display: block; margin-bottom: 8px">
-        替换 <code>sdk-android/rust/xcj-core/Cargo.toml</code> 的 [features] 段
+        替换
+        <code>sdk-android/rust/xcj-core/Cargo.toml</code>
+        的 [features] 段
       </NText>
       <NCode :code="cargoFeatures" language="toml" />
       <NButton

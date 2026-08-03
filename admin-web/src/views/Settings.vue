@@ -1,8 +1,17 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
 import {
-  NCard, NSpace, NForm, NFormItem, NInput, NButton, NTag, NAlert,
-  NDescriptions, NDescriptionsItem, useMessage,
+  NCard,
+  NSpace,
+  NForm,
+  NFormItem,
+  NInput,
+  NButton,
+  NTag,
+  NAlert,
+  NDescriptions,
+  NDescriptionsItem,
+  useMessage,
 } from 'naive-ui';
 import { useAuthStore } from '@/stores/auth';
 
@@ -36,7 +45,10 @@ async function handleChangePassword() {
     message.warning('新密码至少 8 位');
     return;
   }
-  if (!/[a-zA-Z]/.test(passwordForm.value.newPassword) || !/\d/.test(passwordForm.value.newPassword)) {
+  if (
+    !/[a-zA-Z]/.test(passwordForm.value.newPassword) ||
+    !/\d/.test(passwordForm.value.newPassword)
+  ) {
     message.warning('新密码必须包含字母和数字');
     return;
   }
@@ -106,22 +118,41 @@ onMounted(async () => {
         <NDescriptionsItem label="会员等级">
           <NTag size="small" type="info">免费版</NTag>
         </NDescriptionsItem>
-        <NDescriptionsItem label="注册时间">{{ auth.developer?.createdAt ? new Date(auth.developer.createdAt).toLocaleString() : '-' }}</NDescriptionsItem>
+        <NDescriptionsItem label="注册时间">
+          {{
+            auth.developer?.createdAt ? new Date(auth.developer.createdAt).toLocaleString() : '-'
+          }}
+        </NDescriptionsItem>
       </NDescriptions>
     </NCard>
 
     <NCard title="修改密码">
       <NForm label-placement="left" :label-width="140" style="max-width: 500px">
         <NFormItem label="当前密码">
-          <NInput v-model:value="passwordForm.currentPassword" type="password" show-password-on="click" />
+          <NInput
+            v-model:value="passwordForm.currentPassword"
+            type="password"
+            show-password-on="click"
+          />
         </NFormItem>
         <NFormItem label="新密码">
-          <NInput v-model:value="passwordForm.newPassword" type="password" show-password-on="click" placeholder="至少 8 位" />
+          <NInput
+            v-model:value="passwordForm.newPassword"
+            type="password"
+            show-password-on="click"
+            placeholder="至少 8 位"
+          />
         </NFormItem>
         <NFormItem label="确认新密码">
-          <NInput v-model:value="passwordForm.confirmPassword" type="password" show-password-on="click" />
+          <NInput
+            v-model:value="passwordForm.confirmPassword"
+            type="password"
+            show-password-on="click"
+          />
         </NFormItem>
-        <NButton type="primary" :loading="changingPassword" @click="handleChangePassword">修改密码</NButton>
+        <NButton type="primary" :loading="changingPassword" @click="handleChangePassword">
+          修改密码
+        </NButton>
       </NForm>
     </NCard>
 
@@ -138,7 +169,9 @@ onMounted(async () => {
         <template v-if="totpSetup">
           <NCard title="步骤 1:扫描二维码" size="small" :bordered="false">
             <NSpace vertical>
-              <NText depth="3">用 Google Authenticator / Microsoft Authenticator 扫描以下 otpauth URL:</NText>
+              <NText depth="3">
+                用 Google Authenticator / Microsoft Authenticator 扫描以下 otpauth URL:
+              </NText>
               <NInput :value="totpSetup.otpauthUrl" readonly type="textarea" :rows="2" />
               <NText depth="3">或手动输入密钥:</NText>
               <NInput :value="totpSetup.secret" readonly style="font-family: monospace" />
@@ -146,7 +179,12 @@ onMounted(async () => {
           </NCard>
           <NCard title="步骤 2:输入验证码" size="small" :bordered="false">
             <NSpace>
-              <NInput v-model:value="totpCode" placeholder="6 位验证码" maxlength="6" style="max-width: 200px" />
+              <NInput
+                v-model:value="totpCode"
+                placeholder="6 位验证码"
+                maxlength="6"
+                style="max-width: 200px"
+              />
               <NButton type="primary" @click="handleVerifyTotp">验证并启用</NButton>
             </NSpace>
           </NCard>
@@ -155,13 +193,26 @@ onMounted(async () => {
         <!-- 备份码显示(仅启用时一次性) -->
         <NCard v-if="backupCodes" title="备份码(仅此一次,请保存)" size="small" :bordered="false">
           <NSpace vertical>
-            <NAlert type="warning">每个备份码只能用一次。丢失后无法找回,只能联系管理员重置 2FA。</NAlert>
-            <NInput :value="backupCodes.join('\n')" readonly type="textarea" :rows="5" style="font-family: monospace" />
+            <NAlert type="warning">
+              每个备份码只能用一次。丢失后无法找回,只能联系管理员重置 2FA。
+            </NAlert>
+            <NInput
+              :value="backupCodes.join('\n')"
+              readonly
+              type="textarea"
+              :rows="5"
+              style="font-family: monospace"
+            />
             <NButton @click="copyBackupCodes">复制全部</NButton>
           </NSpace>
         </NCard>
 
-        <NButton v-if="!auth.needs2FA && !totpSetup" type="primary" :loading="settingUpTotp" @click="handleSetupTotp">
+        <NButton
+          v-if="!auth.needs2FA && !totpSetup"
+          type="primary"
+          :loading="settingUpTotp"
+          @click="handleSetupTotp"
+        >
           启用 2FA
         </NButton>
       </NSpace>
@@ -170,7 +221,9 @@ onMounted(async () => {
     <NCard title="订阅">
       <NDescriptions :column="2" label-placement="left" bordered>
         <NDescriptionsItem label="当前方案">免费版</NDescriptionsItem>
-        <NDescriptionsItem label="应用配额">{{ auth.developer?.maxApps ?? '-' }} 个</NDescriptionsItem>
+        <NDescriptionsItem label="应用配额">
+          {{ auth.developer?.maxApps ?? '-' }} 个
+        </NDescriptionsItem>
         <NDescriptionsItem label="卡密数量">无限制</NDescriptionsItem>
         <NDescriptionsItem label="API 调用">无限制</NDescriptionsItem>
       </NDescriptions>

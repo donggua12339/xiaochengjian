@@ -4,7 +4,7 @@ import axios, { type AxiosInstance, type AxiosRequestConfig } from 'axios';
  * API 客户端
  * 统一处理:
  *  - baseURL(/v1 前缀)
-  *  - JWT 自动注入 Authorization header
+ *  - JWT 自动注入 Authorization header
  *  - 401 自动跳登录 + 清 token
  *  - 错误响应统一解包(code/message/requestId/timestamp)
  */

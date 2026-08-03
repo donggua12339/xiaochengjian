@@ -49,10 +49,20 @@ async function handleSubmit() {
           <NInput v-model:value="form.email" placeholder="developer@xcj.dev" />
         </NFormItem>
         <NFormItem label="密码">
-          <NInput v-model:value="form.password" type="password" show-password-on="click" placeholder="至少 8 位" />
+          <NInput
+            v-model:value="form.password"
+            type="password"
+            show-password-on="click"
+            placeholder="至少 8 位"
+          />
         </NFormItem>
         <NFormItem label="确认密码">
-          <NInput v-model:value="form.confirmPassword" type="password" show-password-on="click" placeholder="再次输入密码" />
+          <NInput
+            v-model:value="form.confirmPassword"
+            type="password"
+            show-password-on="click"
+            placeholder="再次输入密码"
+          />
         </NFormItem>
         <NSpace vertical>
           <NButton type="primary" block :loading="loading" @click="handleSubmit">注册</NButton>

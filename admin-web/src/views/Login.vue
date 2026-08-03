@@ -53,7 +53,12 @@ async function handleSubmit() {
           <NInput v-model:value="form.email" placeholder="developer@xcj.dev" />
         </NFormItem>
         <NFormItem label="密码">
-          <NInput v-model:value="form.password" type="password" show-password-on="click" placeholder="密码" />
+          <NInput
+            v-model:value="form.password"
+            type="password"
+            show-password-on="click"
+            placeholder="密码"
+          />
         </NFormItem>
         <NSpace vertical>
           <NButton type="primary" block :loading="loading" @click="handleSubmit">登录</NButton>

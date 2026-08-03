@@ -25,44 +25,82 @@ import {
   NText,
   useMessage,
 } from 'naive-ui';
-import { getQualityReports, submitQualityReport } from '@/api/harden';
+import { getQualityReports, submitQualityReport, type QualityReportItem } from '@/api/harden';
 import { appsApi } from '@/api/apps';
 
 const message = useMessage();
 const jsonInput = ref('');
-const report = ref<any>(null);
+
+/** 单个评分维度(与 DimensionResult 对齐) */
+interface ReportDimension {
+  score: number;
+  maxScore: number;
+  details?: string[];
+  hits?: number;
+}
+
+/** 前端解析的加固质量报告(JSON 结构,字段与 submitToServer 对齐) */
+interface ParsedReport {
+  overallScore: number;
+  grade: string;
+  stringResidual?: ReportDimension;
+  soEncryption?: ReportDimension;
+  detectionModules?: ReportDimension;
+  signature?: ReportDimension;
+  debuggable?: ReportDimension;
+  [key: string]: unknown;
+}
+const report = ref<ParsedReport | null>(null);
 
 // API 联动
 const apps = ref<{ label: string; value: string }[]>([]);
 const selectedAppId = ref<string | null>(null);
-const historyReports = ref<any[]>([]);
+const historyReports = ref<QualityReportItem[]>([]);
 
 onMounted(async () => {
   try {
     const list = await appsApi.list();
-    apps.value = (list as any[]).map((a: any) => ({ label: `${a.name} (${a.packageName})`, value: a.id }));
-  } catch { /* ignore */ }
+    apps.value = list.map((a) => ({
+      label: `${a.name} (${a.packageName})`,
+      value: a.id,
+    }));
+  } catch {
+    /* ignore */
+  }
 });
 
 async function loadHistory() {
   if (!selectedAppId.value) return;
   try {
-    historyReports.value = await getQualityReports(selectedAppId.value) as any[];
-  } catch { /* ignore */ }
+    historyReports.value = await getQualityReports(selectedAppId.value);
+  } catch {
+    /* ignore */
+  }
 }
 
 async function submitToServer() {
-  if (!selectedAppId.value || !report.value) { message.warning('请先选择应用并解析报告'); return; }
+  if (!selectedAppId.value || !report.value) {
+    message.warning('请先选择应用并解析报告');
+    return;
+  }
   try {
     await submitQualityReport(selectedAppId.value, {
       overallScore: report.value.overallScore,
       grade: report.value.grade,
-      dimensions: { stringResidual: report.value.stringResidual, soEncryption: report.value.soEncryption, detectionModules: report.value.detectionModules, signature: report.value.signature, debuggable: report.value.debuggable },
+      dimensions: {
+        stringResidual: report.value.stringResidual,
+        soEncryption: report.value.soEncryption,
+        detectionModules: report.value.detectionModules,
+        signature: report.value.signature,
+        debuggable: report.value.debuggable,
+      },
       raw: report.value,
     });
     message.success('报告已提交');
     await loadHistory();
-  } catch { message.error('提交失败'); }
+  } catch {
+    message.error('提交失败');
+  }
 }
 
 interface DimensionResult {
@@ -74,11 +112,11 @@ interface DimensionResult {
 
 function parseReport() {
   try {
-    const data = JSON.parse(jsonInput.value);
+    const data = JSON.parse(jsonInput.value) as ParsedReport;
     report.value = data;
     message.success('报告解析成功');
-  } catch (e: any) {
-    message.error('JSON 解析失败: ' + e.message);
+  } catch (e: unknown) {
+    message.error(`JSON 解析失败: ${e instanceof Error ? e.message : String(e)}`);
   }
 }
 
@@ -117,7 +155,7 @@ const dimensions = computed(() => {
   };
   for (const [key, label] of Object.entries(map)) {
     if (report.value[key]) {
-      dims.push({ name: key, label, data: report.value[key] });
+      dims.push({ name: key, label, data: report.value[key] as DimensionResult });
     }
   }
   return dims;
@@ -127,19 +165,19 @@ const suggestions = computed(() => {
   const tips: string[] = [];
   if (!report.value) return tips;
   const r = report.value;
-  if (r.stringResidual?.hits > 0) {
-    tips.push(`发现 ${r.stringResidual.hits} 处明文字符串残留 → 运行 T4 encrypt-strings 加密`);
+  if ((r.stringResidual?.hits ?? 0) > 0) {
+    tips.push(`发现 ${r.stringResidual?.hits} 处明文字符串残留 → 运行 T4 encrypt-strings 加密`);
   }
-  if (r.soEncryption?.score < r.soEncryption?.maxScore) {
+  if ((r.soEncryption?.score ?? 0) < (r.soEncryption?.maxScore ?? 0)) {
     tips.push('SO 未加密 → 运行 build_x0_pack.py 加密 libxcj_defender.so');
   }
-  if (r.detectionModules?.score < r.detectionModules?.maxScore) {
+  if ((r.detectionModules?.score ?? 0) < (r.detectionModules?.maxScore ?? 0)) {
     tips.push('检测模块未全开 → 在 HardenConfig 页面启用所有模块');
   }
-  if (r.signature?.score < r.signature?.maxScore) {
+  if ((r.signature?.score ?? 0) < (r.signature?.maxScore ?? 0)) {
     tips.push('签名不完整 → 使用 xcj-injector sign 重签 APK');
   }
-  if (r.debuggable?.score < r.debuggable?.maxScore) {
+  if ((r.debuggable?.score ?? 0) < (r.debuggable?.maxScore ?? 0)) {
     tips.push('APK 可调试 → 确保 release 构建 isMinifyEnabled=true');
   }
   if (tips.length === 0 && overallScore.value >= 90) {
@@ -154,8 +192,14 @@ const suggestions = computed(() => {
     <NCard title="加固质量报告(天衍 T6)">
       <!-- 应用选择 -->
       <NSpace align="center" style="margin-bottom: 16px">
-        <NSelect v-model:value="selectedAppId" :options="apps" placeholder="选择应用" style="width: 300px" @update:value="loadHistory" />
-        <NButton @click="submitToServer" :disabled="!report">提交到服务器</NButton>
+        <NSelect
+          v-model:value="selectedAppId"
+          :options="apps"
+          placeholder="选择应用"
+          style="width: 300px"
+          @update:value="loadHistory"
+        />
+        <NButton :disabled="!report" @click="submitToServer">提交到服务器</NButton>
       </NSpace>
       <NDivider />
 
@@ -208,21 +252,35 @@ const suggestions = computed(() => {
               <NSpace justify="space-between" align="center">
                 <NText strong>{{ dim.label }}</NText>
                 <NTag
-                  :type="dim.data.score >= dim.data.maxScore ? 'success' : dim.data.score > 0 ? 'warning' : 'error'"
+                  :type="
+                    dim.data.score >= dim.data.maxScore
+                      ? 'success'
+                      : dim.data.score > 0
+                        ? 'warning'
+                        : 'error'
+                  "
                   size="small"
                 >
                   {{ dim.data.score }} / {{ dim.data.maxScore }}
                 </NTag>
               </NSpace>
               <NProgress
-                :percentage="dim.data.maxScore > 0 ? Math.round((dim.data.score / dim.data.maxScore) * 100) : 0"
+                :percentage="
+                  dim.data.maxScore > 0 ? Math.round((dim.data.score / dim.data.maxScore) * 100) : 0
+                "
                 :show-indicator="false"
                 :height="6"
                 style="margin-top: 8px"
               />
               <div v-if="dim.data.details?.length" style="margin-top: 8px">
-                <NText depth="3" style="font-size: 12px" v-for="(d, i) in dim.data.details" :key="i">
-                  {{ d }}<br />
+                <NText
+                  v-for="(d, i) in dim.data.details"
+                  :key="i"
+                  depth="3"
+                  style="font-size: 12px"
+                >
+                  {{ d }}
+                  <br />
                 </NText>
               </div>
             </NCard>
@@ -231,7 +289,12 @@ const suggestions = computed(() => {
 
         <!-- 改进建议 -->
         <NDivider title-placement="left">改进建议</NDivider>
-        <NAlert v-for="(tip, i) in suggestions" :key="i" :type="overallScore >= 90 ? 'success' : 'warning'" style="margin-bottom: 8px">
+        <NAlert
+          v-for="(tip, i) in suggestions"
+          :key="i"
+          :type="overallScore >= 90 ? 'success' : 'warning'"
+          style="margin-bottom: 8px"
+        >
           {{ tip }}
         </NAlert>
       </template>
@@ -243,9 +306,24 @@ const suggestions = computed(() => {
           <NGi v-for="r in historyReports" :key="r.id">
             <NSpace align="center" justify="space-between">
               <NSpace align="center">
-                <NTag :type="r.grade === 'A' ? 'success' : r.grade === 'B' ? 'info' : r.grade === 'C' ? 'warning' : 'error'" size="small">{{ r.grade }}</NTag>
+                <NTag
+                  :type="
+                    r.grade === 'A'
+                      ? 'success'
+                      : r.grade === 'B'
+                        ? 'info'
+                        : r.grade === 'C'
+                          ? 'warning'
+                          : 'error'
+                  "
+                  size="small"
+                >
+                  {{ r.grade }}
+                </NTag>
                 <NText>{{ r.overallScore }}%</NText>
-                <NText depth="3" style="font-size: 12px">{{ new Date(r.createdAt).toLocaleString() }}</NText>
+                <NText depth="3" style="font-size: 12px">
+                  {{ new Date(r.createdAt).toLocaleString() }}
+                </NText>
               </NSpace>
             </NSpace>
           </NGi>
