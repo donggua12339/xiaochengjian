@@ -91,3 +91,6 @@ sdk-android/defender-sdk/src/main/cpp/cff_params.h
 # T4 DEX 字符串解密密钥头(含 XOR key,绝勿入库;由 encrypt-strings 生成)
 sdk-android/defender-sdk/src/main/cpp/t4_str_key.h
 injector/src/main/kotlin/com/xcj/injector/dexstring/t4_str_key.h
+
+# 本地开发工具(ktlint 等,勿入库)
+tools/
