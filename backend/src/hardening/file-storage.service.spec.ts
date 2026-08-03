@@ -13,10 +13,7 @@ describe('FileStorageService', () => {
   beforeEach(async () => {
     redis = { set: jest.fn(), get: jest.fn(), del: jest.fn() };
     const module = await Test.createTestingModule({
-      providers: [
-        FileStorageService,
-        { provide: RedisService, useValue: redis },
-      ],
+      providers: [FileStorageService, { provide: RedisService, useValue: redis }],
     }).compile();
     service = module.get(FileStorageService);
   });

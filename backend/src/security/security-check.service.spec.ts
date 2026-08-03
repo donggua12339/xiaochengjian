@@ -23,11 +23,22 @@ describe('SecurityCheckService', () => {
   async function buildService(env: Record<string, unknown>): Promise<SecurityCheckService> {
     // 清空所有相关 env(避免上一个测试残留)
     const keysToClean = [
-      'NODE_ENV', 'JWT_ACCESS_SECRET', 'JWT_REFRESH_SECRET', 'DATABASE_URL',
-      'CORS_ORIGINS', 'RATE_LIMIT_IP_PER_MINUTE', 'RATE_LIMIT_DEVICE_PER_MINUTE',
-      'RATE_LIMIT_FAIL_LOCK_THRESHOLD', 'LOG_LEVEL', 'RSA_PRIVATE_KEY_PATH',
-      'RSA_PUBLIC_KEY_PATH', 'TOTP_DIGITS', 'TOTP_STEP', 'OFFLINE_CACHE_DEFAULT_DAYS',
-      'OFFLINE_CACHE_MAX_DAYS', 'CARD_KEY_BATCH_MAX',
+      'NODE_ENV',
+      'JWT_ACCESS_SECRET',
+      'JWT_REFRESH_SECRET',
+      'DATABASE_URL',
+      'CORS_ORIGINS',
+      'RATE_LIMIT_IP_PER_MINUTE',
+      'RATE_LIMIT_DEVICE_PER_MINUTE',
+      'RATE_LIMIT_FAIL_LOCK_THRESHOLD',
+      'LOG_LEVEL',
+      'RSA_PRIVATE_KEY_PATH',
+      'RSA_PUBLIC_KEY_PATH',
+      'TOTP_DIGITS',
+      'TOTP_STEP',
+      'OFFLINE_CACHE_DEFAULT_DAYS',
+      'OFFLINE_CACHE_MAX_DAYS',
+      'CARD_KEY_BATCH_MAX',
     ];
     for (const k of keysToClean) delete process.env[k];
 

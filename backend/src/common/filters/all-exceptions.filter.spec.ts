@@ -34,11 +34,13 @@ describe('AllExceptionsFilter', () => {
     filter = moduleRef.get(AllExceptionsFilter);
   });
 
-  function buildHost(opts: {
-    requestId?: string;
-    method?: string;
-    url?: string;
-  } = {}): any {
+  function buildHost(
+    opts: {
+      requestId?: string;
+      method?: string;
+      url?: string;
+    } = {},
+  ): any {
     const headers: Record<string, string> = {};
     if (opts.requestId) headers['x-request-id'] = opts.requestId;
     const response = {
@@ -234,8 +236,10 @@ describe('AllExceptionsFilter', () => {
     it('403 -> FORBIDDEN', () => testStatus(HttpStatus.FORBIDDEN, 'FORBIDDEN'));
     it('404 -> NOT_FOUND', () => testStatus(HttpStatus.NOT_FOUND, 'NOT_FOUND'));
     it('409 -> CONFLICT', () => testStatus(HttpStatus.CONFLICT, 'CONFLICT'));
-    it('429 -> TOO_MANY_REQUESTS', () => testStatus(HttpStatus.TOO_MANY_REQUESTS, 'TOO_MANY_REQUESTS'));
-    it('500 -> INTERNAL_ERROR', () => testStatus(HttpStatus.INTERNAL_SERVER_ERROR, 'INTERNAL_ERROR'));
+    it('429 -> TOO_MANY_REQUESTS', () =>
+      testStatus(HttpStatus.TOO_MANY_REQUESTS, 'TOO_MANY_REQUESTS'));
+    it('500 -> INTERNAL_ERROR', () =>
+      testStatus(HttpStatus.INTERNAL_SERVER_ERROR, 'INTERNAL_ERROR'));
     it('418 -> ERROR(默认)', () => testStatus(418, 'ERROR'));
     it('302 -> ERROR(非错误状态码默认)', () => testStatus(302, 'ERROR'));
   });

@@ -20,7 +20,9 @@ describe('HealthController', () => {
       $queryRaw: jest.fn().mockResolvedValue([{ '?column?': 1 }]),
     };
     metricsService = {
-      getMetrics: jest.fn().mockResolvedValue('# HELP xcj_test\n# TYPE xcj_test gauge\nxcj_test 1\n'),
+      getMetrics: jest
+        .fn()
+        .mockResolvedValue('# HELP xcj_test\n# TYPE xcj_test gauge\nxcj_test 1\n'),
     };
 
     const moduleRef = await Test.createTestingModule({

@@ -1,16 +1,5 @@
-import {
-  Controller,
-  Post,
-  Body,
-  UseGuards,
-  BadRequestException,
-} from '@nestjs/common';
-import {
-  ApiBearerAuth,
-  ApiOperation,
-  ApiTags,
-  ApiBody,
-} from '@nestjs/swagger';
+import { Controller, Post, Body, UseGuards, BadRequestException } from '@nestjs/common';
+import { ApiBearerAuth, ApiOperation, ApiTags, ApiBody } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentDeveloper } from '../common/decorators/current-developer.decorator';
 import { IntegrityService } from './integrity.service';
@@ -50,7 +39,8 @@ export class IntegrityController {
   })
   async verify(
     @CurrentDeveloper() developerId: string,
-    @Body() body: {
+    @Body()
+    body: {
       appId: string;
       encryptedHash: string;
       nonce: string;

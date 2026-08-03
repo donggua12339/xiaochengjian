@@ -206,17 +206,11 @@ describe('主流程 (e2e)', () => {
   });
 
   it('14. 登出', async () => {
-    await request(app.getHttpServer())
-      .post('/v1/auth/logout')
-      .send({ refreshToken })
-      .expect(201);
+    await request(app.getHttpServer()).post('/v1/auth/logout').send({ refreshToken }).expect(201);
   });
 
   it('15. 登出后用旧 refresh 应 401', async () => {
-    await request(app.getHttpServer())
-      .post('/v1/auth/refresh')
-      .send({ refreshToken })
-      .expect(401);
+    await request(app.getHttpServer()).post('/v1/auth/refresh').send({ refreshToken }).expect(401);
   });
 
   it('16. 删除应用(级联清理)', async () => {

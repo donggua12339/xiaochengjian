@@ -114,7 +114,9 @@ export class ChunkStorageService {
     meta.receivedChunks.sort((a, b) => a - b);
     await this.redis.set(this.key(uploadId), JSON.stringify(meta), UPLOAD_TTL);
 
-    this.logger.log(`分片已收: uploadId=${uploadId} chunk=${chunkIndex} (${meta.receivedChunks.length}/${meta.totalChunks})`);
+    this.logger.log(
+      `分片已收: uploadId=${uploadId} chunk=${chunkIndex} (${meta.receivedChunks.length}/${meta.totalChunks})`,
+    );
     return { received: true, chunkIndex };
   }
 
@@ -142,7 +144,9 @@ export class ChunkStorageService {
       for (let i = 0; i < meta.totalChunks; i++) {
         if (!received.has(i)) missing.push(i);
       }
-      this.logger.warn(`分片未传完: ${meta.receivedChunks.length}/${meta.totalChunks}, missing=${missing.join(',')}`);
+      this.logger.warn(
+        `分片未传完: ${meta.receivedChunks.length}/${meta.totalChunks}, missing=${missing.join(',')}`,
+      );
       return { missing };
     }
 
@@ -168,9 +172,7 @@ export class ChunkStorageService {
     const stat = await fs.stat(outPath);
     if (stat.size !== meta.fileSize) {
       await fs.unlink(outPath).catch(() => {});
-      throw new BadRequestException(
-        `拼接后大小不匹配(期望 ${meta.fileSize}, 实际 ${stat.size})`,
-      );
+      throw new BadRequestException(`拼接后大小不匹配(期望 ${meta.fileSize}, 实际 ${stat.size})`);
     }
 
     // Magic bytes 校验

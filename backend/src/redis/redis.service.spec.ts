@@ -18,8 +18,7 @@ jest.mock('ioredis', () => ({
   default: jest.fn().mockImplementation(() => mockClient),
 }));
 
-// import 必须在 jest.mock 之后
-// eslint-disable-next-line import/first
+// import 必须在 jest.mock 之后(jest 会提升 jest.mock,无需 import/first 规则)
 import { RedisService } from './redis.service';
 
 /**
@@ -122,7 +121,10 @@ describe('RedisService', () => {
     const pipeline = {
       incr: jest.fn(),
       expire: jest.fn(),
-      exec: jest.fn().mockResolvedValue([[null, 7], [null, 1]]),
+      exec: jest.fn().mockResolvedValue([
+        [null, 7],
+        [null, 1],
+      ]),
     };
     mockClient.pipeline.mockReturnValue(pipeline);
     const result = await service.incrWithTtl('k', 60);

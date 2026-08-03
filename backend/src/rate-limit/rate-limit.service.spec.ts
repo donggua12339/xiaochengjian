@@ -30,10 +30,7 @@ describe('RateLimitService', () => {
       client: { ttl: jest.fn() },
     };
     const moduleRef = await Test.createTestingModule({
-      providers: [
-        RateLimitService,
-        { provide: RedisService, useValue: redis },
-      ],
+      providers: [RateLimitService, { provide: RedisService, useValue: redis }],
     }).compile();
     service = moduleRef.get(RateLimitService);
   });

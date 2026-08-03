@@ -46,9 +46,7 @@ describe('LoggingInterceptor', () => {
   it('无 x-request-id 应生成 uuid 并写回 header', async () => {
     const headers: Record<string, string> = {};
     const ctx = buildContext(headers);
-    await lastValueFrom(
-      interceptor.intercept(ctx, { handle: () => of({}) } as any),
-    );
+    await lastValueFrom(interceptor.intercept(ctx, { handle: () => of({}) } as any));
     expect(headers['x-request-id']).toBeDefined();
     expect(headers['x-request-id']).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
@@ -58,9 +56,7 @@ describe('LoggingInterceptor', () => {
   it('已有 x-request-id 应保留', async () => {
     const existingId = 'custom-request-id-123';
     const ctx = buildContext({ 'x-request-id': existingId });
-    await lastValueFrom(
-      interceptor.intercept(ctx, { handle: () => of({}) } as any),
-    );
+    await lastValueFrom(interceptor.intercept(ctx, { handle: () => of({}) } as any));
     // 不应覆盖已存在的 id
     expect(ctx.switchToHttp().getRequest().headers['x-request-id']).toBe(existingId);
   });
@@ -69,9 +65,7 @@ describe('LoggingInterceptor', () => {
     const ctx = buildContext();
     const error = new HttpException('NOT_FOUND', HttpStatus.NOT_FOUND);
     await expect(
-      lastValueFrom(
-        interceptor.intercept(ctx, { handle: () => throwError(() => error) } as any),
-      ),
+      lastValueFrom(interceptor.intercept(ctx, { handle: () => throwError(() => error) } as any)),
     ).rejects.toBe(error);
   });
 
@@ -79,9 +73,7 @@ describe('LoggingInterceptor', () => {
     const ctx = buildContext();
     const error = new Error('something went wrong');
     await expect(
-      lastValueFrom(
-        interceptor.intercept(ctx, { handle: () => throwError(() => error) } as any),
-      ),
+      lastValueFrom(interceptor.intercept(ctx, { handle: () => throwError(() => error) } as any)),
     ).rejects.toBe(error);
   });
 
@@ -104,9 +96,7 @@ describe('LoggingInterceptor', () => {
         }),
       }),
     };
-    await lastValueFrom(
-      interceptor.intercept(ctx, { handle: () => of({}) } as any),
-    );
+    await lastValueFrom(interceptor.intercept(ctx, { handle: () => of({}) } as any));
     // 不抛错即通过(method 记录在 logger.log,无法直接断言)
     expect(true).toBe(true);
   });

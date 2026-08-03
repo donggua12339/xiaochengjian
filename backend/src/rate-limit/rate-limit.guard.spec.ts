@@ -114,11 +114,7 @@ describe('RateLimitGuard', () => {
       socketAddr: '5.6.7.8',
     });
     await guard.canActivate(ctx);
-    expect(rateLimitService.checkIpRateLimit).toHaveBeenCalledWith(
-      '5.6.7.8',
-      60,
-      60,
-    );
+    expect(rateLimitService.checkIpRateLimit).toHaveBeenCalledWith('5.6.7.8', 60, 60);
   });
 
   it('x-forwarded-for + socket 都缺失时用 unknown', async () => {
@@ -131,11 +127,7 @@ describe('RateLimitGuard', () => {
       handlerRateLimit: { ip: 60, window: 60 },
     });
     await guard.canActivate(ctx);
-    expect(rateLimitService.checkIpRateLimit).toHaveBeenCalledWith(
-      'unknown',
-      60,
-      60,
-    );
+    expect(rateLimitService.checkIpRateLimit).toHaveBeenCalledWith('unknown', 60, 60);
   });
 
   it('x-forwarded-for 含多个 IP 时取第一个', async () => {
@@ -149,11 +141,7 @@ describe('RateLimitGuard', () => {
       headers: { 'x-forwarded-for': '1.2.3.4, 5.6.7.8' },
     });
     await guard.canActivate(ctx);
-    expect(rateLimitService.checkIpRateLimit).toHaveBeenCalledWith(
-      '1.2.3.4',
-      60,
-      60,
-    );
+    expect(rateLimitService.checkIpRateLimit).toHaveBeenCalledWith('1.2.3.4', 60, 60);
   });
 
   it('装饰器未指定 ip/window 时用默认值 60/60', async () => {
@@ -167,10 +155,6 @@ describe('RateLimitGuard', () => {
       headers: { 'x-forwarded-for': '1.2.3.4' },
     });
     await guard.canActivate(ctx);
-    expect(rateLimitService.checkIpRateLimit).toHaveBeenCalledWith(
-      '1.2.3.4',
-      60,
-      60,
-    );
+    expect(rateLimitService.checkIpRateLimit).toHaveBeenCalledWith('1.2.3.4', 60, 60);
   });
 });

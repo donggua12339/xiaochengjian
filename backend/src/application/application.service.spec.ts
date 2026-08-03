@@ -1,9 +1,5 @@
 import { Test } from '@nestjs/testing';
-import {
-  ConflictException,
-  NotFoundException,
-  ForbiddenException,
-} from '@nestjs/common';
+import { ConflictException, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { ApplicationService } from './application.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { TenantPrismaService } from '../tenant/tenant-prisma.service';
@@ -70,9 +66,7 @@ describe('ApplicationService', () => {
   }
 
   function setTxMock(tx: any) {
-    tenantPrisma.tx.mockImplementation(async (_t: string, fn: (tx: any) => Promise<any>) =>
-      fn(tx),
-    );
+    tenantPrisma.tx.mockImplementation(async (_t: string, fn: (tx: any) => Promise<any>) => fn(tx));
   }
 
   beforeEach(async () => {
@@ -212,9 +206,9 @@ describe('ApplicationService', () => {
     it('应用不存在应拒绝', async () => {
       const tx = buildTx({ application: null });
       setTxMock(tx);
-      await expect(
-        service.update(developerId, appId, { name: '新名称' }),
-      ).rejects.toThrow(NotFoundException);
+      await expect(service.update(developerId, appId, { name: '新名称' })).rejects.toThrow(
+        NotFoundException,
+      );
     });
 
     it('正常更新应透传字段', async () => {

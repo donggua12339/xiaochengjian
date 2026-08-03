@@ -20,20 +20,24 @@ describe('StatsService', () => {
   const appId = 'app-1';
 
   /** 构建 mock tx */
-  function buildTx(opts: {
-    application?: any | null;
-    cardKeyGroupByStatus?: any[];
-    cardKeyGroupByType?: any[];
-    cardKeyCount?: number;
-    deviceCount?: number;
-    validationLogCount?: number;
-    cardTemplateCount?: number;
-    applicationList?: any[];
-    queryRawResult?: any[];
-  } = {}) {
+  function buildTx(
+    opts: {
+      application?: any | null;
+      cardKeyGroupByStatus?: any[];
+      cardKeyGroupByType?: any[];
+      cardKeyCount?: number;
+      deviceCount?: number;
+      validationLogCount?: number;
+      cardTemplateCount?: number;
+      applicationList?: any[];
+      queryRawResult?: any[];
+    } = {},
+  ) {
     return {
       application: {
-        findUnique: jest.fn().mockResolvedValue(opts.application === undefined ? { id: appId } : opts.application),
+        findUnique: jest
+          .fn()
+          .mockResolvedValue(opts.application === undefined ? { id: appId } : opts.application),
         findMany: jest.fn().mockResolvedValue(opts.applicationList ?? []),
         count: jest.fn().mockResolvedValue(opts.applicationList?.length ?? 0),
       },
@@ -59,18 +63,13 @@ describe('StatsService', () => {
   }
 
   function setTxMock(tx: any) {
-    tenantPrisma.tx.mockImplementation(async (_t: string, fn: (tx: any) => Promise<any>) =>
-      fn(tx),
-    );
+    tenantPrisma.tx.mockImplementation(async (_t: string, fn: (tx: any) => Promise<any>) => fn(tx));
   }
 
   beforeEach(async () => {
     tenantPrisma = { tx: jest.fn() };
     const moduleRef = await Test.createTestingModule({
-      providers: [
-        StatsService,
-        { provide: TenantPrismaService, useValue: tenantPrisma },
-      ],
+      providers: [StatsService, { provide: TenantPrismaService, useValue: tenantPrisma }],
     }).compile();
     service = moduleRef.get(StatsService);
   });
@@ -79,9 +78,7 @@ describe('StatsService', () => {
     it('APP 不存在应拒绝(APP_NOT_FOUND)', async () => {
       const tx = buildTx({ application: null });
       setTxMock(tx);
-      await expect(service.appOverview(developerId, appId)).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(service.appOverview(developerId, appId)).rejects.toThrow(NotFoundException);
     });
 
     it('正常应返回卡密/设备/验证统计', async () => {
@@ -278,9 +275,7 @@ describe('StatsService', () => {
 
       const result = await service.developerOverview(developerId);
       expect(result.topApps).toHaveLength(15); // findMany 返回 15 个
-      expect(tx.application.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({ take: 10 }),
-      );
+      expect(tx.application.findMany).toHaveBeenCalledWith(expect.objectContaining({ take: 10 }));
     });
   });
 });

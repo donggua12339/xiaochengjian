@@ -47,12 +47,12 @@ describe('ChunkStorageService', () => {
     });
 
     it('should reject invalid totalChunks', async () => {
-      await expect(
-        service.createUpload('dev1', 'test.apk', 1024, 0),
-      ).rejects.toThrow(BadRequestException);
-      await expect(
-        service.createUpload('dev1', 'test.apk', 1024, 201),
-      ).rejects.toThrow(BadRequestException);
+      await expect(service.createUpload('dev1', 'test.apk', 1024, 0)).rejects.toThrow(
+        BadRequestException,
+      );
+      await expect(service.createUpload('dev1', 'test.apk', 1024, 201)).rejects.toThrow(
+        BadRequestException,
+      );
     });
   });
 
@@ -98,9 +98,9 @@ describe('ChunkStorageService', () => {
 
     it('should reject invalid uploadId', async () => {
       redis.get.mockResolvedValue(null);
-      await expect(
-        service.receiveChunk('nope', 'dev1', 0, Buffer.from('data')),
-      ).rejects.toThrow(NotFoundException);
+      await expect(service.receiveChunk('nope', 'dev1', 0, Buffer.from('data'))).rejects.toThrow(
+        NotFoundException,
+      );
     });
 
     it('should reject other dev uploadId', async () => {
@@ -114,9 +114,9 @@ describe('ChunkStorageService', () => {
           createdAt: '2026-01-01T00:00:00Z',
         }),
       );
-      await expect(
-        service.receiveChunk('u1', 'dev1', 0, Buffer.from('data')),
-      ).rejects.toThrow(NotFoundException);
+      await expect(service.receiveChunk('u1', 'dev1', 0, Buffer.from('data'))).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 
@@ -187,10 +187,15 @@ describe('ChunkStorageService', () => {
       (fs.mkdir as jest.Mock).mockResolvedValue(undefined);
       (fs.stat as jest.Mock).mockResolvedValue({ size: 8 });
       (fs.open as jest.Mock).mockResolvedValue({
-        read: jest.fn().mockImplementation((_buf: Buffer, _off: number, _len: number, _pos: number) => {
-          _buf[0] = 0x50; _buf[1] = 0x4b; _buf[2] = 0x03; _buf[3] = 0x04;
-          return Promise.resolve({ bytesRead: 4 });
-        }),
+        read: jest
+          .fn()
+          .mockImplementation((_buf: Buffer, _off: number, _len: number, _pos: number) => {
+            _buf[0] = 0x50;
+            _buf[1] = 0x4b;
+            _buf[2] = 0x03;
+            _buf[3] = 0x04;
+            return Promise.resolve({ bytesRead: 4 });
+          }),
         close: jest.fn().mockResolvedValue(undefined),
       });
       (fs.rm as jest.Mock).mockResolvedValue(undefined);

@@ -1,10 +1,4 @@
-import {
-  Controller,
-  Post,
-  Body,
-  BadRequestException,
-  HttpCode,
-} from '@nestjs/common';
+import { Controller, Post, Body, BadRequestException, HttpCode } from '@nestjs/common';
 import { ApiOperation, ApiTags, ApiBody } from '@nestjs/swagger';
 import { IntegrityService } from './integrity.service';
 

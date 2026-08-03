@@ -117,7 +117,12 @@ export function applyPreset(preset: HardeningPreset): {
   switch (preset) {
     case 'basic':
       return {
-        xuanjia: { ...DEFAULT_XUANJIA, x5_vpnProxy: false, x6_dualApp: false, x7_privatePort: false },
+        xuanjia: {
+          ...DEFAULT_XUANJIA,
+          x5_vpnProxy: false,
+          x6_dualApp: false,
+          x7_privatePort: false,
+        },
         tianyan: { ...DEFAULT_TIANYAN, t2_vmp: false },
       };
     case 'standard':
@@ -130,11 +135,21 @@ export function applyPreset(preset: HardeningPreset): {
     case 'paranoid':
       return {
         xuanjia: {
-          x0_soEncrypt: true, x3_lifecycle: true, x4_antiDynamic: true,
-          x5_vpnProxy: true, x6_dualApp: true, x7_privatePort: true,
-          x8_fart: true, x9_odex: true,
+          x0_soEncrypt: true,
+          x3_lifecycle: true,
+          x4_antiDynamic: true,
+          x5_vpnProxy: true,
+          x6_dualApp: true,
+          x7_privatePort: true,
+          x8_fart: true,
+          x9_odex: true,
         },
-        tianyan: { t1_customLinker: true, t2_vmp: true, t3_segment: true, t4_dexStringEncrypt: true },
+        tianyan: {
+          t1_customLinker: true,
+          t2_vmp: true,
+          t3_segment: true,
+          t4_dexStringEncrypt: true,
+        },
       };
   }
 }

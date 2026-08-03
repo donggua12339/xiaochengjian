@@ -23,7 +23,9 @@ describe('PreflightService', () => {
     it('should pass when keytool succeeds and alias exists', async () => {
       mockExecFile.mockImplementation((_cmd, _args, _opts, cb: unknown) => {
         (cb as (e: Error | null, stdout: string, stderr: string) => void)(
-          null, `别名: mykey\n条目类型: PrivateKeyEntry\n证书链长度: 1`, '',
+          null,
+          `别名: mykey\n条目类型: PrivateKeyEntry\n证书链长度: 1`,
+          '',
         );
         return undefined;
       });
@@ -34,31 +36,43 @@ describe('PreflightService', () => {
     });
 
     it('should throw when keytool password is wrong', async () => {
-      mockExecFile.mockImplementation((_cmd: string, _args: string[], _opts: unknown, cb: unknown) => {
-        (cb as (e: Error | null, stdout: string, stderr: string) => void)(
-          Object.assign(new Error('keytool error'), { code: 1, stderr: 'keystore password was incorrect' }),
-          '', 'keystore password was incorrect',
-        );
-        return undefined;
-      });
+      mockExecFile.mockImplementation(
+        (_cmd: string, _args: string[], _opts: unknown, cb: unknown) => {
+          (cb as (e: Error | null, stdout: string, stderr: string) => void)(
+            Object.assign(new Error('keytool error'), {
+              code: 1,
+              stderr: 'keystore password was incorrect',
+            }),
+            '',
+            'keystore password was incorrect',
+          );
+          return undefined;
+        },
+      );
 
-      await expect(
-        service.validateKeystore('/tmp/ks.jks', 'wrong', 'mykey'),
-      ).rejects.toThrow('Keystore 密码错误');
+      await expect(service.validateKeystore('/tmp/ks.jks', 'wrong', 'mykey')).rejects.toThrow(
+        'Keystore 密码错误',
+      );
     });
 
     it('should throw when alias not found', async () => {
-      mockExecFile.mockImplementation((_cmd: string, _args: string[], _opts: unknown, cb: unknown) => {
-        (cb as (e: Error | null, stdout: string, stderr: string) => void)(
-          Object.assign(new Error('alias not found'), { code: 1, stderr: 'keytool error: alias <mykey> not found' }),
-          '', 'keytool error: alias <mykey> not found',
-        );
-        return undefined;
-      });
+      mockExecFile.mockImplementation(
+        (_cmd: string, _args: string[], _opts: unknown, cb: unknown) => {
+          (cb as (e: Error | null, stdout: string, stderr: string) => void)(
+            Object.assign(new Error('alias not found'), {
+              code: 1,
+              stderr: 'keytool error: alias <mykey> not found',
+            }),
+            '',
+            'keytool error: alias <mykey> not found',
+          );
+          return undefined;
+        },
+      );
 
-      await expect(
-        service.validateKeystore('/tmp/ks.jks', 'pass123', 'mykey'),
-      ).rejects.toThrow('不存在');
+      await expect(service.validateKeystore('/tmp/ks.jks', 'pass123', 'mykey')).rejects.toThrow(
+        '不存在',
+      );
     });
   });
 
@@ -66,7 +80,10 @@ describe('PreflightService', () => {
     it('should pass for valid APK', async () => {
       const fd = {
         read: jest.fn().mockImplementation((buf: Buffer) => {
-          buf[0] = 0x50; buf[1] = 0x4b; buf[2] = 0x03; buf[3] = 0x04;
+          buf[0] = 0x50;
+          buf[1] = 0x4b;
+          buf[2] = 0x03;
+          buf[3] = 0x04;
           return Promise.resolve({ bytesRead: 4 });
         }),
         close: jest.fn().mockResolvedValue(undefined),
@@ -81,7 +98,10 @@ describe('PreflightService', () => {
     it('should throw for invalid magic bytes', async () => {
       const fd = {
         read: jest.fn().mockImplementation((buf: Buffer) => {
-          buf[0] = 0x00; buf[1] = 0x00; buf[2] = 0x00; buf[3] = 0x00;
+          buf[0] = 0x00;
+          buf[1] = 0x00;
+          buf[2] = 0x00;
+          buf[3] = 0x00;
           return Promise.resolve({ bytesRead: 4 });
         }),
         close: jest.fn().mockResolvedValue(undefined),
@@ -106,7 +126,9 @@ describe('PreflightService', () => {
       // keytool mock
       mockExecFile.mockImplementation((_cmd, _args, _opts, cb: unknown) => {
         (cb as (e: Error | null, stdout: string, stderr: string) => void)(
-          null, `别名: mykey\n条目类型: PrivateKeyEntry`, '',
+          null,
+          `别名: mykey\n条目类型: PrivateKeyEntry`,
+          '',
         );
         return undefined;
       });
@@ -114,7 +136,10 @@ describe('PreflightService', () => {
       // APK mock
       const fd = {
         read: jest.fn().mockImplementation((buf: Buffer) => {
-          buf[0] = 0x50; buf[1] = 0x4b; buf[2] = 0x03; buf[3] = 0x04;
+          buf[0] = 0x50;
+          buf[1] = 0x4b;
+          buf[2] = 0x03;
+          buf[3] = 0x04;
           return Promise.resolve({ bytesRead: 4 });
         }),
         close: jest.fn().mockResolvedValue(undefined),

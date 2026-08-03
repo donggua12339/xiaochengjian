@@ -42,7 +42,9 @@ describe('AuthController', () => {
         accessToken: 'access',
         refreshToken: 'refresh',
       }),
-      refresh: jest.fn().mockResolvedValue({ accessToken: 'new-access', refreshToken: 'new-refresh' }),
+      refresh: jest
+        .fn()
+        .mockResolvedValue({ accessToken: 'new-access', refreshToken: 'new-refresh' }),
       logout: jest.fn().mockResolvedValue(undefined),
       setupTotp: jest.fn().mockResolvedValue({ secret: 'S', otpauthUrl: 'otpauth://x' }),
       verifyTotp: jest.fn().mockResolvedValue({ backupCodes: ['C1', 'C2'] }),
@@ -101,12 +103,11 @@ describe('AuthController', () => {
 
   describe('refresh', () => {
     it('应转调 authService.refresh', async () => {
-      const result = await controller.refresh(
-        { refreshToken: 'old-refresh' },
-        '1.2.3.4',
-        'UA',
-      );
-      expect(authService.refresh).toHaveBeenCalledWith('old-refresh', { ip: '1.2.3.4', userAgent: 'UA' });
+      const result = await controller.refresh({ refreshToken: 'old-refresh' }, '1.2.3.4', 'UA');
+      expect(authService.refresh).toHaveBeenCalledWith('old-refresh', {
+        ip: '1.2.3.4',
+        userAgent: 'UA',
+      });
       expect(result).toEqual({ accessToken: 'new-access', refreshToken: 'new-refresh' });
     });
   });
@@ -137,11 +138,7 @@ describe('AuthController', () => {
 
   describe('2fa/login', () => {
     it('应转调 authService.verifyTotpLogin', async () => {
-      await controller.totpLogin(
-        { pendingTotpToken: 'p', code: '123456' },
-        '1.2.3.4',
-        'UA',
-      );
+      await controller.totpLogin({ pendingTotpToken: 'p', code: '123456' }, '1.2.3.4', 'UA');
       expect(authService.verifyTotpLogin).toHaveBeenCalledWith('p', '123456', {
         ip: '1.2.3.4',
         userAgent: 'UA',

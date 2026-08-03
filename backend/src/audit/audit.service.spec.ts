@@ -17,10 +17,7 @@ describe('AuditService', () => {
       auditLog: { create: jest.fn().mockResolvedValue(undefined) },
     };
     const moduleRef = await Test.createTestingModule({
-      providers: [
-        AuditService,
-        { provide: PrismaService, useValue: prisma },
-      ],
+      providers: [AuditService, { provide: PrismaService, useValue: prisma }],
     }).compile();
     service = moduleRef.get(AuditService);
   });

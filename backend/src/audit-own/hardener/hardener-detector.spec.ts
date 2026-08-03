@@ -74,22 +74,15 @@ describe('HardenerDetector', () => {
   });
 
   it('检测到爱加密 so 应抛 UNSUPPORTED_HARDENER', () => {
-    expect(() => detector.detect(['lib/armeabi-v7a/libexec.so'])).toThrow(
-      ForbiddenException,
-    );
+    expect(() => detector.detect(['lib/armeabi-v7a/libexec.so'])).toThrow(ForbiddenException);
   });
 
   it('检测到百度加固 so 应抛 UNSUPPORTED_HARDENER', () => {
-    expect(() => detector.detect(['lib/arm64-v8a/libbaiduprotect.so'])).toThrow(
-      ForbiddenException,
-    );
+    expect(() => detector.detect(['lib/arm64-v8a/libbaiduprotect.so'])).toThrow(ForbiddenException);
   });
 
   it('同时有梆梆 + 360 so 应返回 bangcle(梆梆优先)', () => {
-    const result = detector.detect([
-      'lib/arm64-v8a/libSecShell.so',
-      'lib/arm64-v8a/libjiagu.so',
-    ]);
+    const result = detector.detect(['lib/arm64-v8a/libSecShell.so', 'lib/arm64-v8a/libjiagu.so']);
     expect(result.hardener).toBe('bangcle');
   });
 
@@ -176,9 +169,7 @@ describe('HardenerDetector', () => {
       const result = detector.detect(realBangcleEntries);
       expect(result.hardener).toBe('bangcle');
       // evidence 应含 libSecShell.so 的匹配
-      const secShellEvidence = result.evidence?.filter((e) =>
-        e.includes('libSecShell.so'),
-      );
+      const secShellEvidence = result.evidence?.filter((e) => e.includes('libSecShell.so'));
       expect(secShellEvidence?.length).toBeGreaterThan(0);
     });
   });

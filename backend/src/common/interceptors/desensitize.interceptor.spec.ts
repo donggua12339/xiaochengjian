@@ -29,14 +29,18 @@ describe('DesensitizeInterceptor', () => {
   describe('敏感字段脱敏', () => {
     it('cardKey 应替换为 ***', async () => {
       const result = await lastValueFrom(
-        interceptor.intercept(buildContext(), { handle: () => of({ cardKey: 'ABCD-EFGH-IJKL-MNOP' }) } as any),
+        interceptor.intercept(buildContext(), {
+          handle: () => of({ cardKey: 'ABCD-EFGH-IJKL-MNOP' }),
+        } as any),
       );
       expect(result).toEqual({ cardKey: '***' });
     });
 
     it('password 应替换为 ***', async () => {
       const result = await lastValueFrom(
-        interceptor.intercept(buildContext(), { handle: () => of({ password: 'secret123' }) } as any),
+        interceptor.intercept(buildContext(), {
+          handle: () => of({ password: 'secret123' }),
+        } as any),
       );
       expect(result).toEqual({ password: '***' });
     });
@@ -46,14 +50,18 @@ describe('DesensitizeInterceptor', () => {
       // 代码逻辑 isSensitive && !isAllowed -> 敏感但允许 -> 不脱敏
       // 这是设计缺陷,但测试反映实际行为(不改代码)
       const result = await lastValueFrom(
-        interceptor.intercept(buildContext(), { handle: () => of({ passwordHash: 'argon2$xxx' }) } as any),
+        interceptor.intercept(buildContext(), {
+          handle: () => of({ passwordHash: 'argon2$xxx' }),
+        } as any),
       );
       expect(result).toEqual({ passwordHash: 'argon2$xxx' });
     });
 
     it('totpSecret 应替换为 ***', async () => {
       const result = await lastValueFrom(
-        interceptor.intercept(buildContext(), { handle: () => of({ totpSecret: 'BASE32SECRET' }) } as any),
+        interceptor.intercept(buildContext(), {
+          handle: () => of({ totpSecret: 'BASE32SECRET' }),
+        } as any),
       );
       expect(result).toEqual({ totpSecret: '***' });
     });
@@ -70,35 +78,45 @@ describe('DesensitizeInterceptor', () => {
 
     it('jwtSecret 应替换为 ***', async () => {
       const result = await lastValueFrom(
-        interceptor.intercept(buildContext(), { handle: () => of({ jwtSecret: 'jwt-xxx' }) } as any),
+        interceptor.intercept(buildContext(), {
+          handle: () => of({ jwtSecret: 'jwt-xxx' }),
+        } as any),
       );
       expect(result).toEqual({ jwtSecret: '***' });
     });
 
     it('apiSecret 应替换为 ***', async () => {
       const result = await lastValueFrom(
-        interceptor.intercept(buildContext(), { handle: () => of({ apiSecret: 'api-xxx' }) } as any),
+        interceptor.intercept(buildContext(), {
+          handle: () => of({ apiSecret: 'api-xxx' }),
+        } as any),
       );
       expect(result).toEqual({ apiSecret: '***' });
     });
 
     it('privateKey 应替换为 ***', async () => {
       const result = await lastValueFrom(
-        interceptor.intercept(buildContext(), { handle: () => of({ privateKey: '-----BEGIN PRIVATE KEY-----' }) } as any),
+        interceptor.intercept(buildContext(), {
+          handle: () => of({ privateKey: '-----BEGIN PRIVATE KEY-----' }),
+        } as any),
       );
       expect(result).toEqual({ privateKey: '***' });
     });
 
     it('tokenHash 实际行为:被 /hash$/ 允许,不脱敏', async () => {
       const result = await lastValueFrom(
-        interceptor.intercept(buildContext(), { handle: () => of({ tokenHash: 'hash-xxx' }) } as any),
+        interceptor.intercept(buildContext(), {
+          handle: () => of({ tokenHash: 'hash-xxx' }),
+        } as any),
       );
       expect(result).toEqual({ tokenHash: 'hash-xxx' });
     });
 
     it('refreshTokenHash 实际行为:被 /hash$/ 允许,不脱敏', async () => {
       const result = await lastValueFrom(
-        interceptor.intercept(buildContext(), { handle: () => of({ refreshTokenHash: 'hash-xxx' }) } as any),
+        interceptor.intercept(buildContext(), {
+          handle: () => of({ refreshTokenHash: 'hash-xxx' }),
+        } as any),
       );
       expect(result).toEqual({ refreshTokenHash: 'hash-xxx' });
     });
@@ -107,42 +125,54 @@ describe('DesensitizeInterceptor', () => {
   describe('允许字段不脱敏', () => {
     it('cardKeyPrefix 应保留', async () => {
       const result = await lastValueFrom(
-        interceptor.intercept(buildContext(), { handle: () => of({ cardKeyPrefix: 'ABCD' }) } as any),
+        interceptor.intercept(buildContext(), {
+          handle: () => of({ cardKeyPrefix: 'ABCD' }),
+        } as any),
       );
       expect(result).toEqual({ cardKeyPrefix: 'ABCD' });
     });
 
     it('cardKeyHash 应保留(hash$ 模式)', async () => {
       const result = await lastValueFrom(
-        interceptor.intercept(buildContext(), { handle: () => of({ cardKeyHash: 'sha256-xxx' }) } as any),
+        interceptor.intercept(buildContext(), {
+          handle: () => of({ cardKeyHash: 'sha256-xxx' }),
+        } as any),
       );
       expect(result).toEqual({ cardKeyHash: 'sha256-xxx' });
     });
 
     it('signHashAllowList 应保留', async () => {
       const result = await lastValueFrom(
-        interceptor.intercept(buildContext(), { handle: () => of({ signHashAllowList: ['sha256:abc'] }) } as any),
+        interceptor.intercept(buildContext(), {
+          handle: () => of({ signHashAllowList: ['sha256:abc'] }),
+        } as any),
       );
       expect(result).toEqual({ signHashAllowList: ['sha256:abc'] });
     });
 
     it('secret 应保留(TOTP setup 用)', async () => {
       const result = await lastValueFrom(
-        interceptor.intercept(buildContext(), { handle: () => of({ secret: 'BASE32SECRET' }) } as any),
+        interceptor.intercept(buildContext(), {
+          handle: () => of({ secret: 'BASE32SECRET' }),
+        } as any),
       );
       expect(result).toEqual({ secret: 'BASE32SECRET' });
     });
 
     it('accessToken 应保留(登录响应)', async () => {
       const result = await lastValueFrom(
-        interceptor.intercept(buildContext(), { handle: () => of({ accessToken: 'jwt-token' }) } as any),
+        interceptor.intercept(buildContext(), {
+          handle: () => of({ accessToken: 'jwt-token' }),
+        } as any),
       );
       expect(result).toEqual({ accessToken: 'jwt-token' });
     });
 
     it('refreshToken 应保留(登录响应)', async () => {
       const result = await lastValueFrom(
-        interceptor.intercept(buildContext(), { handle: () => of({ refreshToken: 'refresh-xxx' }) } as any),
+        interceptor.intercept(buildContext(), {
+          handle: () => of({ refreshToken: 'refresh-xxx' }),
+        } as any),
       );
       expect(result).toEqual({ refreshToken: 'refresh-xxx' });
     });

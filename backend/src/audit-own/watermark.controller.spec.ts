@@ -45,10 +45,7 @@ describe('WatermarkController', () => {
         watermarkId: 'dev-1',
         version: '0.2.0',
       });
-      expect(watermarkService.generateEncryptedWatermark).toHaveBeenCalledWith(
-        'dev-1',
-        '0.2.0',
-      );
+      expect(watermarkService.generateEncryptedWatermark).toHaveBeenCalledWith('dev-1', '0.2.0');
       expect(result.watermarkBase64).toBe('base64-data');
     });
 
@@ -65,26 +62,21 @@ describe('WatermarkController', () => {
 
     it('version 缺失时用默认 0.2.0', async () => {
       await controller.generate('dev-1', { watermarkId: 'dev-1' });
-      expect(watermarkService.generateEncryptedWatermark).toHaveBeenCalledWith(
-        'dev-1',
-        '0.2.0',
-      );
+      expect(watermarkService.generateEncryptedWatermark).toHaveBeenCalledWith('dev-1', '0.2.0');
     });
   });
 
   describe('trace', () => {
     it('非 ADMIN 应抛 ForbiddenException', async () => {
       const req = { user: { sub: 'dev-1', role: 'DEVELOPER' } } as any;
-      await expect(
-        controller.trace(req, { buffer: Buffer.from('apk') } as any),
-      ).rejects.toThrow(ForbiddenException);
+      await expect(controller.trace(req, { buffer: Buffer.from('apk') } as any)).rejects.toThrow(
+        ForbiddenException,
+      );
     });
 
     it('缺 file 应抛 BadRequestException', async () => {
       const req = { user: { sub: 'admin-1', role: 'ADMIN' } } as any;
-      await expect(controller.trace(req, undefined as any)).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(controller.trace(req, undefined as any)).rejects.toThrow(BadRequestException);
     });
 
     it('ADMIN + 有 file 应调 service.extractAndDecryptFromApk', async () => {

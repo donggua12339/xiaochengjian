@@ -46,7 +46,10 @@ describe('MembershipService', () => {
   /** 测试用 hash(和 service 内部算法一致) */
   function hashForTest(code: string, salt: string): string {
     const crypto = require('crypto');
-    return crypto.createHash('sha256').update(code + salt).digest('hex');
+    return crypto
+      .createHash('sha256')
+      .update(code + salt)
+      .digest('hex');
   }
 
   function setTxMock(txImpl: any) {

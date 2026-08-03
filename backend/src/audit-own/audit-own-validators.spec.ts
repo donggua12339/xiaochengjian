@@ -20,10 +20,7 @@ describe('AuditOwnValidators', () => {
       application: { findFirst: jest.fn() },
     };
     const moduleRef = await Test.createTestingModule({
-      providers: [
-        AuditOwnValidators,
-        { provide: PrismaService, useValue: prisma },
-      ],
+      providers: [AuditOwnValidators, { provide: PrismaService, useValue: prisma }],
     }).compile();
     service = moduleRef.get(AuditOwnValidators);
   });
@@ -49,9 +46,9 @@ describe('AuditOwnValidators', () => {
 
     it('包名不在白名单应抛 ForbiddenException(APP_NOT_OWNED)', async () => {
       prisma.application.findFirst.mockResolvedValue(null);
-      await expect(
-        service.validatePackageName('dev-1', 'com.evil.app'),
-      ).rejects.toThrow(ForbiddenException);
+      await expect(service.validatePackageName('dev-1', 'com.evil.app')).rejects.toThrow(
+        ForbiddenException,
+      );
     });
   });
 
@@ -63,15 +60,13 @@ describe('AuditOwnValidators', () => {
     });
 
     it('签名 hash 不在白名单应抛 ForbiddenException(SIGNATURE_MISMATCH)', async () => {
-      await expect(
-        service.validateSignatureHash(['abc123'], 'def456'),
-      ).rejects.toThrow(ForbiddenException);
+      await expect(service.validateSignatureHash(['abc123'], 'def456')).rejects.toThrow(
+        ForbiddenException,
+      );
     });
 
     it('白名单为空应抛 ForbiddenException(SIGNATURE_WHITELIST_EMPTY)', async () => {
-      await expect(
-        service.validateSignatureHash([], 'abc123'),
-      ).rejects.toThrow(ForbiddenException);
+      await expect(service.validateSignatureHash([], 'abc123')).rejects.toThrow(ForbiddenException);
     });
 
     it('白名单为 undefined 应抛 ForbiddenException', async () => {

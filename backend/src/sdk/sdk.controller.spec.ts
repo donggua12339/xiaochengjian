@@ -69,9 +69,9 @@ describe('SdkController', () => {
         const tag = Buffer.alloc(16, 0x22);
         return { iv, ciphertext, tag };
       }),
-      getPublicKeyPem: jest.fn().mockReturnValue(
-        '-----BEGIN PUBLIC KEY-----\nMOCK_PUBLIC_KEY\n-----END PUBLIC KEY-----\n',
-      ),
+      getPublicKeyPem: jest
+        .fn()
+        .mockReturnValue('-----BEGIN PUBLIC KEY-----\nMOCK_PUBLIC_KEY\n-----END PUBLIC KEY-----\n'),
     };
     prismaService = {
       application: {

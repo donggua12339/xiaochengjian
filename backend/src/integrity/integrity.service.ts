@@ -47,7 +47,7 @@ export class IntegrityService {
    */
   async verifyAndIssueToken(params: {
     appId: string;
-    encryptedHash: string;  // base64
+    encryptedHash: string; // base64
     nonce: string;
     timestamp: number;
     deviceFingerprint?: string;
@@ -88,13 +88,9 @@ export class IntegrityService {
 
     // 4. 比对签名哈希
     const normalized = signatureHash.toLowerCase();
-    const matched = (app.signHashAllowList ?? []).some(
-      (h) => h.toLowerCase() === normalized,
-    );
+    const matched = (app.signHashAllowList ?? []).some((h) => h.toLowerCase() === normalized);
     if (!matched) {
-      this.logger.warn(
-        `签名哈希不匹配: appId=${appId} hash=${normalized.slice(0, 16)}...`,
-      );
+      this.logger.warn(`签名哈希不匹配: appId=${appId} hash=${normalized.slice(0, 16)}...`);
       return { verdict: 'FAIL', nextCheckDelay: 60, reason: 'SIGNATURE_MISMATCH' };
     }
 
@@ -122,9 +118,11 @@ export class IntegrityService {
       const parts = token.split('.');
       if (parts.length !== 3) return { valid: false };
 
-      const payload = JSON.parse(
-        Buffer.from(parts[1], 'base64').toString('utf8'),
-      ) as { appId: string; exp: number; fp?: string };
+      const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf8')) as {
+        appId: string;
+        exp: number;
+        fp?: string;
+      };
 
       if (payload.exp < Date.now()) {
         return { valid: false, expired: true };

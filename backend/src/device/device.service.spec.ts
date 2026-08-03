@@ -32,18 +32,13 @@ describe('DeviceService', () => {
   }
 
   function setTxMock(tx: any) {
-    tenantPrisma.tx.mockImplementation(async (_t: string, fn: (tx: any) => Promise<any>) =>
-      fn(tx),
-    );
+    tenantPrisma.tx.mockImplementation(async (_t: string, fn: (tx: any) => Promise<any>) => fn(tx));
   }
 
   beforeEach(async () => {
     tenantPrisma = { tx: jest.fn() };
     const moduleRef = await Test.createTestingModule({
-      providers: [
-        DeviceService,
-        { provide: TenantPrismaService, useValue: tenantPrisma },
-      ],
+      providers: [DeviceService, { provide: TenantPrismaService, useValue: tenantPrisma }],
     }).compile();
     service = moduleRef.get(DeviceService);
   });
@@ -110,9 +105,7 @@ describe('DeviceService', () => {
     it('设备不存在应拒绝(DEVICE_NOT_FOUND)', async () => {
       const tx = buildTx();
       setTxMock(tx);
-      await expect(service.getById(developerId, appId, 'd1')).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(service.getById(developerId, appId, 'd1')).rejects.toThrow(NotFoundException);
     });
 
     it('appId 不匹配应拒绝(通过 findFirst where 过滤)', async () => {
@@ -144,9 +137,7 @@ describe('DeviceService', () => {
     it('设备不存在应拒绝', async () => {
       const tx = buildTx();
       setTxMock(tx);
-      await expect(service.unbindAll(developerId, appId, 'd1')).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(service.unbindAll(developerId, appId, 'd1')).rejects.toThrow(NotFoundException);
     });
   });
 });

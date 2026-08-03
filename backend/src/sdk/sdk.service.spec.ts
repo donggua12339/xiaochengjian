@@ -62,7 +62,9 @@ describe('SdkService', () => {
       update: jest.fn().mockResolvedValue(undefined),
     };
     const deviceRepo = {
-      upsert: jest.fn().mockResolvedValue(device ?? { id: 'dev-1', appId: 'app-1', machineId: 'm1' }),
+      upsert: jest
+        .fn()
+        .mockResolvedValue(device ?? { id: 'dev-1', appId: 'app-1', machineId: 'm1' }),
       findUnique: jest.fn().mockResolvedValue(device),
       update: jest.fn().mockResolvedValue(undefined),
     };
@@ -118,19 +120,14 @@ describe('SdkService', () => {
     };
 
     const moduleRef = await Test.createTestingModule({
-      providers: [
-        SdkService,
-        { provide: TenantPrismaService, useValue: tenantPrisma },
-      ],
+      providers: [SdkService, { provide: TenantPrismaService, useValue: tenantPrisma }],
     }).compile();
     service = moduleRef.get(SdkService);
   });
 
   describe('activate - 错误路径', () => {
     it('卡密格式错误应拒绝(INVALID_CARD_KEY_FORMAT)', async () => {
-      await expect(callActivate(buildTx(null), 'BAD-FORMAT')).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(callActivate(buildTx(null), 'BAD-FORMAT')).rejects.toThrow(BadRequestException);
     });
 
     it('卡密不存在应拒绝(CARD_NOT_FOUND)', async () => {

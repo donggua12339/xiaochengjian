@@ -42,7 +42,7 @@ export class DeveloperRateLimitGuard implements CanActivate {
 
     const request = context.switchToHttp().getRequest<Request>();
     // 从 JWT payload 提取 developerId(需先经过 JwtAuthGuard)
-    const developerId = (request as any).user?.sub;
+    const developerId = (request as unknown as { user?: { sub?: string } }).user?.sub;
     if (!developerId) {
       // 未认证,放行(由 JwtAuthGuard 处理)
       return true;

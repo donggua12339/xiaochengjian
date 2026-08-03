@@ -23,10 +23,7 @@ describe('AuditLogOwnService', () => {
       },
     };
     const moduleRef = await Test.createTestingModule({
-      providers: [
-        AuditLogOwnService,
-        { provide: PrismaService, useValue: prisma },
-      ],
+      providers: [AuditLogOwnService, { provide: PrismaService, useValue: prisma }],
     }).compile();
     service = moduleRef.get(AuditLogOwnService);
   });

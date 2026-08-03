@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import type { Prisma } from '@prisma/client';
+import type { PackerLog } from '@prisma/client';
 
 /**
  * Packer 审计日志服务(ADR 0081 §审计日志字段)
@@ -81,7 +81,7 @@ export class PackerLogService {
   async listByDeveloper(
     developerId: string,
     options: { limit?: number; offset?: number } = {},
-  ): Promise<Prisma.PackerLogGetPayload<{}>[]> {
+  ): Promise<PackerLog[]> {
     const { limit = 50, offset = 0 } = options;
     return this.prisma.packerLog.findMany({
       where: { developerId },

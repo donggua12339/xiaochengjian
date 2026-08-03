@@ -319,7 +319,10 @@ export class HardeningService {
       // Step 0: 预检 (5%)
       await this.updateProgress(task, 'preflight', 5, '正在验证 Keystore 和 APK...');
       await this.preflight.runAll(
-        params.apkPath, params.keystorePath, params.keystorePassword, params.keyAlias,
+        params.apkPath,
+        params.keystorePath,
+        params.keystorePassword,
+        params.keyAlias,
       );
       if (controller.signal.aborted) throw new Error('加固超时');
 
@@ -359,7 +362,12 @@ export class HardeningService {
           // Step 5: 注入 SO armv7 (40%)
           const soPathV7 = this.findSdkSo('armeabi-v7a');
           if (soPathV7 && params.analysis.nativeAbis.includes('armeabi-v7a')) {
-            await this.updateProgress(task, 'so_armv7', 40, `注入 lib/armeabi-v7a/${randomSoName}...`);
+            await this.updateProgress(
+              task,
+              'so_armv7',
+              40,
+              `注入 lib/armeabi-v7a/${randomSoName}...`,
+            );
             const soDataV7 = await fs.readFile(soPathV7);
             await this.injectToZip(workApk, `lib/armeabi-v7a/${randomSoName}`, soDataV7);
           }
@@ -367,9 +375,17 @@ export class HardeningService {
       }
 
       // Step 6: apktool 解包 (50%) — --no-src 跳过 DEX 反编译(省内存+省时间)
-      await this.updateProgress(task, 'apktool_d', 50, '解包 APK(修改 Manifest,跳过 DEX 反编译)...');
+      await this.updateProgress(
+        task,
+        'apktool_d',
+        50,
+        '解包 APK(修改 Manifest,跳过 DEX 反编译)...',
+      );
       const decodedDir = path.join(workDir, 'decoded');
-      await execWithStderr('apktool', ['d', '-f', '--no-src', '-o', decodedDir, workApk], { timeout: 180_000, maxBuffer: 20 * 1024 * 1024 });
+      await execWithStderr('apktool', ['d', '-f', '--no-src', '-o', decodedDir, workApk], {
+        timeout: 180_000,
+        maxBuffer: 20 * 1024 * 1024,
+      });
 
       // Step 7: 修改 Manifest (60%) — 合并所有修改为一次
       await this.updateProgress(task, 'manifest', 60, '注入 meta-data + provider + permission...');
@@ -397,7 +413,10 @@ export class HardeningService {
 
       // Step 8: apktool 重建 (70%)
       await this.updateProgress(task, 'apktool_b', 70, '重建 APK...');
-      await execWithStderr('apktool', ['b', '-o', workApk, decodedDir], { timeout: 180_000, maxBuffer: 20 * 1024 * 1024 });
+      await execWithStderr('apktool', ['b', '-o', workApk, decodedDir], {
+        timeout: 180_000,
+        maxBuffer: 20 * 1024 * 1024,
+      });
       // 清理 decoded 目录
       await fs.rm(decodedDir, { recursive: true, force: true }).catch(() => {});
 
@@ -411,10 +430,17 @@ export class HardeningService {
       await this.updateProgress(task, 'sign', 90, '签名(V1+V2+V3)...');
       task.status = 'signing';
       await this.saveTask(task);
-      await this.resignApk(workApk, params.keystorePath, params.keystorePassword, params.keyAlias, params.keyPassword);
+      await this.resignApk(
+        workApk,
+        params.keystorePath,
+        params.keystorePassword,
+        params.keyAlias,
+        params.keyPassword,
+      );
 
       // Step 11: 完成 (100%)
-      const enabledCount = Object.values(xuanjia).filter(Boolean).length +
+      const enabledCount =
+        Object.values(xuanjia).filter(Boolean).length +
         Object.values(tianyan).filter(Boolean).length;
       task.status = 'completed';
       task.progress = 100;
@@ -457,7 +483,12 @@ export class HardeningService {
     tianyan: Record<string, boolean>,
     killPolicy?: HardeningConfig['killPolicy'],
   ): Record<string, unknown> {
-    const kp = killPolicy ?? { strongEvidence: 'kill', weakScoreThreshold: 70, delayMinMs: 0, delayMaxMs: 1000 };
+    const kp = killPolicy ?? {
+      strongEvidence: 'kill',
+      weakScoreThreshold: 70,
+      delayMinMs: 0,
+      delayMaxMs: 1000,
+    };
     return {
       version: 2,
       signatureVerify: { enabled: true, onViolation: kp.strongEvidence },
@@ -466,7 +497,11 @@ export class HardeningService {
       antiFrida: { enabled: xuanjia.x4_antiDynamic, onViolation: kp.strongEvidence },
       antiDump: { enabled: xuanjia.x4_antiDynamic, onViolation: kp.strongEvidence },
       rootDetect: { enabled: xuanjia.x4_antiDynamic, onViolation: 'warn' },
-      xposedDetect: { enabled: xuanjia.x4_antiDynamic, onViolation: kp.strongEvidence, killThreshold: 70 },
+      xposedDetect: {
+        enabled: xuanjia.x4_antiDynamic,
+        onViolation: kp.strongEvidence,
+        killThreshold: 70,
+      },
       emulatorDetect: { enabled: xuanjia.x6_dualApp, onViolation: 'warn' },
       vpnDetect: { enabled: xuanjia.x5_vpnProxy, onViolation: 'warn' },
       dualAppDetect: { enabled: xuanjia.x6_dualApp, onViolation: 'warn' },
@@ -477,7 +512,13 @@ export class HardeningService {
       customLinker: { enabled: tianyan.t1_customLinker },
       vmpProtect: { enabled: tianyan.t2_vmp },
       segmentStrings: { enabled: tianyan.t3_segment },
-      onViolationKill: { delayMinMs: kp.delayMinMs, delayMaxMs: kp.delayMaxMs, method: 'sigabrt', showToast: true, toastMessage: '检测到安全风险' },
+      onViolationKill: {
+        delayMinMs: kp.delayMinMs,
+        delayMaxMs: kp.delayMaxMs,
+        method: 'sigabrt',
+        showToast: true,
+        toastMessage: '检测到安全风险',
+      },
       report: { enabled: false, throttleMs: 300000 },
       integrityCrcTable: [],
       integrityFileList: [],
@@ -488,9 +529,26 @@ export class HardeningService {
     const candidates = [
       path.resolve(process.cwd(), 'sdk-artifacts', 'classes-xcj.dex'),
       path.resolve(process.cwd(), 'sdk-artifacts', 'classes.dex'),
-      path.resolve(process.cwd(), '..', 'sdk-android', 'defender-sdk', 'build', 'intermediates', 'aar_main_jar', 'release', 'classes.jar'),
+      path.resolve(
+        process.cwd(),
+        '..',
+        'sdk-android',
+        'defender-sdk',
+        'build',
+        'intermediates',
+        'aar_main_jar',
+        'release',
+        'classes.jar',
+      ),
     ];
-    for (const p of candidates) { try { statSync(p); return p; } catch { /* not found */ } }
+    for (const p of candidates) {
+      try {
+        statSync(p);
+        return p;
+      } catch {
+        /* not found */
+      }
+    }
     this.logger.warn('SDK DEX 未找到,跳过 DEX 注入');
     return null;
   }
@@ -498,9 +556,30 @@ export class HardeningService {
   private findSdkSo(abi: string): string | null {
     const candidates = [
       path.resolve(process.cwd(), 'sdk-artifacts', 'lib', abi, 'libxcj_defender.so'),
-      path.resolve(process.cwd(), '..', 'sdk-android', 'defender-sdk', 'build', 'intermediates', 'stripped_native_libs', 'release', 'stripReleaseDebugSymbols', 'out', 'lib', abi, 'libxcj_defender.so'),
+      path.resolve(
+        process.cwd(),
+        '..',
+        'sdk-android',
+        'defender-sdk',
+        'build',
+        'intermediates',
+        'stripped_native_libs',
+        'release',
+        'stripReleaseDebugSymbols',
+        'out',
+        'lib',
+        abi,
+        'libxcj_defender.so',
+      ),
     ];
-    for (const p of candidates) { try { statSync(p); return p; } catch { /* not found */ } }
+    for (const p of candidates) {
+      try {
+        statSync(p);
+        return p;
+      } catch {
+        /* not found */
+      }
+    }
     this.logger.warn(`SDK .so 未找到(${abi}),跳过 SO 注入`);
     return null;
   }
@@ -534,20 +613,42 @@ export class HardeningService {
   }
 
   private async resignApk(
-    apkPath: string, keystorePath: string, keystorePassword: string,
-    keyAlias: string, keyPassword: string,
+    apkPath: string,
+    keystorePath: string,
+    keystorePassword: string,
+    keyAlias: string,
+    keyPassword: string,
   ): Promise<void> {
     const apksigner = this.findApksigner();
     if (!apksigner) throw new BadRequestException('APKSIGNER_NOT_FOUND');
     const unsigned = apkPath + '-unsigned';
     await fs.rename(apkPath, unsigned);
     try {
-      await execWithStderr(apksigner, [
-        'sign', '--ks', keystorePath, '--ks-pass', `pass:${keystorePassword}`,
-        '--ks-key-alias', keyAlias, '--key-pass', `pass:${keyPassword}`,
-        '--v1-signing-enabled', 'true', '--v2-signing-enabled', 'true', '--v3-signing-enabled', 'true',
-        '--in', unsigned, '--out', apkPath,
-      ], { timeout: 60_000 });
+      await execWithStderr(
+        apksigner,
+        [
+          'sign',
+          '--ks',
+          keystorePath,
+          '--ks-pass',
+          `pass:${keystorePassword}`,
+          '--ks-key-alias',
+          keyAlias,
+          '--key-pass',
+          `pass:${keyPassword}`,
+          '--v1-signing-enabled',
+          'true',
+          '--v2-signing-enabled',
+          'true',
+          '--v3-signing-enabled',
+          'true',
+          '--in',
+          unsigned,
+          '--out',
+          apkPath,
+        ],
+        { timeout: 60_000 },
+      );
     } catch (e) {
       throw new BadRequestException('RESIGN_FAILED', { cause: (e as Error).message });
     } finally {
@@ -557,7 +658,13 @@ export class HardeningService {
 
   private findApksigner(): string | null {
     const candidates = ['apksigner', '/opt/android-sdk/build-tools/34.0.0/apksigner'];
-    for (const c of candidates) { try { if (existsSync(c)) return c; } catch { /* ignore */ } }
+    for (const c of candidates) {
+      try {
+        if (existsSync(c)) return c;
+      } catch {
+        /* ignore */
+      }
+    }
     return 'apksigner';
   }
 }

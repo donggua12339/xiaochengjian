@@ -42,7 +42,9 @@ describe('CardKeyController', () => {
         cardKeys: ['XXXX-XXXX-XXXX-XXXX'],
         count: 1,
       }),
-      list: jest.fn().mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 20, totalPages: 1 }),
+      list: jest
+        .fn()
+        .mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 20, totalPages: 1 }),
       getById: jest.fn().mockResolvedValue({ id: 'c1', boundDevicesCount: 0 }),
       disable: jest.fn().mockResolvedValue({ id: 'c1', status: 'DISABLED' }),
       enable: jest.fn().mockResolvedValue({ id: 'c1', status: 'ACTIVE' }),
@@ -56,7 +58,12 @@ describe('CardKeyController', () => {
       controllers: [CardKeyController],
       providers: [
         { provide: CardKeyService, useValue: cardKeyService },
-        { provide: RateLimitService, useValue: { checkDeveloperRateLimit: jest.fn().mockResolvedValue({ allowed: true, remaining: 10 }) } },
+        {
+          provide: RateLimitService,
+          useValue: {
+            checkDeveloperRateLimit: jest.fn().mockResolvedValue({ allowed: true, remaining: 10 }),
+          },
+        },
         Reflector,
       ],
     })

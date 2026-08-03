@@ -427,8 +427,7 @@ export class PackerService {
         zipfile.on('entry', (entry) => {
           const name = entry.fileName;
           // 排除签名文件(重签后变)和 config(本步注入)
-          const excluded =
-            name.startsWith('META-INF/') || name === 'assets/defender-config.json';
+          const excluded = name.startsWith('META-INF/') || name === 'assets/defender-config.json';
           if (!excluded) {
             fileList.push(name);
             // .dex 收集 CRC32(ZIP entry 的未压缩 CRC,十六进制小写)

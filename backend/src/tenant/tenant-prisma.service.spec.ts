@@ -22,10 +22,7 @@ describe('TenantPrismaService', () => {
       $transaction: jest.fn(),
     };
     const moduleRef = await Test.createTestingModule({
-      providers: [
-        TenantPrismaService,
-        { provide: PrismaService, useValue: prisma },
-      ],
+      providers: [TenantPrismaService, { provide: PrismaService, useValue: prisma }],
     }).compile();
     service = moduleRef.get(TenantPrismaService);
   });

@@ -80,18 +80,14 @@ describe('SdkSignatureGuard', () => {
       client: { set: jest.fn().mockResolvedValue('OK') },
     };
     cryptoService = {
-      sha256: jest.fn((data: string) =>
-        crypto.createHash('sha256').update(data).digest('hex'),
-      ),
-      hmacVerify: jest.fn(
-        (key: Buffer, message: string, signature: string) => {
-          const expected = crypto.createHmac('sha256', key).update(message).digest('hex');
-          const a = Buffer.from(expected, 'hex');
-          const b = Buffer.from(signature, 'hex');
-          if (a.length !== b.length) return false;
-          return crypto.timingSafeEqual(a, b);
-        },
-      ),
+      sha256: jest.fn((data: string) => crypto.createHash('sha256').update(data).digest('hex')),
+      hmacVerify: jest.fn((key: Buffer, message: string, signature: string) => {
+        const expected = crypto.createHmac('sha256', key).update(message).digest('hex');
+        const a = Buffer.from(expected, 'hex');
+        const b = Buffer.from(signature, 'hex');
+        if (a.length !== b.length) return false;
+        return crypto.timingSafeEqual(a, b);
+      }),
       aesDecrypt: jest.fn((key: Buffer, iv: Buffer, ciphertext: Buffer, tag: Buffer) => {
         const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
         decipher.setAuthTag(tag);
@@ -114,17 +110,13 @@ describe('SdkSignatureGuard', () => {
     it('任一 header 缺失应拒绝(MISSING_SDK_HEADERS)', async () => {
       const req = buildRequest();
       delete req.headers['x-signature'];
-      await expect(guard.canActivate(buildContext(req))).rejects.toThrow(
-        UnauthorizedException,
-      );
+      await expect(guard.canActivate(buildContext(req))).rejects.toThrow(UnauthorizedException);
     });
 
     it('encryptedBody 缺失应拒绝', async () => {
       const req = buildRequest();
       req.body = {};
-      await expect(guard.canActivate(buildContext(req))).rejects.toThrow(
-        UnauthorizedException,
-      );
+      await expect(guard.canActivate(buildContext(req))).rejects.toThrow(UnauthorizedException);
     });
   });
 
@@ -132,9 +124,7 @@ describe('SdkSignatureGuard', () => {
     it('session 不存在/过期应拒绝(SESSION_EXPIRED_OR_INVALID)', async () => {
       handshakeService.getSession.mockResolvedValue(null);
       const req = buildRequest();
-      await expect(guard.canActivate(buildContext(req))).rejects.toThrow(
-        UnauthorizedException,
-      );
+      await expect(guard.canActivate(buildContext(req))).rejects.toThrow(UnauthorizedException);
     });
   });
 
@@ -142,9 +132,7 @@ describe('SdkSignatureGuard', () => {
     it('非数字 timestamp 应拒绝(INVALID_TIMESTAMP)', async () => {
       const req = buildRequest();
       req.headers['x-timestamp'] = 'not-a-number';
-      await expect(guard.canActivate(buildContext(req))).rejects.toThrow(
-        UnauthorizedException,
-      );
+      await expect(guard.canActivate(buildContext(req))).rejects.toThrow(UnauthorizedException);
     });
 
     it('偏差 > 60s 应拒绝(TIMESTAMP_SKEW_EXCEEDED)', async () => {
@@ -157,9 +145,7 @@ describe('SdkSignatureGuard', () => {
         .createHmac('sha256', aesKey)
         .update(signMessage)
         .digest('hex');
-      await expect(guard.canActivate(buildContext(req))).rejects.toThrow(
-        UnauthorizedException,
-      );
+      await expect(guard.canActivate(buildContext(req))).rejects.toThrow(UnauthorizedException);
     });
   });
 
@@ -167,9 +153,7 @@ describe('SdkSignatureGuard', () => {
     it('Redis SETNX 非 OK 应拒绝(NONCE_ALREADY_USED)', async () => {
       redisService.client.set.mockResolvedValue(null); // 模拟 nonce 已用过
       const req = buildRequest();
-      await expect(guard.canActivate(buildContext(req))).rejects.toThrow(
-        UnauthorizedException,
-      );
+      await expect(guard.canActivate(buildContext(req))).rejects.toThrow(UnauthorizedException);
     });
   });
 
@@ -182,18 +166,14 @@ describe('SdkSignatureGuard', () => {
     it('篡改签名应拒绝(INVALID_SIGNATURE)', async () => {
       const req = buildRequest();
       req.headers['x-signature'] = 'a'.repeat(64); // 错误签名
-      await expect(guard.canActivate(buildContext(req))).rejects.toThrow(
-        UnauthorizedException,
-      );
+      await expect(guard.canActivate(buildContext(req))).rejects.toThrow(UnauthorizedException);
     });
 
     it('篡改 body 应拒绝(签名不匹配)', async () => {
       const req = buildRequest();
       req.body.encryptedBody = encryptBody('{"cardKey":"TAMPERED","machineId":"m1"}');
       // 不重算签名,签名已失效
-      await expect(guard.canActivate(buildContext(req))).rejects.toThrow(
-        UnauthorizedException,
-      );
+      await expect(guard.canActivate(buildContext(req))).rejects.toThrow(UnauthorizedException);
     });
   });
 
@@ -213,9 +193,7 @@ describe('SdkSignatureGuard', () => {
         throw new Error('decrypt error');
       });
       const req = buildRequest();
-      await expect(guard.canActivate(buildContext(req))).rejects.toThrow(
-        UnauthorizedException,
-      );
+      await expect(guard.canActivate(buildContext(req))).rejects.toThrow(UnauthorizedException);
     });
 
     it('解密后非合法 JSON 应抛错(注:当前实现抛 SyntaxError 非 UnauthorizedException,是 bug 待修)', async () => {

@@ -90,7 +90,11 @@ export class ApkAnalyzerService {
 
     // 5. 检测已加固
     const hardenerResult = this.detectHardener(entries);
-    onProgress?.('hardener', 70, hardenerResult.name ? `检测到 ${hardenerResult.name} 加固` : '未检测到已知加固');
+    onProgress?.(
+      'hardener',
+      70,
+      hardenerResult.name ? `检测到 ${hardenerResult.name} 加固` : '未检测到已知加固',
+    );
 
     // 6. 提取 SDK 版本(从 aapt dump badging)
     onProgress?.('sdk', 80, '正在提取 SDK 版本...');
@@ -112,8 +116,8 @@ export class ApkAnalyzerService {
 
     this.logger.log(
       `APK 分析完成: pkg=${manifestInfo.packageName}, ` +
-      `dex=${dexFiles.length}, abi=[${nativeAbis.join(',')}], ` +
-      `hardened=${hardenerResult.name ?? 'none'}`,
+        `dex=${dexFiles.length}, abi=[${nativeAbis.join(',')}], ` +
+        `hardened=${hardenerResult.name ?? 'none'}`,
     );
 
     return {
@@ -132,9 +136,7 @@ export class ApkAnalyzerService {
     };
   }
 
-  private parseZipEntries(
-    output: string,
-  ): Array<{ name: string; size: number }> {
+  private parseZipEntries(output: string): Array<{ name: string; size: number }> {
     const lines = output.split('\n').slice(3, -2);
     return lines
       .map((line) => {
@@ -147,9 +149,7 @@ export class ApkAnalyzerService {
       .filter((e): e is { name: string; size: number } => e !== null);
   }
 
-  private detectAbis(
-    entries: Array<{ name: string }>,
-  ): string[] {
+  private detectAbis(entries: Array<{ name: string }>): string[] {
     const abiSet = new Set<string>();
     for (const e of entries) {
       const m = e.name.match(/^lib\/([^/]+)\//);
@@ -158,9 +158,7 @@ export class ApkAnalyzerService {
     return [...abiSet].sort();
   }
 
-  private detectHardener(
-    entries: Array<{ name: string }>,
-  ): { name: string | null } {
+  private detectHardener(entries: Array<{ name: string }>): { name: string | null } {
     const entryNames = entries.map((e) => e.name);
     for (const sig of this.HARDENER_SIGNATURES) {
       for (const pattern of sig.patterns) {
@@ -202,9 +200,7 @@ export class ApkAnalyzerService {
 
       const pkgMatch = stdout.match(/package:\s*name='([^']+)'/);
       // 用 aapt dump xmltree 获取 Application 类名
-      const xmlOut = await this.execAapt(
-        ['dump', 'xmltree', apkPath, 'AndroidManifest.xml'],
-      );
+      const xmlOut = await this.execAapt(['dump', 'xmltree', apkPath, 'AndroidManifest.xml']);
 
       // 找 application 标签的 name 属性
       const appNameMatch2 = xmlOut.match(

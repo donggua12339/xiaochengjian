@@ -84,11 +84,7 @@ describe('MembershipController', () => {
   });
 
   it('list 支持自定义分页 + 筛选', async () => {
-    await controller.list(
-      { page: 2, pageSize: 50 } as any,
-      'UNUSED',
-      'batch-1',
-    );
+    await controller.list({ page: 2, pageSize: 50 } as any, 'UNUSED', 'batch-1');
     expect(membershipService.list).toHaveBeenCalledWith({
       page: 2,
       pageSize: 50,

@@ -174,7 +174,9 @@ export class DexInjector {
     // 4. 构造插入项(meta-data + provider)
     const insertItems: string[] = [];
     insertItems.push(`<meta-data android:name="xcj.appId" android:value="${xcjConfig.appId}" />`);
-    insertItems.push(`<meta-data android:name="xcj.serverUrl" android:value="${xcjConfig.serverUrl}" />`);
+    insertItems.push(
+      `<meta-data android:name="xcj.serverUrl" android:value="${xcjConfig.serverUrl}" />`,
+    );
     insertItems.push(
       `<meta-data android:name="xcj.expectedSignatureHash" android:value="${xcjConfig.expectedSignatureHash}" />`,
     );
@@ -203,8 +205,7 @@ export class DexInjector {
       });
     }
     const appEnd = manifest.indexOf('>', appStart) + 1;
-    manifest =
-      manifest.slice(0, appEnd) + '\n' + insertItems.join('\n') + manifest.slice(appEnd);
+    manifest = manifest.slice(0, appEnd) + '\n' + insertItems.join('\n') + manifest.slice(appEnd);
 
     // 6. 写回 AndroidManifest.xml
     await fs.writeFile(manifestPath, manifest, 'utf-8');

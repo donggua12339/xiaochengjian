@@ -69,17 +69,13 @@ describe('HardenerEulaService', () => {
 
     it('未接受当前版本 EULA 应抛 ForbiddenException(EULA_REQUIRED)', async () => {
       prisma.auditLogOwn.findFirst.mockResolvedValue(null);
-      await expect(service.validateAccepted('dev-1')).rejects.toThrow(
-        ForbiddenException,
-      );
+      await expect(service.validateAccepted('dev-1')).rejects.toThrow(ForbiddenException);
     });
 
     it('接受的是旧版本 EULA 应拒绝(版本号不匹配)', async () => {
       // findFirst 查 eulaVersion=CURRENT,旧版本记录不会匹配
       prisma.auditLogOwn.findFirst.mockResolvedValue(null);
-      await expect(service.validateAccepted('dev-1')).rejects.toThrow(
-        ForbiddenException,
-      );
+      await expect(service.validateAccepted('dev-1')).rejects.toThrow(ForbiddenException);
     });
   });
 

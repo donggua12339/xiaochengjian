@@ -30,17 +30,13 @@ describe('TenantInterceptor', () => {
 
   it('无 user 应不设置 tenantId', async () => {
     const ctx = buildContext(undefined);
-    await lastValueFrom(
-      interceptor.intercept(ctx, { handle: () => of('ok') } as any),
-    );
+    await lastValueFrom(interceptor.intercept(ctx, { handle: () => of('ok') } as any));
     expect(ctx.switchToHttp().getRequest().tenantId).toBeUndefined();
   });
 
   it('user 无 sub 应不设置 tenantId', async () => {
     const ctx = buildContext({});
-    await lastValueFrom(
-      interceptor.intercept(ctx, { handle: () => of('ok') } as any),
-    );
+    await lastValueFrom(interceptor.intercept(ctx, { handle: () => of('ok') } as any));
     expect(ctx.switchToHttp().getRequest().tenantId).toBeUndefined();
   });
 

@@ -33,29 +33,32 @@ export class PreflightService {
   /**
    * 验证 Keystore: 密码正确 + 别名存在
    */
-  async validateKeystore(
-    ksPath: string,
-    ksPassword: string,
-    alias: string,
-  ): Promise<void> {
+  async validateKeystore(ksPath: string, ksPassword: string, alias: string): Promise<void> {
     try {
-      const { stdout, stderr } = await execFileAsync('keytool', [
-        '-list',
-        '-keystore', ksPath,
-        '-storepass', ksPassword,
-        '-alias', alias,
-      ], { timeout: 10_000 });
+      const { stdout, stderr } = await execFileAsync(
+        'keytool',
+        ['-list', '-keystore', ksPath, '-storepass', ksPassword, '-alias', alias],
+        { timeout: 10_000 },
+      );
 
       const output = stdout + stderr;
       // keytool 密码错时 stderr 含 "password was incorrect" 或中文
-      if (output.includes('incorrect') || output.includes('密码不正确') || output.includes('error')) {
+      if (
+        output.includes('incorrect') ||
+        output.includes('密码不正确') ||
+        output.includes('error')
+      ) {
         if (output.includes('incorrect') || output.includes('密码')) {
           throw new BadRequestException('Keystore 密码错误');
         }
       }
 
       // 检查别名是否在输出中
-      if (!output.includes(alias) && !output.includes('别名: ' + alias) && !output.includes('Alias name: ' + alias)) {
+      if (
+        !output.includes(alias) &&
+        !output.includes('别名: ' + alias) &&
+        !output.includes('Alias name: ' + alias)
+      ) {
         // keytool 用 -alias 参数时,如果别名不存在会报错到 stderr
         // 但如果 keytool 没报错且输出不含别名,可能是格式问题
         // 宽松检查: 只要 keytool exit 0 就认为存在
@@ -64,10 +67,18 @@ export class PreflightService {
       if (e instanceof BadRequestException) throw e;
       const err = e as Error & { stderr?: string };
       const combined = `${err.message} ${err.stderr ?? ''}`;
-      if (combined.includes('incorrect') || combined.includes('password') || combined.includes('密码')) {
+      if (
+        combined.includes('incorrect') ||
+        combined.includes('password') ||
+        combined.includes('密码')
+      ) {
         throw new BadRequestException('Keystore 密码错误');
       }
-      if (combined.includes('does not exist') || combined.includes('不存在') || combined.includes('not found')) {
+      if (
+        combined.includes('does not exist') ||
+        combined.includes('不存在') ||
+        combined.includes('not found')
+      ) {
         throw new BadRequestException(`别名 '${alias}' 不存在于 Keystore 中`);
       }
       throw new BadRequestException(`Keystore 验证失败: ${err.message}`);
@@ -118,8 +129,17 @@ export class PreflightService {
     const candidates = [
       path.resolve(process.cwd(), 'sdk-artifacts', 'classes-xcj.dex'),
       path.resolve(process.cwd(), 'sdk-artifacts', 'classes.dex'),
-      path.resolve(process.cwd(), '..', 'sdk-android', 'defender-sdk', 'build',
-        'intermediates', 'aar_main_jar', 'release', 'classes.jar'),
+      path.resolve(
+        process.cwd(),
+        '..',
+        'sdk-android',
+        'defender-sdk',
+        'build',
+        'intermediates',
+        'aar_main_jar',
+        'release',
+        'classes.jar',
+      ),
     ];
     let found = false;
     for (const p of candidates) {
@@ -127,7 +147,9 @@ export class PreflightService {
         await fs.stat(p);
         found = true;
         break;
-      } catch { /* not found */ }
+      } catch {
+        /* not found */
+      }
     }
     if (!found) {
       throw new BadRequestException('SDK 未构建: 找不到 classes.dex 或 classes.jar');
@@ -137,12 +159,7 @@ export class PreflightService {
   /**
    * 运行全部预检
    */
-  async runAll(
-    apkPath: string,
-    ksPath: string,
-    ksPassword: string,
-    alias: string,
-  ): Promise<void> {
+  async runAll(apkPath: string, ksPath: string, ksPassword: string, alias: string): Promise<void> {
     // 并行执行独立检查
     await Promise.all([
       this.validateKeystore(ksPath, ksPassword, alias),

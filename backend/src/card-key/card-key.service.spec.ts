@@ -29,17 +29,21 @@ describe('CardKeyService', () => {
   const appId = 'app-1';
 
   /** 构建 mock tx */
-  function buildTx(opts: {
-    application?: any | null;
-    cardKey?: any[];
-    cardTemplate?: any[];
-    deviceBinding?: any[];
-  } = {}) {
+  function buildTx(
+    opts: {
+      application?: any | null;
+      cardKey?: any[];
+      cardTemplate?: any[];
+      deviceBinding?: any[];
+    } = {},
+  ) {
     return {
       application: {
-        findUnique: jest.fn().mockResolvedValue(
-          opts.application === undefined ? { id: appId, developerId } : opts.application,
-        ),
+        findUnique: jest
+          .fn()
+          .mockResolvedValue(
+            opts.application === undefined ? { id: appId, developerId } : opts.application,
+          ),
       },
       cardKey: {
         createMany: jest.fn().mockResolvedValue({ count: opts.cardKey?.length ?? 0 }),
@@ -64,9 +68,7 @@ describe('CardKeyService', () => {
 
   /** 设置 tenantPrisma.tx 的 mock 实现 */
   function setTxMock(tx: any) {
-    tenantPrisma.tx.mockImplementation(async (_t: string, fn: (tx: any) => Promise<any>) =>
-      fn(tx),
-    );
+    tenantPrisma.tx.mockImplementation(async (_t: string, fn: (tx: any) => Promise<any>) => fn(tx));
   }
 
   beforeEach(async () => {
@@ -98,17 +100,15 @@ describe('CardKeyService', () => {
 
     it('数量超上限应拒绝(COUNT_EXCEEDS_MAX)', async () => {
       configService.get.mockReturnValue(10000);
-      await expect(
-        service.generate(developerId, appId, { ...dto, count: 10001 }),
-      ).rejects.toThrow(BadRequestException);
+      await expect(service.generate(developerId, appId, { ...dto, count: 10001 })).rejects.toThrow(
+        BadRequestException,
+      );
     });
 
     it('APP 不存在应拒绝(APP_NOT_FOUND)', async () => {
       const tx = buildTx({ application: null });
       setTxMock(tx);
-      await expect(service.generate(developerId, appId, dto)).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(service.generate(developerId, appId, dto)).rejects.toThrow(NotFoundException);
     });
 
     it('TRIAL 卡 maxDevices > 1 应拒绝(TRIAL_CARD_MUST_BE_SINGLE_DEVICE)', async () => {
@@ -279,18 +279,14 @@ describe('CardKeyService', () => {
     it('卡密不存在应拒绝(CARD_NOT_FOUND)', async () => {
       const tx = buildTx({ cardKey: [] });
       setTxMock(tx);
-      await expect(service.getById(developerId, appId, 'c1')).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(service.getById(developerId, appId, 'c1')).rejects.toThrow(NotFoundException);
     });
 
     it('卡密存在但 appId 不匹配应拒绝(CARD_NOT_FOUND)', async () => {
       const card = { id: 'c1', appId: 'other-app', deviceBindings: [] };
       const tx = buildTx({ cardKey: [card] });
       setTxMock(tx);
-      await expect(service.getById(developerId, appId, 'c1')).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(service.getById(developerId, appId, 'c1')).rejects.toThrow(NotFoundException);
     });
   });
 
@@ -310,9 +306,7 @@ describe('CardKeyService', () => {
     it('卡密不存在应拒绝', async () => {
       const tx = buildTx({ cardKey: [] });
       setTxMock(tx);
-      await expect(service.disable(developerId, appId, 'c1')).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(service.disable(developerId, appId, 'c1')).rejects.toThrow(NotFoundException);
     });
   });
 
@@ -332,18 +326,14 @@ describe('CardKeyService', () => {
     it('卡密不存在应拒绝', async () => {
       const tx = buildTx({ cardKey: [] });
       setTxMock(tx);
-      await expect(service.enable(developerId, appId, 'c1')).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(service.enable(developerId, appId, 'c1')).rejects.toThrow(NotFoundException);
     });
 
     it('非 DISABLED 状态应拒绝(CARD_NOT_DISABLED)', async () => {
       const card = { id: 'c1', appId, status: 'ACTIVE' };
       const tx = buildTx({ cardKey: [card] });
       setTxMock(tx);
-      await expect(service.enable(developerId, appId, 'c1')).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(service.enable(developerId, appId, 'c1')).rejects.toThrow(BadRequestException);
     });
   });
 
@@ -500,7 +490,10 @@ describe('CardKeyService', () => {
   describe('listTemplates', () => {
     it('应返回模板列表', async () => {
       const tx = buildTx({
-        cardTemplate: [{ id: 't1', name: '模板1' }, { id: 't2', name: '模板2' }],
+        cardTemplate: [
+          { id: 't1', name: '模板1' },
+          { id: 't2', name: '模板2' },
+        ],
       });
       setTxMock(tx);
       const result = await service.listTemplates(developerId, appId);

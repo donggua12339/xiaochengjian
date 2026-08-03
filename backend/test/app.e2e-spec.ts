@@ -11,8 +11,7 @@ describe('HealthController (e2e)', () => {
 
   beforeAll(async () => {
     process.env.NODE_ENV = 'test';
-    process.env.DATABASE_URL =
-      process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL ?? '';
+    process.env.DATABASE_URL = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL ?? '';
     process.env.JWT_ACCESS_SECRET = 'test-access-secret-at-least-32-chars-long';
     process.env.JWT_REFRESH_SECRET = 'test-refresh-secret-at-least-32-chars-long';
 

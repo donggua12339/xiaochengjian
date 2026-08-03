@@ -146,9 +146,7 @@ describe('AuthService', () => {
         totpEnabled: false,
         totpSecret: null,
       });
-      await expect(service.login(email, 'wrong-password')).rejects.toThrow(
-        UnauthorizedException,
-      );
+      await expect(service.login(email, 'wrong-password')).rejects.toThrow(UnauthorizedException);
     });
 
     it('未启用 2FA 应直接返回 access + refresh', async () => {
@@ -448,9 +446,9 @@ describe('AuthService', () => {
   describe('changePassword', () => {
     it('developer 不存在应拒绝', async () => {
       prisma.developer.findUnique.mockResolvedValue(null);
-      await expect(
-        service.changePassword(developerId, password, 'NewPassword456'),
-      ).rejects.toThrow(NotFoundException);
+      await expect(service.changePassword(developerId, password, 'NewPassword456')).rejects.toThrow(
+        NotFoundException,
+      );
     });
 
     it('当前密码错误应拒绝(CURRENT_PASSWORD_INCORRECT)', async () => {
@@ -462,9 +460,9 @@ describe('AuthService', () => {
 
     it('新密码与当前相同应拒绝(NEW_PASSWORD_MUST_DIFFER)', async () => {
       prisma.developer.findUnique.mockResolvedValue({ id: developerId, passwordHash: realHash });
-      await expect(
-        service.changePassword(developerId, password, password),
-      ).rejects.toThrow(BadRequestException);
+      await expect(service.changePassword(developerId, password, password)).rejects.toThrow(
+        BadRequestException,
+      );
     });
 
     it('正常应更新密码 hash', async () => {

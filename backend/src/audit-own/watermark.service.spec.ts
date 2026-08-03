@@ -146,10 +146,7 @@ describe('WatermarkService', () => {
       const zipBuf = await new Promise<Buffer>((resolve) => {
         const zipfile = new yazl.ZipFile();
         zipfile.addBuffer(Buffer.from('app content'), 'classes.dex');
-        zipfile.addBuffer(
-          Buffer.from(watermark.watermarkBase64),
-          'META-INF/xcj-watermark.enc.txt',
-        );
+        zipfile.addBuffer(Buffer.from(watermark.watermarkBase64), 'META-INF/xcj-watermark.enc.txt');
         zipfile.end();
         const chunks: Buffer[] = [];
         zipfile.outputStream.on('data', (c) => chunks.push(c));

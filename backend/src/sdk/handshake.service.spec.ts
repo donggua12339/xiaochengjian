@@ -20,7 +20,12 @@ import { PrismaService } from '../prisma/prisma.service';
  */
 describe('HandshakeService', () => {
   let service: HandshakeService;
-  let redisService: { set: jest.Mock; get: jest.Mock; del: jest.Mock; client: { expire: jest.Mock } };
+  let redisService: {
+    set: jest.Mock;
+    get: jest.Mock;
+    del: jest.Mock;
+    client: { expire: jest.Mock };
+  };
   let cryptoService: {
     rsaDecrypt: jest.Mock;
     generateSessionId: jest.Mock;
@@ -83,25 +88,19 @@ describe('HandshakeService', () => {
         return fn(tx);
       });
 
-      await expect(
-        service.handshake('encrypted-base64', appId),
-      ).rejects.toThrow(NotFoundException);
+      await expect(service.handshake('encrypted-base64', appId)).rejects.toThrow(NotFoundException);
     });
 
     it('RSA 解密失败应拒绝(RSA_DECRYPT_FAILED)', async () => {
       cryptoService.rsaDecrypt.mockImplementation(() => {
         throw new Error('rsa decrypt failed');
       });
-      await expect(service.handshake('bad-encrypted', appId)).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(service.handshake('bad-encrypted', appId)).rejects.toThrow(BadRequestException);
     });
 
     it('AES 密钥长度非 32 应拒绝(INVALID_AES_KEY_LENGTH)', async () => {
       cryptoService.rsaDecrypt.mockReturnValue(crypto.randomBytes(16)); // 16 字节,非 32
-      await expect(service.handshake('encrypted', appId)).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(service.handshake('encrypted', appId)).rejects.toThrow(BadRequestException);
     });
 
     it('成功握手应返回 sessionId 并存 Redis', async () => {
@@ -181,17 +180,12 @@ describe('HandshakeService', () => {
     });
 
     it('未到轮换时间应只续期 TTL,不轮换密钥', async () => {
-      redisService.get.mockResolvedValue(
-        JSON.stringify({ ...sessionData, rotatedAt: Date.now() }),
-      );
+      redisService.get.mockResolvedValue(JSON.stringify({ ...sessionData, rotatedAt: Date.now() }));
       const result = await service.refreshSession(sessionId);
       expect(result).toBeDefined();
       expect(result?.expiresAt).toBeInstanceOf(Date);
       expect(result?.newAesKey).toBeUndefined();
-      expect(redisService.client.expire).toHaveBeenCalledWith(
-        `sdk_session:${sessionId}`,
-        3600,
-      );
+      expect(redisService.client.expire).toHaveBeenCalledWith(`sdk_session:${sessionId}`, 3600);
       expect(cryptoService.generateAesKey).not.toHaveBeenCalled();
     });
 

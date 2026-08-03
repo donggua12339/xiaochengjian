@@ -28,9 +28,9 @@ describe('StatsController', () => {
         devices: { total: 3, active30d: 2 },
         validations: { today: 20, todaySuccess: 18, todayFailRate: 10 },
       }),
-      validationTrend: jest.fn().mockResolvedValue([
-        { date: '2026-07-18', total: 20, success: 18, fail: 2 },
-      ]),
+      validationTrend: jest
+        .fn()
+        .mockResolvedValue([{ date: '2026-07-18', total: 20, success: 18, fail: 2 }]),
       activationTrend: jest.fn().mockResolvedValue([{ date: '2026-07-18', count: 5 }]),
       developerOverview: jest.fn().mockResolvedValue({
         totals: { apps: 2, cards: 10, devices: 3, templates: 1 },

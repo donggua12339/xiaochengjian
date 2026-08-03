@@ -50,14 +50,14 @@ describe('JwtStrategy', () => {
   });
 
   it('validate: payload 缺 email 应抛 UnauthorizedException', async () => {
-    await expect(
-      strategy.validate({ sub: 'dev-1', email: '', role: 'DEVELOPER' }),
-    ).rejects.toThrow(UnauthorizedException);
+    await expect(strategy.validate({ sub: 'dev-1', email: '', role: 'DEVELOPER' })).rejects.toThrow(
+      UnauthorizedException,
+    );
   });
 
   it('validate: payload 缺 sub + email 应抛 UnauthorizedException', async () => {
-    await expect(
-      strategy.validate({ sub: '', email: '', role: 'DEVELOPER' }),
-    ).rejects.toThrow(UnauthorizedException);
+    await expect(strategy.validate({ sub: '', email: '', role: 'DEVELOPER' })).rejects.toThrow(
+      UnauthorizedException,
+    );
   });
 });

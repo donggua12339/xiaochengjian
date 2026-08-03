@@ -34,14 +34,16 @@ describe('AuditInterceptor', () => {
   });
 
   /** 构建 mock ExecutionContext */
-  function buildContext(opts: {
-    action?: string;
-    user?: { sub?: string };
-    method?: string;
-    body?: unknown;
-    headers?: Record<string, string | string[] | undefined>;
-    socketRemoteAddress?: string;
-  } = {}): any {
+  function buildContext(
+    opts: {
+      action?: string;
+      user?: { sub?: string };
+      method?: string;
+      body?: unknown;
+      headers?: Record<string, string | string[] | undefined>;
+      socketRemoteAddress?: string;
+    } = {},
+  ): any {
     const handler = { name: 'testHandler' };
     return {
       getHandler: () => handler,
@@ -80,9 +82,7 @@ describe('AuditInterceptor', () => {
         headers: { 'user-agent': 'Mozilla/5.0' },
       });
       const result = { id: 'card-1', count: 3 };
-      await lastValueFrom(
-        interceptor.intercept(ctx, { handle: () => of(result) } as any),
-      );
+      await lastValueFrom(interceptor.intercept(ctx, { handle: () => of(result) } as any));
       expect(auditService.record).toHaveBeenCalledWith(
         expect.objectContaining({
           developerId: 'dev-1',
@@ -95,17 +95,13 @@ describe('AuditInterceptor', () => {
 
     it('developerId 缺失应跳过记录', async () => {
       const ctx = buildContext({ user: undefined });
-      await lastValueFrom(
-        interceptor.intercept(ctx, { handle: () => of({ id: '1' }) } as any),
-      );
+      await lastValueFrom(interceptor.intercept(ctx, { handle: () => of({ id: '1' }) } as any));
       expect(auditService.record).not.toHaveBeenCalled();
     });
 
     it('user.sub 缺失应跳过记录', async () => {
       const ctx = buildContext({ user: {} });
-      await lastValueFrom(
-        interceptor.intercept(ctx, { handle: () => of({ id: '1' }) } as any),
-      );
+      await lastValueFrom(interceptor.intercept(ctx, { handle: () => of({ id: '1' }) } as any));
       expect(auditService.record).not.toHaveBeenCalled();
     });
 
@@ -115,12 +111,8 @@ describe('AuditInterceptor', () => {
         headers: { 'x-forwarded-for': '1.2.3.4, 5.6.7.8' },
         socketRemoteAddress: '127.0.0.1',
       });
-      await lastValueFrom(
-        interceptor.intercept(ctx, { handle: () => of({ id: '1' }) } as any),
-      );
-      expect(auditService.record).toHaveBeenCalledWith(
-        expect.objectContaining({ ip: '1.2.3.4' }),
-      );
+      await lastValueFrom(interceptor.intercept(ctx, { handle: () => of({ id: '1' }) } as any));
+      expect(auditService.record).toHaveBeenCalledWith(expect.objectContaining({ ip: '1.2.3.4' }));
     });
 
     it('无 X-Forwarded-For 应使用 socket.remoteAddress', async () => {
@@ -129,9 +121,7 @@ describe('AuditInterceptor', () => {
         headers: {},
         socketRemoteAddress: '192.168.1.100',
       });
-      await lastValueFrom(
-        interceptor.intercept(ctx, { handle: () => of({ id: '1' }) } as any),
-      );
+      await lastValueFrom(interceptor.intercept(ctx, { handle: () => of({ id: '1' }) } as any));
       expect(auditService.record).toHaveBeenCalledWith(
         expect.objectContaining({ ip: '192.168.1.100' }),
       );
@@ -142,12 +132,8 @@ describe('AuditInterceptor', () => {
         user: { sub: 'dev-1' },
         headers: { 'x-forwarded-for': '  10.0.0.1  , 10.0.0.2' },
       });
-      await lastValueFrom(
-        interceptor.intercept(ctx, { handle: () => of({ id: '1' }) } as any),
-      );
-      expect(auditService.record).toHaveBeenCalledWith(
-        expect.objectContaining({ ip: '10.0.0.1' }),
-      );
+      await lastValueFrom(interceptor.intercept(ctx, { handle: () => of({ id: '1' }) } as any));
+      expect(auditService.record).toHaveBeenCalledWith(expect.objectContaining({ ip: '10.0.0.1' }));
     });
   });
 
@@ -158,9 +144,7 @@ describe('AuditInterceptor', () => {
 
     it('返回值含 id 应作为 target', async () => {
       const ctx = buildContext({ user: { sub: 'dev-1' } });
-      await lastValueFrom(
-        interceptor.intercept(ctx, { handle: () => of({ id: 'app-1' }) } as any),
-      );
+      await lastValueFrom(interceptor.intercept(ctx, { handle: () => of({ id: 'app-1' }) } as any));
       expect(auditService.record).toHaveBeenCalledWith(
         expect.objectContaining({ target: 'app-1' }),
       );
@@ -188,9 +172,7 @@ describe('AuditInterceptor', () => {
 
     it('返回值非对象应 target undefined', async () => {
       const ctx = buildContext({ user: { sub: 'dev-1' } });
-      await lastValueFrom(
-        interceptor.intercept(ctx, { handle: () => of('string-result') } as any),
-      );
+      await lastValueFrom(interceptor.intercept(ctx, { handle: () => of('string-result') } as any));
       expect(auditService.record).toHaveBeenCalledWith(
         expect.objectContaining({ target: undefined }),
       );
@@ -198,9 +180,7 @@ describe('AuditInterceptor', () => {
 
     it('返回 null 应 target undefined', async () => {
       const ctx = buildContext({ user: { sub: 'dev-1' } });
-      await lastValueFrom(
-        interceptor.intercept(ctx, { handle: () => of(null) } as any),
-      );
+      await lastValueFrom(interceptor.intercept(ctx, { handle: () => of(null) } as any));
       expect(auditService.record).toHaveBeenCalledWith(
         expect.objectContaining({ target: undefined }),
       );
@@ -238,9 +218,7 @@ describe('AuditInterceptor', () => {
         method: 'POST',
         body: { name: '我的应用', packageName: 'com.xcj.test' },
       });
-      await lastValueFrom(
-        interceptor.intercept(ctx, { handle: () => of({ id: 'app-1' }) } as any),
-      );
+      await lastValueFrom(interceptor.intercept(ctx, { handle: () => of({ id: 'app-1' }) } as any));
       const call = auditService.record.mock.calls[0][0];
       expect(call.meta.name).toBe('我的应用');
       expect(call.meta.packageName).toBe('com.xcj.test');
@@ -252,9 +230,7 @@ describe('AuditInterceptor', () => {
         method: 'POST',
         body: {},
       });
-      await lastValueFrom(
-        interceptor.intercept(ctx, { handle: () => of({ id: '1' }) } as any),
-      );
+      await lastValueFrom(interceptor.intercept(ctx, { handle: () => of({ id: '1' }) } as any));
       const call = auditService.record.mock.calls[0][0];
       expect(call.meta).toEqual({ method: 'POST' });
     });
@@ -265,9 +241,7 @@ describe('AuditInterceptor', () => {
         method: 'POST',
         body: 'invalid',
       });
-      await lastValueFrom(
-        interceptor.intercept(ctx, { handle: () => of({ id: '1' }) } as any),
-      );
+      await lastValueFrom(interceptor.intercept(ctx, { handle: () => of({ id: '1' }) } as any));
       const call = auditService.record.mock.calls[0][0];
       expect(call.meta).toEqual({ method: 'POST' });
     });
@@ -278,9 +252,7 @@ describe('AuditInterceptor', () => {
         method: 'POST',
         body: { password: 'secret123', cardKey: 'ABCD-EFGH-IJKL-MNOP', name: 'test' },
       });
-      await lastValueFrom(
-        interceptor.intercept(ctx, { handle: () => of({ id: '1' }) } as any),
-      );
+      await lastValueFrom(interceptor.intercept(ctx, { handle: () => of({ id: '1' }) } as any));
       const call = auditService.record.mock.calls[0][0];
       expect(call.meta).not.toHaveProperty('password');
       expect(call.meta).not.toHaveProperty('cardKey');
