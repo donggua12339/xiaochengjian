@@ -19,14 +19,16 @@ import java.util.zip.ZipOutputStream
 /**
  * T4 CLI 命令:对 APK 中的 DEX 字符串加密。
  *
- * 管线: dexlib2 3.0.7 修改 DEX → 写出 → 精确 binary patch debug_info parameter_name。
+ * 管线: dexlib2 3.0.7 修改 DEX → 写出 → binary patch debug_info parameter_name。
  * dexlib2 3.0.7 writer 重排 string table 后 debug_info_item 中 parameter_name
- * 索引失效。用等长 ULEB128 替换为 0(NO_INDEX),保持编码长度不变。
+ * 索引可能越界。patchParameterNames 用等长 ULEB128 替换为 0(NO_INDEX),
+ * 保持编码长度不变,再重算 adler32 + SHA-1。
  */
-class EncryptStringsCommand : CliktCommand(
-    name = "encrypt-strings",
-    help = "T4 DEX 字符串加密(ADR 0090):替换 const-string 为 native 解密调用"
-) {
+class EncryptStringsCommand :
+    CliktCommand(
+        name = "encrypt-strings",
+        help = "T4 DEX 字符串加密(ADR 0090):替换 const-string 为 native 解密调用",
+    ) {
     private val apkPath by option("--apk", help = "输入 APK 路径").required()
     private val outputPath by option("--output", help = "输出 APK 路径").required()
     private val keyOutput by option("--key-header", help = "密钥头文件输出路径(默认 t4_str_key.h)")
@@ -81,22 +83,33 @@ class EncryptStringsCommand : CliktCommand(
         logger.info("输出: $outputPath")
     }
 
-    private fun processDexEntry(dexBytes: ByteArray, encryptor: DexStringEncryptor): ByteArray {
+    private fun processDexEntry(
+        dexBytes: ByteArray,
+        encryptor: DexStringEncryptor,
+    ): ByteArray {
         val dexVersion = String(dexBytes, 4, 3).toIntOrNull() ?: 37
         val opcodes = Opcodes.forDexVersion(dexVersion)
         val dexFile = DexBackedDexFile(opcodes, dexBytes)
         val modifiedClasses = encryptor.processDex(dexFile)
 
-        val outputDex = com.android.tools.smali.dexlib2.immutable.ImmutableDexFile(
-            opcodes, modifiedClasses
-        )
+        val outputDex =
+            com.android.tools.smali.dexlib2.immutable.ImmutableDexFile(
+                opcodes,
+                modifiedClasses,
+            )
 
         val tmpFile = File.createTempFile("t4_dex", ".dex")
         try {
             DexFileFactory.writeDexFile(tmpFile.absolutePath, outputDex)
             val rawDex = tmpFile.readBytes()
-            logger.info("  dexlib2 3.0.7 输出: ${rawDex.size} bytes (保留原始 debug_info)")
-            return rawDex
+            // dexlib2 3.0.7 writer 重排 string table → debug_info parameter_name 索引越界
+            // binary patch: 等长 ULEB128 替换为 0(NO_INDEX),保持偏移不变
+            val (patched, count) = patchParameterNames(rawDex)
+            if (count > 0) {
+                logger.info("  binary patch: 修复 $count 个越界 parameter_name 索引")
+            }
+            logger.info("  dexlib2 输出: ${patched.size} bytes")
+            return patched
         } finally {
             tmpFile.delete()
         }
@@ -117,7 +130,7 @@ class EncryptStringsCommand : CliktCommand(
      *
      * @return Pair(patched_dex, patch_count)
      */
-    private fun patchParameterNames(dex: ByteArray): Pair<ByteArray, Int> {
+    internal fun patchParameterNames(dex: ByteArray): Pair<ByteArray, Int> {
         val result = dex.copyOf()
         val buf = ByteBuffer.wrap(result).order(ByteOrder.LITTLE_ENDIAN)
 
@@ -133,19 +146,26 @@ class EncryptStringsCommand : CliktCommand(
             if (classDataOff == 0) continue
 
             var pos = classDataOff
-            val (staticFieldsSize, p1) = readUleb128(result, pos); pos = p1
-            val (instanceFieldsSize, p2) = readUleb128(result, pos); pos = p2
-            val (directMethodsSize, p3) = readUleb128(result, pos); pos = p3
-            val (virtualMethodsSize, p4) = readUleb128(result, pos); pos = p4
+            val (staticFieldsSize, p1) = readUleb128(result, pos)
+            pos = p1
+            val (instanceFieldsSize, p2) = readUleb128(result, pos)
+            pos = p2
+            val (directMethodsSize, p3) = readUleb128(result, pos)
+            pos = p3
+            val (virtualMethodsSize, p4) = readUleb128(result, pos)
+            pos = p4
 
             // Skip fields
             pos = skipEncodedFields(result, pos, staticFieldsSize + instanceFieldsSize)
 
             // Process methods (direct + virtual)
             for (methodIdx in 0 until (directMethodsSize + virtualMethodsSize)) {
-                val (_, pa) = readUleb128(result, pos); pos = pa  // method_idx_diff
-                val (_, pb) = readUleb128(result, pos); pos = pb  // access_flags
-                val (codeOff, pc) = readUleb128(result, pos); pos = pc
+                val (_, pa) = readUleb128(result, pos)
+                pos = pa // method_idx_diff
+                val (_, pb) = readUleb128(result, pos)
+                pos = pb // access_flags
+                val (codeOff, pc) = readUleb128(result, pos)
+                pos = pc
                 if (codeOff == 0) continue
 
                 // code_item.debug_info_off at codeOff + 8
@@ -154,8 +174,10 @@ class EncryptStringsCommand : CliktCommand(
 
                 // Parse debug_info_item header
                 var dpos = debugInfoOff
-                val (_, d1) = readUleb128(result, dpos); dpos = d1  // line_start
-                val (paramsSize, d2) = readUleb128(result, dpos); dpos = d2
+                val (_, d1) = readUleb128(result, dpos)
+                dpos = d1 // line_start
+                val (paramsSize, d2) = readUleb128(result, dpos)
+                dpos = d2
 
                 // Patch each parameter_name (ULEB128 → equal-length zero)
                 for (pi in 0 until paramsSize) {
@@ -164,7 +186,7 @@ class EncryptStringsCommand : CliktCommand(
                     dpos = nameEnd
 
                     if (nameVal != 0) {
-                        val strIdx = nameVal - 1  // parameter_name is 1-based (0 = NO_INDEX)
+                        val strIdx = nameVal - 1 // parameter_name is 1-based (0 = NO_INDEX)
                         if (strIdx >= stringIdsSize) {
                             // Bad index! Patch to zero with equal length
                             val encLen = nameEnd - nameStart
@@ -179,6 +201,13 @@ class EncryptStringsCommand : CliktCommand(
             }
         }
 
+        // 重算 DEX header signature (SHA-1 of bytes 32..end)
+        // 必须先写 signature 再算 checksum,因为 checksum 覆盖 bytes 12..end(含 signature)
+        val sha1 = MessageDigest.getInstance("SHA-1")
+        sha1.update(result, 32, result.size - 32)
+        val sig = sha1.digest()
+        System.arraycopy(sig, 0, result, 12, 20)
+
         // 重算 DEX header checksum (adler32 of bytes 12..end)
         val adler = Adler32()
         adler.update(result, 12, result.size - 12)
@@ -187,12 +216,6 @@ class EncryptStringsCommand : CliktCommand(
         result[9] = ((checksum shr 8) and 0xFF).toByte()
         result[10] = ((checksum shr 16) and 0xFF).toByte()
         result[11] = ((checksum shr 24) and 0xFF).toByte()
-
-        // 重算 DEX header signature (SHA-1 of bytes 32..end)
-        val sha1 = MessageDigest.getInstance("SHA-1")
-        sha1.update(result, 32, result.size - 32)
-        val sig = sha1.digest()
-        System.arraycopy(sig, 0, result, 12, 20)
 
         return Pair(result, patchCount)
     }
@@ -204,24 +227,37 @@ class EncryptStringsCommand : CliktCommand(
      * encLen=3 → [0x80, 0x80, 0x00]
      * ...
      */
-    private fun writeEqualLengthZeroUleb128(data: ByteArray, offset: Int, encLen: Int) {
+    internal fun writeEqualLengthZeroUleb128(
+        data: ByteArray,
+        offset: Int,
+        encLen: Int,
+    ) {
         for (i in 0 until encLen - 1) {
-            data[offset + i] = 0x80.toByte()  // continuation bit set, value bits = 0
+            data[offset + i] = 0x80.toByte() // continuation bit set, value bits = 0
         }
-        data[offset + encLen - 1] = 0x00  // final byte: no continuation, value = 0
+        data[offset + encLen - 1] = 0x00 // final byte: no continuation, value = 0
     }
 
-    private fun skipEncodedFields(data: ByteArray, startPos: Int, count: Int): Int {
+    internal fun skipEncodedFields(
+        data: ByteArray,
+        startPos: Int,
+        count: Int,
+    ): Int {
         var pos = startPos
         repeat(count) {
-            val (_, pa) = readUleb128(data, pos); pos = pa  // field_idx_diff
-            val (_, pb) = readUleb128(data, pos); pos = pb  // access_flags
+            val (_, pa) = readUleb128(data, pos)
+            pos = pa // field_idx_diff
+            val (_, pb) = readUleb128(data, pos)
+            pos = pb // access_flags
         }
         return pos
     }
 
     /** Read ULEB128 from byte array, return (value, new_position) */
-    private fun readUleb128(data: ByteArray, offset: Int): Pair<Int, Int> {
+    internal fun readUleb128(
+        data: ByteArray,
+        offset: Int,
+    ): Pair<Int, Int> {
         var result = 0
         var shift = 0
         var pos = offset
