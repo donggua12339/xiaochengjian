@@ -137,7 +137,8 @@ def compute_segment_digest(data: bytes, seg_offset: int, seg_size: int,
     return sha256(buf)
 
 
-def find_so_exclude_ranges(data: bytes, cd_offset: int, cd_size: int):
+def find_so_exclude_ranges(data: bytes, cd_offset: int, cd_size: int,
+                           target_hash: bytes = None):
     """在 Central Directory 中查找 defender .so 条目,返回需排除的范围"""
     ranges = []
     pos = cd_offset
@@ -155,15 +156,29 @@ def find_so_exclude_ranges(data: bytes, cd_offset: int, cd_size: int):
 
         if fn_len > 0 and pos + 46 + fn_len <= cd_end:
             fn = data[pos + 46:pos + 46 + fn_len].decode('utf-8', errors='replace')
-            if fn.startswith('lib/') and SO_NAME in fn:
-                cd_entry_size = 46 + fn_len + ef_len + fc_len
-                ranges.append((pos, cd_entry_size))
+            if fn.startswith('lib/') and fn.endswith('.so'):
+                # 命中判据:名字含 SO_NAME,或 SO 内含占位符/target_hash(兼容随机名)。
+                is_defender = SO_NAME in fn
+                if not is_defender and comp_size > 0:
+                    lfn_len0 = struct.unpack('<H', data[local_offset + 26:local_offset + 28])[0]
+                    lef_len0 = struct.unpack('<H', data[local_offset + 28:local_offset + 30])[0]
+                    fdo = local_offset + 30 + lfn_len0 + lef_len0
+                    if fdo + comp_size <= len(data):
+                        so_bytes = data[fdo:fdo + comp_size]
+                        if find_placeholder_positions(bytes(so_bytes)) is not None:
+                            is_defender = True
+                        elif target_hash is not None and \
+                                find_hash_positions(bytes(so_bytes), target_hash) is not None:
+                            is_defender = True
+                if is_defender:
+                    cd_entry_size = 46 + fn_len + ef_len + fc_len
+                    ranges.append((pos, cd_entry_size))
 
-                if local_offset + 30 <= len(data) and local_offset < cd_offset:
-                    lfn_len = struct.unpack('<H', data[local_offset + 26:local_offset + 28])[0]
-                    lef_len = struct.unpack('<H', data[local_offset + 28:local_offset + 30])[0]
-                    local_entry_size = 30 + lfn_len + lef_len + comp_size
-                    ranges.append((local_offset, local_entry_size))
+                    if local_offset + 30 <= len(data) and local_offset < cd_offset:
+                        lfn_len = struct.unpack('<H', data[local_offset + 26:local_offset + 28])[0]
+                        lef_len = struct.unpack('<H', data[local_offset + 28:local_offset + 30])[0]
+                        local_entry_size = 30 + lfn_len + lef_len + comp_size
+                        ranges.append((local_offset, local_entry_size))
 
         pos += 46 + fn_len + ef_len + fc_len
 
@@ -183,8 +198,11 @@ def apply_exclusions(buf: bytearray, buf_offset: int, buf_size: int, ranges):
             buf[z_start:z_end] = b'\x00' * (z_end - z_start)
 
 
-def compute_apk_protected_hash(apk_data: bytes) -> bytes:
-    """计算 APK 受保护内容 SHA-256(4 区段,排除 defender .so)"""
+def compute_apk_protected_hash(apk_data: bytes, target_hash: bytes = None) -> bytes:
+    """计算 APK 受保护内容 SHA-256(4 区段,排除 defender .so)
+
+    target_hash: 随机名 SO 已被 patch 过(占位符不在)时,按旧 hash 编码定位并排除。
+    """
     size = len(apk_data)
 
     eocd = -1
@@ -209,7 +227,7 @@ def compute_apk_protected_hash(apk_data: bytes) -> bytes:
     seg3_size = eocd - seg3_offset
     seg4_offset, seg4_size = eocd, size - eocd
 
-    ranges = find_so_exclude_ranges(apk_data, seg3_offset, seg3_size)
+    ranges = find_so_exclude_ranges(apk_data, seg3_offset, seg3_size, target_hash)
     if ranges:
         print(f"排除 defender .so 条目: {len(ranges)} 个范围")
 
@@ -287,8 +305,12 @@ def patch_so_hash(so_path: str, apk_hash: bytes) -> None:
 
 # ============= in-place APK patch =============
 
-def find_so_entries_in_apk(apk_data: bytes):
-    """在 APK 中找 defender .so 的 ZIP 条目信息"""
+def find_so_entries_in_apk(apk_data: bytes, target_hash: bytes = None):
+    """在 APK 中找 defender .so 的 ZIP 条目信息。
+
+    命中判据:名字含 SO_NAME,或 SO 内含预埋占位符,或含 target_hash 编码
+    (Pass 2 占位符已被 Pass 1 替换成 hash1,需按旧 hash 定位)。
+    """
     size = len(apk_data)
 
     # 找 EOCD
@@ -319,22 +341,34 @@ def find_so_entries_in_apk(apk_data: bytes):
 
         fn = apk_data[pos + 46:pos + 46 + fn_len].decode('utf-8', errors='replace')
 
-        if fn.startswith('lib/') and SO_NAME in fn:
+        if fn.startswith('lib/') and fn.endswith('.so'):
             # 读 local file header
             lfn_len = struct.unpack('<H', apk_data[local_offset + 26:local_offset + 28])[0]
             lef_len = struct.unpack('<H', apk_data[local_offset + 28:local_offset + 30])[0]
             file_data_offset = local_offset + 30 + lfn_len + lef_len
 
-            entries.append({
-                'filename': fn,
-                'cd_offset': pos,
-                'cd_size': 46 + fn_len + ef_len + fc_len,
-                'local_offset': local_offset,
-                'file_data_offset': file_data_offset,
-                'comp_size': comp_size,
-                'uncomp_size': uncomp_size,
-                'crc32': crc32_val,
-            })
+            # 命中判据:名字含 SO_NAME,或 SO 内含预埋 hash 占位符,或含 target_hash 编码
+            # (兼容随机名 defender SO;Pass 2 占位符已被替换成 hash1,按旧 hash 定位)。
+            is_defender = SO_NAME in fn
+            if not is_defender and uncomp_size == comp_size:  # 仅未压缩条目可直接扫
+                so_bytes = apk_data[file_data_offset:file_data_offset + comp_size]
+                if find_placeholder_positions(bytes(so_bytes)) is not None:
+                    is_defender = True
+                elif target_hash is not None and \
+                        find_hash_positions(bytes(so_bytes), target_hash) is not None:
+                    is_defender = True
+
+            if is_defender:
+                entries.append({
+                    'filename': fn,
+                    'cd_offset': pos,
+                    'cd_size': 46 + fn_len + ef_len + fc_len,
+                    'local_offset': local_offset,
+                    'file_data_offset': file_data_offset,
+                    'comp_size': comp_size,
+                    'uncomp_size': uncomp_size,
+                    'crc32': crc32_val,
+                })
 
         pos += 46 + fn_len + ef_len + fc_len
 
@@ -356,12 +390,13 @@ def find_hash_positions(so_data: bytes, target_hash: bytes):
 
 
 def patch_and_resign(apk_path: str, new_hash: bytes, old_hash: bytes,
-                      ks_path: str, ks_pass: str, pass_num: int) -> bool:
+                      ks_path: str, ks_pass: str, pass_num: int,
+                      key_alias: str = None, key_pass: str = None) -> bool:
     """在 APK 内 patch .so(占位符或旧 hash → 新 hash)+ 更新 CRC-32 + 重签名"""
     with open(apk_path, 'rb') as f:
         apk_data = bytearray(f.read())
 
-    entries = find_so_entries_in_apk(bytes(apk_data))
+    entries = find_so_entries_in_apk(bytes(apk_data), old_hash)
     if not entries:
         print("错误: APK 中找不到 defender .so 条目")
         return False
@@ -404,11 +439,15 @@ def patch_and_resign(apk_path: str, new_hash: bytes, old_hash: bytes,
 
     # V1 禁用(与 Gradle minSdk>=24 一致),V2+V3 签名
     cmd = [apksigner, 'sign',
-           '--ks', ks_path, '--ks-pass', f'pass:{ks_pass}',
-           '--v1-signing-enabled', 'false',
-           '--v2-signing-enabled', 'true',
-           '--v3-signing-enabled', 'true',
-           '--in', unsigned_path, '--out', apk_path]
+           '--ks', ks_path, '--ks-pass', f'pass:{ks_pass}']
+    if key_alias:
+        cmd += ['--ks-key-alias', key_alias]
+    if key_pass:
+        cmd += ['--key-pass', f'pass:{key_pass}']
+    cmd += ['--v1-signing-enabled', 'false',
+            '--v2-signing-enabled', 'true',
+            '--v3-signing-enabled', 'true',
+            '--in', unsigned_path, '--out', apk_path]
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
         print(f"apksigner 失败: {result.stderr}")
@@ -418,7 +457,8 @@ def patch_and_resign(apk_path: str, new_hash: bytes, old_hash: bytes,
     return True
 
 
-def inject_dex_crc(apk_path: str, ks_path: str, ks_pass: str):
+def inject_dex_crc(apk_path: str, ks_path: str, ks_pass: str,
+                   key_alias: str = None, key_pass: str = None):
     """Pass 0: 计算 DEX CRC32 并注入 defender-config.json"""
     import json as json_mod
 
@@ -470,17 +510,28 @@ def inject_dex_crc(apk_path: str, ks_path: str, ks_pass: str):
     if apksigner:
         unsigned = apk_path + '-unsigned'
         os.rename(apk_path, unsigned)
-        cmd = [apksigner, 'sign', '--ks', ks_path, '--ks-pass', f'pass:{ks_pass}',
-               '--v1-signing-enabled', 'false', '--v2-signing-enabled', 'true',
-               '--v3-signing-enabled', 'true', '--in', unsigned, '--out', apk_path]
-        subprocess.run(cmd, capture_output=True, text=True)
+        cmd = [apksigner, 'sign', '--ks', ks_path, '--ks-pass', f'pass:{ks_pass}']
+        if key_alias:
+            cmd += ['--ks-key-alias', key_alias]
+        if key_pass:
+            cmd += ['--key-pass', f'pass:{key_pass}']
+        cmd += ['--v1-signing-enabled', 'false', '--v2-signing-enabled', 'true',
+                '--v3-signing-enabled', 'true', '--in', unsigned, '--out', apk_path]
+        r = subprocess.run(cmd, capture_output=True, text=True)
+        if r.returncode != 0:
+            # 重签失败:还原文件,不删除,抛出错误
+            print(f"  apksigner 重签失败: {r.stderr.strip() or r.stdout.strip()}")
+            if os.path.exists(unsigned):
+                os.replace(unsigned, apk_path)
+            raise RuntimeError(f"inject_dex_crc 重签失败: {r.stderr.strip()[:200]}")
         if os.path.exists(unsigned):
             os.remove(unsigned)
 
     print(f"  DEX CRC 注入完成: {len(crc_entries)} 个条目")
 
 
-def patch_apk_inplace(apk_path: str, ks_path: str, ks_pass: str):
+def patch_apk_inplace(apk_path: str, ks_path: str, ks_pass: str,
+                      key_alias: str = None, key_pass: str = None):
     """三轮 in-place patch:
 
     Pass 0: 注入 DEX CRC 到 config + 重签
@@ -490,34 +541,34 @@ def patch_apk_inplace(apk_path: str, ks_path: str, ks_pass: str):
     """
     # Pass 0: DEX CRC 注入
     print("Pass 0: DEX CRC 注入...")
-    inject_dex_crc(apk_path, ks_path, ks_pass)
+    inject_dex_crc(apk_path, ks_path, ks_pass, key_alias, key_pass)
 
     # Pass 1
     with open(apk_path, 'rb') as f:
         orig_data = f.read()
     hash1 = compute_apk_protected_hash(orig_data)
     print(f"Pass 1 hash: {hash1.hex()}")
-    if not patch_and_resign(apk_path, hash1, None, ks_path, ks_pass, 1):
+    if not patch_and_resign(apk_path, hash1, None, ks_path, ks_pass, 1, key_alias, key_pass):
         sys.exit(1)
 
-    # Pass 2
+    # Pass 2(SO 已含 hash1 编码,按 hash1 定位排除)
     with open(apk_path, 'rb') as f:
         pass1_data = f.read()
-    hash2 = compute_apk_protected_hash(pass1_data)
+    hash2 = compute_apk_protected_hash(pass1_data, hash1)
     print(f"Pass 2 hash: {hash2.hex()}")
-    if not patch_and_resign(apk_path, hash2, hash1, ks_path, ks_pass, 2):
+    if not patch_and_resign(apk_path, hash2, hash1, ks_path, ks_pass, 2, key_alias, key_pass):
         sys.exit(1)
 
-    # 验证
+    # 验证(SO 已含 hash2 编码,按 hash2 定位排除)
     with open(apk_path, 'rb') as f:
         final_data = f.read()
-    final_hash = compute_apk_protected_hash(final_data)
+    final_hash = compute_apk_protected_hash(final_data, hash2)
     print(f"\n最终 APK hash: {final_hash.hex()}")
     print(f"预埋 hash:     {hash2.hex()}")
 
     if final_hash == hash2:
         # 验证 .so 中包含 hash2
-        entries = find_so_entries_in_apk(final_data)
+        entries = find_so_entries_in_apk(final_data, hash2)
         all_ok = True
         for entry in entries:
             so_data = final_data[entry['file_data_offset']:entry['file_data_offset'] + entry['comp_size']]
@@ -572,6 +623,8 @@ def main():
         apk_path = sys.argv[2]
         ks_path = os.path.expanduser('~/.android/debug.keystore')
         ks_pass = 'android'
+        key_alias = None
+        key_pass = None
 
         i = 3
         while i < len(sys.argv):
@@ -581,10 +634,16 @@ def main():
             elif sys.argv[i] == '--ks-pass' and i + 1 < len(sys.argv):
                 ks_pass = sys.argv[i + 1]
                 i += 2
+            elif sys.argv[i] == '--key-alias' and i + 1 < len(sys.argv):
+                key_alias = sys.argv[i + 1]
+                i += 2
+            elif sys.argv[i] == '--key-pass' and i + 1 < len(sys.argv):
+                key_pass = sys.argv[i + 1]
+                i += 2
             else:
                 i += 1
 
-        patch_apk_inplace(apk_path, ks_path, ks_pass)
+        patch_apk_inplace(apk_path, ks_path, ks_pass, key_alias, key_pass)
 
     else:
         # .aar 模式(旧流程)

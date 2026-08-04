@@ -21,8 +21,24 @@ import android.util.Log
  * 详见 ADR 0088 §初始化流程
  */
 class DefenderInitProvider : ContentProvider() {
-
     override fun onCreate(): Boolean {
+        // 第一步(必须最先):加载 loader 并经 bootstrap 注册 XcjObfStr 字符串解密。
+        // Hikari 把本类所有字符串字面量替换成 XcjObfStr 调用,而 XcjObfStr 的 native
+        // 实现在 libxcj_loader.so、且只在 DefenderX0Test.bootstrap 被调用时注册
+        // (bootstrap 从 app 代码调用,ClassLoader 才是 app 的,FindClass 才可用)。
+        // 因此在任何字符串解密调用前,必须先 loadLibrary + bootstrap。
+        // 这两行匹配 java_obf.py 的 loadLibrary/bootstrap 跳过规则,不会被混淆。
+        try {
+            System.loadLibrary("xcj_loader")
+            val pc = context?.packageCodePath
+            if (pc != null) {
+                DefenderX0Test.bootstrap(pc)
+            }
+        } catch (e: Throwable) {
+            // loader/bootstrap 失败不阻断 APP 启动(defender 降级不生效)
+            return true
+        }
+
         val ctx = context ?: return false
         Log.i(TAG, "DefenderInitProvider onCreate: 开始初始化")
 
@@ -31,7 +47,7 @@ class DefenderInitProvider : ContentProvider() {
             val libName = readLibNameFromManifest(ctx)
             if (libName.isNullOrEmpty()) {
                 Log.w(TAG, "未找到 xcj.defender.lib Meta-data,跳过 defender 初始化")
-                return true  // 不阻断 APP 启动
+                return true // 不阻断 APP 启动
             }
 
             // 2. 加载 so
@@ -90,38 +106,44 @@ class DefenderInitProvider : ContentProvider() {
      * Packer 封装时写入:
      * <meta-data android:name="xcj.defender.lib" android:value="libsec_helper.so" />
      */
-    private fun readLibNameFromManifest(ctx: Context): String? {
-        return try {
-            val ai = ctx.packageManager.getApplicationInfo(
-                ctx.packageName,
-                android.content.pm.PackageManager.GET_META_DATA
-            )
+    private fun readLibNameFromManifest(ctx: Context): String? =
+        try {
+            val ai =
+                ctx.packageManager.getApplicationInfo(
+                    ctx.packageName,
+                    android.content.pm.PackageManager.GET_META_DATA,
+                )
             ai.metaData?.getString("xcj.defender.lib")
         } catch (e: Exception) {
             Log.w(TAG, "读取 Meta-data 失败: ${e.message}")
             null
         }
-    }
 
     /**
      * 读取 assets/defender-config.json
      */
-    private fun readConfig(ctx: Context): DefenderConfig {
-        return try {
-            val json = ctx.assets.open("defender-config.json").bufferedReader().use { it.readText() }
+    private fun readConfig(ctx: Context): DefenderConfig =
+        try {
+            val json =
+                ctx.assets
+                    .open("defender-config.json")
+                    .bufferedReader()
+                    .use { it.readText() }
             DefenderConfig.fromJson(json)
         } catch (e: Exception) {
             Log.w(TAG, "读取 defender-config.json 失败,使用默认配置: ${e.message}")
             DefenderConfig()
         }
-    }
 
     /**
      * Batch 2 模块:SignatureVerifier + AntiDebug + AntiFrida
      *
      * 按 config 启用状态执行,检测到风险按 onViolation 响应
      */
-    private fun runBatch2Modules(ctx: Context, config: DefenderConfig) {
+    private fun runBatch2Modules(
+        ctx: Context,
+        config: DefenderConfig,
+    ) {
         // AntiDebug(启动时 1 次)
         if (config.antiDebug.enabled) {
             Log.i(TAG, "[Batch 2] AntiDebug 检测中...")
@@ -153,13 +175,14 @@ class DefenderInitProvider : ContentProvider() {
             Log.i(TAG, "[Batch 2] SignatureVerifier 检测中...")
             val apkPath = ctx.packageCodePath
             val expectedSigHash = config.signatureExpectedHash.ifEmpty { null }
-            val sigResult = DefenderNative.verifySignature(
-                apkPath,
-                expectedSigHash,  // D 层:从 config 读(Packer 封装时写入)
-                null,             // B 层:APK 内容 hash(待服务端接口)
-                null,             // C 层:服务端签名 hash(待实现)
-                null,             // C 层:服务端 apk hash(待实现)
-            )
+            val sigResult =
+                DefenderNative.verifySignature(
+                    apkPath,
+                    expectedSigHash, // D 层:从 config 读(Packer 封装时写入)
+                    null, // B 层:APK 内容 hash(待服务端接口)
+                    null, // C 层:服务端签名 hash(待实现)
+                    null, // C 层:服务端 apk hash(待实现)
+                )
             if (sigResult != 0) {
                 Log.e(TAG, "[Batch 2] SignatureVerifier 校验失败!")
                 applyResponse(ctx, config.signatureVerify.onViolation, config, "signature_mismatch", "签名校验失败")
@@ -179,7 +202,10 @@ class DefenderInitProvider : ContentProvider() {
      * 方案 B:SO 自校验 + DEX CRC(对抗 MT IDA Pro 改 SO + 修改 DEX)
      * 方案 C:服务端 gate(守护线程周期性校验 + token)
      */
-    private fun runV211Validator(ctx: Context, config: DefenderConfig) {
+    private fun runV211Validator(
+        ctx: Context,
+        config: DefenderConfig,
+    ) {
         if (!config.signatureVerify.enabled) return
 
         Log.i(TAG, "[v2.1.1] 方案 A+B+C 综合校验启动...")
@@ -187,8 +213,12 @@ class DefenderInitProvider : ContentProvider() {
             val apkPath = ctx.packageCodePath
 
             // 综合校验(方案 A 签名 + 方案 B SO 自校验 + DEX CRC)
-            val dexCrcsJson = if (config.integrityCrcTable.isNotEmpty())
-                org.json.JSONArray(config.integrityCrcTable).toString() else null
+            val dexCrcsJson =
+                if (config.integrityCrcTable.isNotEmpty()) {
+                    org.json.JSONArray(config.integrityCrcTable).toString()
+                } else {
+                    null
+                }
             val result = DefenderNative.validatorCoreCheck(apkPath, dexCrcsJson)
             when (result) {
                 0 -> Log.i(TAG, "[v2.1.1] 综合校验通过")
@@ -208,10 +238,12 @@ class DefenderInitProvider : ContentProvider() {
                 Log.i(TAG, "[v2.1.1] 方案 C 服务端 gate 启动: ${config.serverUrl}")
                 Thread {
                     val pass = ServerGateClient.verify(config.serverUrl, config.appId, apkPath)
-                    if (!pass && ServerGateClient.lastVerdict != "SKIP"
-                        && ServerGateClient.lastVerdict != "NETWORK_ERROR"
-                        && ServerGateClient.lastVerdict != "HASH_EMPTY"
-                        && ServerGateClient.lastVerdict != "HASH_ERROR") {
+                    if (!pass &&
+                        ServerGateClient.lastVerdict != "SKIP" &&
+                        ServerGateClient.lastVerdict != "NETWORK_ERROR" &&
+                        ServerGateClient.lastVerdict != "HASH_EMPTY" &&
+                        ServerGateClient.lastVerdict != "HASH_ERROR"
+                    ) {
                         Log.e(TAG, "[v2.1.1] 方案 C 校验失败: ${ServerGateClient.lastVerdict}")
                         applyResponse(ctx, config.signatureVerify.onViolation, config, "server_gate_fail", "服务端完整性校验失败")
                     } else if (ServerGateClient.lastVerdict == "NETWORK_ERROR") {
@@ -229,7 +261,10 @@ class DefenderInitProvider : ContentProvider() {
     /**
      * Batch 3 模块:RootDetector + IntegrityChecker + AntiDump
      */
-    private fun runBatch3Modules(ctx: Context, config: DefenderConfig) {
+    private fun runBatch3Modules(
+        ctx: Context,
+        config: DefenderConfig,
+    ) {
         // RootDetector(启动时 1 次)
         if (config.rootDetect.enabled) {
             Log.i(TAG, "[Batch 3] RootDetector 检测中...")
@@ -296,7 +331,10 @@ class DefenderInitProvider : ContentProvider() {
      *
      * Java 层检测模块 + Native 响应策略(kill/warn)
      */
-    private fun runBatch4Modules(ctx: Context, config: DefenderConfig) {
+    private fun runBatch4Modules(
+        ctx: Context,
+        config: DefenderConfig,
+    ) {
         // XposedDetector(置信度评分,≥ killThreshold 触发响应)
         if (config.xposedDetect.enabled) {
             Log.i(TAG, "[Batch 4] XposedDetector 检测中...")
@@ -339,7 +377,10 @@ class DefenderInitProvider : ContentProvider() {
             Log.i(TAG, "[Batch 4] KeyAttestation 检测中...")
             val attestationScore = KeyAttestationDetector().detect()
             if (attestationScore >= config.keyAttestation.killThreshold) {
-                Log.e(TAG, "[Batch 4] KeyAttestation 高风险(分数 $attestationScore >= ${config.keyAttestation.killThreshold})")
+                Log.e(
+                    TAG,
+                    "[Batch 4] KeyAttestation 高风险(分数 $attestationScore >= ${config.keyAttestation.killThreshold})",
+                )
                 applyResponse(ctx, config.keyAttestation.onViolation, config, "key_attestation_failed", "设备完整性校验失败")
             } else if (attestationScore > 0) {
                 Log.w(TAG, "[Batch 4] KeyAttestation 可疑(分数 $attestationScore)")
@@ -352,13 +393,22 @@ class DefenderInitProvider : ContentProvider() {
         if (config.playIntegrity.enabled) {
             Log.i(TAG, "[Batch 4] PlayIntegrity 检测中...")
             try {
-                val nonce = java.util.UUID.randomUUID().toString()
+                val nonce =
+                    java.util.UUID
+                        .randomUUID()
+                        .toString()
                 when (val result = PlayIntegrityDetector(ctx).requestToken(nonce)) {
                     is PlayIntegrityDetector.PlayIntegrityResult.Success ->
                         Log.i(TAG, "[Batch 4] PlayIntegrity token 已获取(待后端验证 verdict)")
                     is PlayIntegrityDetector.PlayIntegrityResult.Failure -> {
                         Log.e(TAG, "[Batch 4] PlayIntegrity 失败: ${result.reason}")
-                        applyResponse(ctx, config.playIntegrity.onViolation, config, "play_integrity_failed", "Play Integrity 校验失败")
+                        applyResponse(
+                            ctx,
+                            config.playIntegrity.onViolation,
+                            config,
+                            "play_integrity_failed",
+                            "Play Integrity 校验失败",
+                        )
                     }
                 }
             } catch (e: Exception) {
@@ -380,13 +430,24 @@ class DefenderInitProvider : ContentProvider() {
         // 通用签名绕过检测(Java 层行为特征 + Native 层 maps/dl/fd 交叉验证)
         Log.i(TAG, "[Batch 4] 通用绕过检测中(Java+Native)...")
         val javaResult = PatchToolDetector.detect(ctx)
-        val nativeScore = try { DefenderNative.nativePatchDetect() } catch (_: Exception) { 0 }
+        val nativeScore =
+            try {
+                DefenderNative.nativePatchDetect()
+            } catch (_: Exception) {
+                0
+            }
         val totalScore = javaResult.score + nativeScore
 
         if (javaResult.detected || nativeScore >= 40 || totalScore >= 40) {
             Log.e(TAG, "[Batch 4] 检测到签名绕过行为! javaScore=${javaResult.score} nativeScore=$nativeScore")
             javaResult.details.forEach { Log.e(TAG, "[Batch 4]   [Java] $it") }
-            applyResponse(ctx, config.signatureVerify.onViolation, config, "patch_tool_detected", "检测到签名绕过行为(score=$totalScore)")
+            applyResponse(
+                ctx,
+                config.signatureVerify.onViolation,
+                config,
+                "patch_tool_detected",
+                "检测到签名绕过行为(score=$totalScore)",
+            )
         } else {
             Log.i(TAG, "[Batch 4] 通用绕过检测通过(score=$totalScore)")
         }
@@ -399,20 +460,27 @@ class DefenderInitProvider : ContentProvider() {
         projection: Array<String>?,
         selection: String?,
         selectionArgs: Array<String>?,
-        sortOrder: String?
+        sortOrder: String?,
     ): Cursor? = null
 
     override fun getType(uri: Uri): String? = null
 
-    override fun insert(uri: Uri, values: ContentValues?): Uri? = null
+    override fun insert(
+        uri: Uri,
+        values: ContentValues?,
+    ): Uri? = null
 
-    override fun delete(uri: Uri, selection: String?, selectionArgs: Array<String>?): Int = 0
+    override fun delete(
+        uri: Uri,
+        selection: String?,
+        selectionArgs: Array<String>?,
+    ): Int = 0
 
     override fun update(
         uri: Uri,
         values: ContentValues?,
         selection: String?,
-        selectionArgs: Array<String>?
+        selectionArgs: Array<String>?,
     ): Int = 0
 
     companion object {

@@ -24,11 +24,11 @@
  *  - AOSP source.android.com/security/apksigning/v2
  */
 
+#include <android/log.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdint.h>
-#include <android/log.h>
 
 #define DEFENDER_TAG "DefenderHashCalc"
 #include "defender_log.h"
@@ -40,15 +40,20 @@
 
 extern void defender_sha256(const unsigned char *data, size_t len, unsigned char *out);
 
+/* 方案 A:hash_storage.c 预埋哈希解码 */
+extern int get_embedded_hash(uint8_t out_hash[32]);
+
 /* ============= 小端读取辅助 ============= */
 
-static uint16_t hc_read_le16(const uint8_t *p) {
-    return (uint16_t)p[0] | ((uint16_t)p[1] << 8);
+static uint16_t hc_read_le16(const uint8_t *p)
+{
+    return (uint16_t) p[0] | ((uint16_t) p[1] << 8);
 }
 
-static uint32_t hc_read_le32(const uint8_t *p) {
-    return (uint32_t)p[0] | ((uint32_t)p[1] << 8) |
-           ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
+static uint32_t hc_read_le32(const uint8_t *p)
+{
+    return (uint32_t) p[0] | ((uint32_t) p[1] << 8) | ((uint32_t) p[2] << 16) |
+           ((uint32_t) p[3] << 24);
 }
 
 /* ============= .so 排除(解决 hash 鸡生蛋问题) ============= */
@@ -61,38 +66,76 @@ static uint32_t hc_read_le32(const uint8_t *p) {
  * 整体置零,使 hash 与 .so 内容无关。.so 自身完整性由方案 B(self_integrity)保护。
  */
 
-#define MAX_EXCLUDE_RANGES 8  /* 最多 4 个 ABI × 2(local + CD) */
+#define MAX_EXCLUDE_RANGES 8 /* 最多 4 个 ABI × 2(local + CD) */
 
 typedef struct {
-    size_t offset;  /* 在 APK 中的偏移 */
-    size_t size;    /* 大小 */
+    size_t offset; /* 在 APK 中的偏移 */
+    size_t size;   /* 大小 */
 } exclude_range;
+
+/**
+ * 判断 SO 条目数据是否含预埋哈希的全部 8 段 XOR 编码(随机 SO 名识别判据)
+ *
+ * 加固管线把 defender SO 重命名为随机名(lib<8hex>.so),按名字无法识别。
+ * post-build patch 后 SO 的 .data 内嵌 8 段编码值,与 Python patch 脚本
+ * 的 target_hash 判据一致:8 段全部命中才认定。
+ *
+ * @param so_data SO 条目原始数据(仅 stored 未压缩条目可扫)
+ * @param so_size 数据大小
+ * @return 1=是 defender SO / 0=否(含预埋为占位符的情况)
+ */
+static int hc_match_embedded_hash(const uint8_t *so_data, size_t so_size)
+{
+    uint8_t eh[32];
+    if (get_embedded_hash(eh) != 0)
+        return 0; /* 占位符未 patch,跳过 */
+    if (so_size < 4)
+        return 0;
+
+    for (int s = 0; s < 8; s++) {
+        uint32_t seg = (uint32_t) eh[s * 4] | ((uint32_t) eh[s * 4 + 1] << 8) |
+                       ((uint32_t) eh[s * 4 + 2] << 16) | ((uint32_t) eh[s * 4 + 3] << 24);
+        uint32_t enc = seg ^ 0x5A5A5A5A;
+        uint8_t pat[4] = {(uint8_t) (enc & 0xff), (uint8_t) ((enc >> 8) & 0xff),
+                          (uint8_t) ((enc >> 16) & 0xff), (uint8_t) ((enc >> 24) & 0xff)};
+        int found = 0;
+        for (size_t i = 0; i + 4 <= so_size; i++) {
+            if (memcmp(so_data + i, pat, 4) == 0) {
+                found = 1;
+                break;
+            }
+        }
+        if (!found)
+            return 0;
+    }
+    return 1;
+}
 
 /**
  * 在 Central Directory 中查找 defender .so 条目,
  * 返回需要排除的范围(local file entry + CD entry)
  */
-static int find_so_exclude_ranges(const uint8_t *data, size_t size,
-                                   size_t cd_offset, size_t cd_size,
-                                   exclude_range *ranges, int max_ranges) {
+static int find_so_exclude_ranges(const uint8_t *data, size_t size, size_t cd_offset,
+                                  size_t cd_size, exclude_range *ranges, int max_ranges)
+{
     int count = 0;
     size_t pos = cd_offset;
     size_t cd_end = cd_offset + cd_size;
 
     while (pos + 46 <= cd_end && count + 2 <= max_ranges) {
         /* Central Directory entry signature: 0x02014b50 */
-        if (data[pos] != 0x50 || data[pos + 1] != 0x4b ||
-            data[pos + 2] != 0x01 || data[pos + 3] != 0x02)
+        if (data[pos] != 0x50 || data[pos + 1] != 0x4b || data[pos + 2] != 0x01 ||
+            data[pos + 3] != 0x02)
             break;
 
-        uint16_t fn_len  = hc_read_le16(data + pos + 28);
-        uint16_t ef_len  = hc_read_le16(data + pos + 30);
-        uint16_t fc_len  = hc_read_le16(data + pos + 32);
-        uint32_t comp_size   = hc_read_le32(data + pos + 20);
+        uint16_t fn_len = hc_read_le16(data + pos + 28);
+        uint16_t ef_len = hc_read_le16(data + pos + 30);
+        uint16_t fc_len = hc_read_le16(data + pos + 32);
+        uint32_t comp_size = hc_read_le32(data + pos + 20);
         uint32_t local_offset = hc_read_le32(data + pos + 42);
 
         if (fn_len > 0 && pos + 46 + fn_len <= cd_end) {
-            const char *fn = (const char *)(data + pos + 46);
+            const char *fn = (const char *) (data + pos + 46);
             /* 匹配 lib/<abi>/libxcj_defender.so */
             int is_defender = (fn_len >= 4 && strncmp(fn, "lib/", 4) == 0);
             if (is_defender) {
@@ -106,9 +149,24 @@ static int find_so_exclude_ranges(const uint8_t *data, size_t size,
                     }
                 }
             }
+            /* 随机 SO 名回退:名字未命中时,按预埋哈希 XOR 编码内容定位自身 SO。
+             * 仅 stored(comp_size == uncomp_size)条目可直接扫原始数据;
+             * 两条加固管线(backend / harden-local.sh)均以 zip -0 注入 SO。 */
+            if (!is_defender && fn_len >= 7 && strncmp(fn, "lib/", 4) == 0 &&
+                strncmp(fn + fn_len - 3, ".so", 3) == 0) {
+                uint32_t uncomp_size = hc_read_le32(data + pos + 24);
+                if (comp_size > 0 && comp_size == uncomp_size && local_offset + 30 <= size &&
+                    local_offset < cd_offset) {
+                    uint16_t lfn_len = hc_read_le16(data + local_offset + 26);
+                    uint16_t lef_len = hc_read_le16(data + local_offset + 28);
+                    size_t fdo = (size_t) local_offset + 30 + lfn_len + lef_len;
+                    if (fdo + comp_size <= size && hc_match_embedded_hash(data + fdo, comp_size)) {
+                        is_defender = 1;
+                    }
+                }
+            }
             /* X0:外壳加密后藏于 assets/xcj_payload.bin,排除它(等价于排除 defender .so) */
-            int is_payload = (fn_len == 22 &&
-                              strncmp(fn, "assets/xcj_payload.bin", 22) == 0);
+            int is_payload = (fn_len == 22 && strncmp(fn, "assets/xcj_payload.bin", 22) == 0);
 
             if (is_defender || is_payload) {
                 /* CD entry 范围 */
@@ -139,7 +197,8 @@ static int find_so_exclude_ranges(const uint8_t *data, size_t size,
  * 将排除范围在缓冲区中置零
  */
 static void apply_exclusions(uint8_t *buf, size_t buf_offset, size_t buf_size,
-                              const exclude_range *ranges, int range_count) {
+                             const exclude_range *ranges, int range_count)
+{
     for (int i = 0; i < range_count; i++) {
         size_t r_start = ranges[i].offset;
         size_t r_end = r_start + ranges[i].size;
@@ -170,10 +229,9 @@ static void apply_exclusions(uint8_t *buf, size_t buf_offset, size_t buf_size,
  * @param out_digest 输出:32 字节 SHA-256
  * @return 0=成功 / -1=失败
  */
-static int compute_segment_digest(const uint8_t *data,
-                                  size_t segment_offset, size_t segment_size,
-                                  long patch_offset, uint32_t patch_value,
-                                  uint8_t out_digest[32]) {
+static int compute_segment_digest(const uint8_t *data, size_t segment_offset, size_t segment_size,
+                                  long patch_offset, uint32_t patch_value, uint8_t out_digest[32])
+{
     if (segment_size == 0) {
         /* 空区段:chunk_count=0 */
         uint8_t header[5] = {0x5a, 0x00, 0x00, 0x00, 0x00};
@@ -190,14 +248,15 @@ static int compute_segment_digest(const uint8_t *data,
 
     /* 拼接所有块 digest:0x5a + chunk_count(LE32) + digests */
     size_t buf_size = 5 + chunk_count * 32;
-    uint8_t *buf = (uint8_t *)malloc(buf_size);
-    if (!buf) return -1;
+    uint8_t *buf = (uint8_t *) malloc(buf_size);
+    if (!buf)
+        return -1;
 
     buf[0] = 0x5a;
-    buf[1] = (uint8_t)(chunk_count & 0xff);
-    buf[2] = (uint8_t)((chunk_count >> 8) & 0xff);
-    buf[3] = (uint8_t)((chunk_count >> 16) & 0xff);
-    buf[4] = (uint8_t)((chunk_count >> 24) & 0xff);
+    buf[1] = (uint8_t) (chunk_count & 0xff);
+    buf[2] = (uint8_t) ((chunk_count >> 8) & 0xff);
+    buf[3] = (uint8_t) ((chunk_count >> 16) & 0xff);
+    buf[4] = (uint8_t) ((chunk_count >> 24) & 0xff);
 
     /* 逐块计算 */
     size_t pos = segment_offset;
@@ -208,27 +267,30 @@ static int compute_segment_digest(const uint8_t *data,
 
         /* 块 digest = SHA-256(0xa5 + chunk_len(LE32) + chunk_contents) */
         size_t chunk_buf_size = 5 + chunk_len;
-        uint8_t *chunk_buf = (uint8_t *)malloc(chunk_buf_size);
-        if (!chunk_buf) { free(buf); return -1; }
+        uint8_t *chunk_buf = (uint8_t *) malloc(chunk_buf_size);
+        if (!chunk_buf) {
+            free(buf);
+            return -1;
+        }
 
         chunk_buf[0] = 0xa5;
-        chunk_buf[1] = (uint8_t)(chunk_len & 0xff);
-        chunk_buf[2] = (uint8_t)((chunk_len >> 8) & 0xff);
-        chunk_buf[3] = (uint8_t)((chunk_len >> 16) & 0xff);
-        chunk_buf[4] = (uint8_t)((chunk_len >> 24) & 0xff);
+        chunk_buf[1] = (uint8_t) (chunk_len & 0xff);
+        chunk_buf[2] = (uint8_t) ((chunk_len >> 8) & 0xff);
+        chunk_buf[3] = (uint8_t) ((chunk_len >> 16) & 0xff);
+        chunk_buf[4] = (uint8_t) ((chunk_len >> 24) & 0xff);
 
         /* 复制块内容,处理 EOCD 偏移替换 */
         memcpy(chunk_buf + 5, data + pos, chunk_len);
 
         /* 如果 patch_offset 在当前块内,替换 4 字节 */
         long abs_patch = patch_offset;
-        if (abs_patch >= 0 && abs_patch >= (long)pos &&
-            abs_patch + 4 <= (long)(pos + chunk_len)) {
-            size_t patch_in_chunk = (size_t)(abs_patch - (long)pos);
-            chunk_buf[5 + patch_in_chunk] = (uint8_t)(patch_value & 0xff);
-            chunk_buf[5 + patch_in_chunk + 1] = (uint8_t)((patch_value >> 8) & 0xff);
-            chunk_buf[5 + patch_in_chunk + 2] = (uint8_t)((patch_value >> 16) & 0xff);
-            chunk_buf[5 + patch_in_chunk + 3] = (uint8_t)((patch_value >> 24) & 0xff);
+        if (abs_patch >= 0 && abs_patch >= (long) pos &&
+            abs_patch + 4 <= (long) (pos + chunk_len)) {
+            size_t patch_in_chunk = (size_t) (abs_patch - (long) pos);
+            chunk_buf[5 + patch_in_chunk] = (uint8_t) (patch_value & 0xff);
+            chunk_buf[5 + patch_in_chunk + 1] = (uint8_t) ((patch_value >> 8) & 0xff);
+            chunk_buf[5 + patch_in_chunk + 2] = (uint8_t) ((patch_value >> 16) & 0xff);
+            chunk_buf[5 + patch_in_chunk + 3] = (uint8_t) ((patch_value >> 24) & 0xff);
         }
 
         defender_sha256(chunk_buf, chunk_buf_size, buf + 5 + i * 32);
@@ -258,15 +320,14 @@ static int compute_segment_digest(const uint8_t *data,
  * @param out_hash 输出:32 字节 SHA-256(区段1 || 区段3 || 区段4 的 digest 拼接后 SHA-256)
  * @return 0=成功 / -1=失败
  */
-int compute_apk_protected_hash(const uint8_t *data, size_t size,
-                               size_t block_start, size_t block_size,
-                               uint8_t out_hash[32]) {
+int compute_apk_protected_hash(const uint8_t *data, size_t size, size_t block_start,
+                               size_t block_size, uint8_t out_hash[32])
+{
     /* 定位 EOCD */
     long eocd = -1;
     for (size_t i = size - 22; i > 0; i--) {
-        if (data[i] == 0x50 && data[i + 1] == 0x4b &&
-            data[i + 2] == 0x05 && data[i + 3] == 0x06) {
-            eocd = (long)i;
+        if (data[i] == 0x50 && data[i + 1] == 0x4b && data[i + 2] == 0x05 && data[i + 3] == 0x06) {
+            eocd = (long) i;
             break;
         }
     }
@@ -281,24 +342,24 @@ int compute_apk_protected_hash(const uint8_t *data, size_t size,
 
     /* 区段 3:block_start + block_size 到 eocd */
     size_t seg3_offset = block_start + block_size;
-    size_t seg3_size = (size_t)eocd - seg3_offset;
+    size_t seg3_size = (size_t) eocd - seg3_offset;
 
     /* 区段 4:eocd 到 size */
-    size_t seg4_offset = (size_t)eocd;
-    size_t seg4_size = size - (size_t)eocd;
+    size_t seg4_offset = (size_t) eocd;
+    size_t seg4_size = size - (size_t) eocd;
 
     /* EOCD 偏移替换:EOCD + 16 的 4 字节替换为 block_start */
     long patch_offset = eocd + 16;
-    uint32_t patch_value = (uint32_t)block_start;
+    uint32_t patch_value = (uint32_t) block_start;
 
-    LOGI("哈希区段: seg1=[0,%zu) seg3=[%zu,%zu) seg4=[%zu,%zu) patch@%ld=%u",
-         seg1_size, seg3_offset, seg3_offset + seg3_size,
-         seg4_offset, seg4_offset + seg4_size, patch_offset, patch_value);
+    LOGI("哈希区段: seg1=[0,%zu) seg3=[%zu,%zu) seg4=[%zu,%zu) patch@%ld=%u", seg1_size,
+         seg3_offset, seg3_offset + seg3_size, seg4_offset, seg4_offset + seg4_size, patch_offset,
+         patch_value);
 
     /* 查找 defender .so 排除范围(解决鸡生蛋问题) */
     exclude_range ranges[MAX_EXCLUDE_RANGES];
-    int range_count = find_so_exclude_ranges(data, size, seg3_offset, seg3_size,
-                                              ranges, MAX_EXCLUDE_RANGES);
+    int range_count =
+        find_so_exclude_ranges(data, size, seg3_offset, seg3_size, ranges, MAX_EXCLUDE_RANGES);
     if (range_count > 0) {
         LOGI("排除 defender .so 条目: %d 个范围", range_count);
     }
@@ -308,16 +369,21 @@ int compute_apk_protected_hash(const uint8_t *data, size_t size,
 
     /* 区段 1:复制并置零 .so local file entry */
     if (range_count > 0 && seg1_size > 0) {
-        uint8_t *seg1_copy = (uint8_t *)malloc(seg1_size);
-        if (!seg1_copy) { LOGE("区段 1 内存分配失败"); return -1; }
+        uint8_t *seg1_copy = (uint8_t *) malloc(seg1_size);
+        if (!seg1_copy) {
+            LOGE("区段 1 内存分配失败");
+            return -1;
+        }
         memcpy(seg1_copy, data, seg1_size);
         apply_exclusions(seg1_copy, seg1_offset, seg1_size, ranges, range_count);
         int r = compute_segment_digest(seg1_copy, 0, seg1_size, -1, 0, digest1);
         free(seg1_copy);
-        if (r != 0) { LOGE("区段 1 哈希失败"); return -1; }
+        if (r != 0) {
+            LOGE("区段 1 哈希失败");
+            return -1;
+        }
     } else {
-        if (compute_segment_digest(data, seg1_offset, seg1_size,
-                                   -1, 0, digest1) != 0) {
+        if (compute_segment_digest(data, seg1_offset, seg1_size, -1, 0, digest1) != 0) {
             LOGE("区段 1 哈希失败");
             return -1;
         }
@@ -325,24 +391,29 @@ int compute_apk_protected_hash(const uint8_t *data, size_t size,
 
     /* 区段 3:复制并置零 .so CD entry */
     if (range_count > 0 && seg3_size > 0) {
-        uint8_t *seg3_copy = (uint8_t *)malloc(seg3_size);
-        if (!seg3_copy) { LOGE("区段 3 内存分配失败"); return -1; }
+        uint8_t *seg3_copy = (uint8_t *) malloc(seg3_size);
+        if (!seg3_copy) {
+            LOGE("区段 3 内存分配失败");
+            return -1;
+        }
         memcpy(seg3_copy, data + seg3_offset, seg3_size);
         apply_exclusions(seg3_copy, seg3_offset, seg3_size, ranges, range_count);
         int r = compute_segment_digest(seg3_copy, 0, seg3_size, -1, 0, digest3);
         free(seg3_copy);
-        if (r != 0) { LOGE("区段 3 哈希失败"); return -1; }
+        if (r != 0) {
+            LOGE("区段 3 哈希失败");
+            return -1;
+        }
     } else {
-        if (compute_segment_digest(data, seg3_offset, seg3_size,
-                                   -1, 0, digest3) != 0) {
+        if (compute_segment_digest(data, seg3_offset, seg3_size, -1, 0, digest3) != 0) {
             LOGE("区段 3 哈希失败");
             return -1;
         }
     }
 
     /* 区段 4:EOCD(无 .so 数据,不需排除) */
-    if (compute_segment_digest(data, seg4_offset, seg4_size,
-                               patch_offset, patch_value, digest4) != 0) {
+    if (compute_segment_digest(data, seg4_offset, seg4_size, patch_offset, patch_value, digest4) !=
+        0) {
         LOGE("区段 4 哈希失败");
         return -1;
     }
@@ -356,7 +427,8 @@ int compute_apk_protected_hash(const uint8_t *data, size_t size,
 
     /* 转 hex 打印 */
     char hex[65];
-    for (int i = 0; i < 32; i++) sprintf(hex + i * 2, "%02x", out_hash[i]);
+    for (int i = 0; i < 32; i++)
+        sprintf(hex + i * 2, "%02x", out_hash[i]);
     hex[64] = '\0';
     LOGI("APK 受保护内容 hash: %s", hex);
     return 0;

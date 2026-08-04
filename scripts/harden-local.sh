@@ -94,12 +94,19 @@ cp "$SDK/classes.dex" "classes$NEXT.dex"
 echo "    注入 classes$NEXT.dex"
 
 # SO(两 ABI,-0 存储保持对齐)
+#  - defender SO → 随机名(Manifest meta-data xcj.defender.lib 指向它,DefenderNative.load 加载)
+#  - loader  SO → 固定名 libxcj_loader.so(System.loadLibrary("xcj_loader") 需要,提供 XcjObfStr)
 for ABI in arm64-v8a armeabi-v7a; do
+  mkdir -p "lib/$ABI"
   if [ -f "$SDK/lib/$ABI/libxcj_defender.so" ]; then
-    mkdir -p "lib/$ABI"
     cp "$SDK/lib/$ABI/libxcj_defender.so" "lib/$ABI/$SO_NAME"
     "$ZIP" -0 work.apk "lib/$ABI/$SO_NAME" >/dev/null
-    echo "    注入 lib/$ABI/$SO_NAME"
+    echo "    注入 lib/$ABI/$SO_NAME (defender,随机名)"
+  fi
+  if [ -f "$SDK/lib/$ABI/libxcj_loader.so" ]; then
+    cp "$SDK/lib/$ABI/libxcj_loader.so" "lib/$ABI/libxcj_loader.so"
+    "$ZIP" -0 work.apk "lib/$ABI/libxcj_loader.so" >/dev/null
+    echo "    注入 lib/$ABI/libxcj_loader.so (loader,固定名)"
   fi
 done
 
