@@ -2,7 +2,8 @@
 # 本地加固脚本 —— 镜像后端 hardening.service 管线,在 Windows 本地产出可安装加固 APK。
 # 后端用 execFile 驱动工具,但 Windows 下 execFile 跑不了 jar(apktool/apksigner),
 # 故本脚本用 shell 直接调 java -jar / .exe,步骤与后端管线一致:
-#   strip 签名 → apktool d(--no-src) → 改 Manifest → apktool b → 注入 config/dex/so → zipalign → apksigner 重签
+#   strip 签名 → apktool d(--no-src) → 改 Manifest → apktool b → 注入 config/dex/so
+#   → T4 字符串加密 → zipalign → apksigner 重签
 set -euo pipefail
 
 # ===== 参数 =====
@@ -109,6 +110,20 @@ for ABI in arm64-v8a armeabi-v7a; do
     echo "    注入 lib/$ABI/libxcj_loader.so (loader,固定名)"
   fi
 done
+
+echo "==> [5.5] T4 DEX 字符串加密(业务代码 const-string → native 解密调用)"
+INJECTOR_JAR="$ROOT/injector/build/install/xcj-injector/lib/xcj-injector-all.jar"
+T4_KEY_HEADER="$ROOT/sdk-android/defender-sdk/src/main/cpp/t4_str_key.h"
+if [ ! -f "$INJECTOR_JAR" ]; then
+  echo "    !! injector jar 不存在,先跑: cd injector && ./gradlew installDist"
+  exit 1
+fi
+# 密钥取自 t4_str_key.h(与预编译 defender SO 内的 T4_XOR_KEY 一致,运行时才能解密)
+T4_KEY_HEX=$(grep -oE '0x[0-9a-fA-F]{2}' "$T4_KEY_HEADER" | sed 's/0x//' | tr -d '\n')
+java -jar "$INJECTOR_JAR" encrypt-strings \
+  --apk work.apk --output work-t4.apk \
+  --key-hex "$T4_KEY_HEX" --key-header "$WORK/t4_key.h" 2>&1 | grep -E "注入|完成|保留" || true
+mv work-t4.apk work.apk
 
 echo "==> [6] zipalign -p -f 4"
 "$ZIPALIGN" -p -f 4 work.apk aligned.apk

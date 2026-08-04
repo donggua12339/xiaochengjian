@@ -1,13 +1,11 @@
 package com.xcj.injector.dexstring
 
-import com.android.tools.smali.dexlib2.DexFileFactory
+import com.android.tools.smali.dexlib2.AccessFlags
 import com.android.tools.smali.dexlib2.Opcode
-import com.android.tools.smali.dexlib2.Opcodes
 import com.android.tools.smali.dexlib2.dexbacked.DexBackedDexFile
 import com.android.tools.smali.dexlib2.iface.instruction.formats.Instruction21c
+import com.android.tools.smali.dexlib2.iface.reference.StringReference
 import com.android.tools.smali.dexlib2.immutable.ImmutableClassDef
-import com.android.tools.smali.dexlib2.immutable.ImmutableDexFile
-import com.android.tools.smali.dexlib2.AccessFlags
 import com.android.tools.smali.dexlib2.immutable.ImmutableField
 import com.android.tools.smali.dexlib2.immutable.ImmutableMethod
 import com.android.tools.smali.dexlib2.immutable.ImmutableMethodImplementation
@@ -20,13 +18,11 @@ import com.android.tools.smali.dexlib2.immutable.instruction.ImmutableInstructio
 import com.android.tools.smali.dexlib2.immutable.instruction.ImmutableInstruction23x
 import com.android.tools.smali.dexlib2.immutable.instruction.ImmutableInstruction35c
 import com.android.tools.smali.dexlib2.immutable.instruction.ImmutableInstruction3rc
-import com.android.tools.smali.dexlib2.iface.reference.StringReference
 import com.android.tools.smali.dexlib2.immutable.reference.ImmutableFieldReference
 import com.android.tools.smali.dexlib2.immutable.reference.ImmutableMethodReference
 import com.android.tools.smali.dexlib2.immutable.reference.ImmutableStringReference
 import com.android.tools.smali.dexlib2.immutable.reference.ImmutableTypeReference
 import org.slf4j.LoggerFactory
-import java.io.File
 import java.security.SecureRandom
 
 /**
@@ -43,8 +39,9 @@ import java.security.SecureRandom
  *
  * 安全性:加密数据在 DEX(可见但密文),密钥在 native .so(受 X0 保护)。
  */
-class DexStringEncryptor(private val xorKey: ByteArray) {
-
+class DexStringEncryptor(
+    private val xorKey: ByteArray,
+) {
     private val logger = LoggerFactory.getLogger(DexStringEncryptor::class.java)
 
     /** 加密后的字符串表: index → XOR(UTF-8 bytes) */
@@ -66,15 +63,29 @@ class DexStringEncryptor(private val xorKey: ByteArray) {
     }
 
     /**
-     * 处理单个 DEX 文件,返回修改后的 ClassDef 列表。
+     * 单个 DEX 的处理结果。
+     * @param classes 改写后的类列表(不含 XcjEncStringTable)
+     * @param modified 本 dex 是否有字符串被加密
      */
-    fun processDex(dexFile: DexBackedDexFile): List<com.android.tools.smali.dexlib2.iface.ClassDef> {
+    data class ProcessResult(
+        val classes: List<com.android.tools.smali.dexlib2.iface.ClassDef>,
+        val modified: Boolean,
+    )
+
+    /**
+     * 处理单个 DEX 文件。
+     *
+     * 注意:不注入 XcjEncStringTable——表含全部 dex 累计的字符串,
+     * 由调用方在处理完所有 dex 后注入最后一个被修改的 dex(避免漏条目/重复类)。
+     */
+    fun processDex(dexFile: DexBackedDexFile): ProcessResult {
         val resultClasses = mutableListOf<com.android.tools.smali.dexlib2.iface.ClassDef>()
+        var dexModified = false
 
         for (classDef in dexFile.classes) {
             // 跳过 SDK 自身的类(不加密 SDK 内部字符串)
             if (classDef.type.startsWith("Lcom/xcj/defender/")) {
-                resultClasses.add(classDef)  // 保留原始 DexBackedClassDef
+                resultClasses.add(classDef) // 保留原始 DexBackedClassDef
                 continue
             }
 
@@ -85,7 +96,7 @@ class DexStringEncryptor(private val xorKey: ByteArray) {
             for (method in classDef.methods) {
                 val impl = method.implementation
                 if (impl == null) {
-                    modifiedMethods.add(method)  // 抽象方法,保留原始
+                    modifiedMethods.add(method) // 抽象方法,保留原始
                     continue
                 }
 
@@ -108,23 +119,26 @@ class DexStringEncryptor(private val xorKey: ByteArray) {
                         val register = instr21c.registerA
 
                         newInstructions.add(
-                            ImmutableInstruction21s(Opcode.CONST_16, register, index)
+                            ImmutableInstruction21s(Opcode.CONST_16, register, index),
                         )
-                        val methodRef = ImmutableMethodReference(
-                            DECRYPTOR_CLASS, DECRYPTOR_METHOD,
-                            listOf("I"), "Ljava/lang/String;"
-                        )
+                        val methodRef =
+                            ImmutableMethodReference(
+                                DECRYPTOR_CLASS,
+                                DECRYPTOR_METHOD,
+                                listOf("I"),
+                                "Ljava/lang/String;",
+                            )
                         if (register <= 15) {
                             newInstructions.add(
-                                ImmutableInstruction35c(Opcode.INVOKE_STATIC, 1, register, 0, 0, 0, 0, methodRef)
+                                ImmutableInstruction35c(Opcode.INVOKE_STATIC, 1, register, 0, 0, 0, 0, methodRef),
                             )
                         } else {
                             newInstructions.add(
-                                ImmutableInstruction3rc(Opcode.INVOKE_STATIC_RANGE, register, 1, methodRef)
+                                ImmutableInstruction3rc(Opcode.INVOKE_STATIC_RANGE, register, 1, methodRef),
                             )
                         }
                         newInstructions.add(
-                            ImmutableInstruction11x(Opcode.MOVE_RESULT_OBJECT, register)
+                            ImmutableInstruction11x(Opcode.MOVE_RESULT_OBJECT, register),
                         )
                         methodModified = true
                     } else {
@@ -135,47 +149,59 @@ class DexStringEncryptor(private val xorKey: ByteArray) {
                 if (methodModified) {
                     classModified = true
                     // 修改了的方法: 保留原始 debugItems 和 parameters(让 DexPool 正确重映射)
-                    val newImpl = com.android.tools.smali.dexlib2.immutable.ImmutableMethodImplementation(
-                        impl.registerCount, newInstructions, impl.tryBlocks, impl.debugItems
-                    )
+                    val newImpl =
+                        com.android.tools.smali.dexlib2.immutable.ImmutableMethodImplementation(
+                            impl.registerCount,
+                            newInstructions,
+                            impl.tryBlocks,
+                            impl.debugItems,
+                        )
                     modifiedMethods.add(
                         com.android.tools.smali.dexlib2.immutable.ImmutableMethod(
-                            classDef.type, method.name,
+                            classDef.type,
+                            method.name,
                             method.parameters.map { p ->
                                 com.android.tools.smali.dexlib2.immutable.ImmutableMethodParameter(
-                                    p.type, p.annotations, p.name
+                                    p.type,
+                                    p.annotations,
+                                    p.name,
                                 )
                             },
-                            method.returnType, method.accessFlags,
-                            method.annotations, method.hiddenApiRestrictions, newImpl
-                        )
+                            method.returnType,
+                            method.accessFlags,
+                            method.annotations,
+                            method.hiddenApiRestrictions,
+                            newImpl,
+                        ),
                     )
                 } else {
-                    modifiedMethods.add(method)  // 未修改的方法: 保留原始引用
+                    modifiedMethods.add(method) // 未修改的方法: 保留原始引用
                 }
             }
 
             if (classModified) {
+                dexModified = true
                 resultClasses.add(
                     ImmutableClassDef(
-                        classDef.type, classDef.accessFlags,
-                        classDef.superclass, classDef.interfaces,
-                        classDef.sourceFile, classDef.annotations,
-                        classDef.fields.map { com.android.tools.smali.dexlib2.immutable.ImmutableField.of(it) },
-                        modifiedMethods
-                    )
+                        classDef.type,
+                        classDef.accessFlags,
+                        classDef.superclass,
+                        classDef.interfaces,
+                        classDef.sourceFile,
+                        classDef.annotations,
+                        classDef.fields.map {
+                            com.android.tools.smali.dexlib2.immutable.ImmutableField
+                                .of(it)
+                        },
+                        modifiedMethods,
+                    ),
                 )
             } else {
-                resultClasses.add(classDef)  // 未修改的 class: 保留原始 DexBackedClassDef
+                resultClasses.add(classDef) // 未修改的 class: 保留原始 DexBackedClassDef
             }
         }
 
-        // 注入 XcjEncStringTable 类(持有加密数据表)
-        if (encryptedTable.isNotEmpty()) {
-            resultClasses.add(buildEncStringTableClassDef())
-        }
-
-        return resultClasses
+        return ProcessResult(resultClasses, dexModified)
     }
 
     /**
@@ -208,33 +234,60 @@ class DexStringEncryptor(private val xorKey: ByteArray) {
      * 用 dexlib2 API 构建 XcjEncStringTable 类(加密数据表)。
      * 使用 const-string + String.getBytes("ISO-8859-1") 方式存储加密字节,
      * 避免 fill-array-data 的 ArrayPayload 构建复杂度。
+     *
+     * 由调用方在处理完所有 dex 后,把返回的类追加进最后一个被修改的 dex。
      */
-    private fun buildEncStringTableClassDef(): ImmutableClassDef {
-        val TYPE = "Lcom/xcj/defender/XcjEncStringTable;"
+    fun buildEncStringTableClassDef(): ImmutableClassDef {
+        val typeDescriptor = "Lcom/xcj/defender/XcjEncStringTable;"
         val instructions = mutableListOf<ImmutableInstruction>()
 
         // v3 = "ISO-8859-1" (charset name, 复用)
-        instructions.add(ImmutableInstruction21c(
-            Opcode.CONST_STRING, 3, ImmutableStringReference("ISO-8859-1")
-        ))
+        instructions.add(
+            ImmutableInstruction21c(
+                Opcode.CONST_STRING,
+                3,
+                ImmutableStringReference("ISO-8859-1"),
+            ),
+        )
         // v0 = new Object[table_size][]
         instructions.add(ImmutableInstruction21s(Opcode.CONST_16, 0, encryptedTable.size))
-        instructions.add(ImmutableInstruction22c(
-            Opcode.NEW_ARRAY, 0, 0, ImmutableTypeReference("[[B")
-        ))
+        instructions.add(
+            ImmutableInstruction22c(
+                Opcode.NEW_ARRAY,
+                0,
+                0,
+                ImmutableTypeReference("[[B"),
+            ),
+        )
 
         for ((index, bytes) in encryptedTable) {
             // v2 = const-string "<ISO-8859-1 encoded encrypted bytes>"
             val isoStr = String(bytes, Charsets.ISO_8859_1)
-            instructions.add(ImmutableInstruction21c(
-                Opcode.CONST_STRING, 2, ImmutableStringReference(isoStr)
-            ))
+            instructions.add(
+                ImmutableInstruction21c(
+                    Opcode.CONST_STRING,
+                    2,
+                    ImmutableStringReference(isoStr),
+                ),
+            )
             // v2 = v2.getBytes("ISO-8859-1")
-            instructions.add(ImmutableInstruction35c(
-                Opcode.INVOKE_VIRTUAL, 2, 2, 3, 0, 0, 0,
-                ImmutableMethodReference("Ljava/lang/String;", "getBytes",
-                    listOf("Ljava/lang/String;"), "[B")
-            ))
+            instructions.add(
+                ImmutableInstruction35c(
+                    Opcode.INVOKE_VIRTUAL,
+                    2,
+                    2,
+                    3,
+                    0,
+                    0,
+                    0,
+                    ImmutableMethodReference(
+                        "Ljava/lang/String;",
+                        "getBytes",
+                        listOf("Ljava/lang/String;"),
+                        "[B",
+                    ),
+                ),
+            )
             instructions.add(ImmutableInstruction11x(Opcode.MOVE_RESULT_OBJECT, 2))
             // DATA[index] = v2
             instructions.add(ImmutableInstruction21s(Opcode.CONST_16, 1, index))
@@ -242,29 +295,47 @@ class DexStringEncryptor(private val xorKey: ByteArray) {
         }
 
         // XcjEncStringTable.DATA = v0
-        instructions.add(ImmutableInstruction21c(
-            Opcode.SPUT_OBJECT, 0,
-            ImmutableFieldReference(TYPE, "DATA", "[[B")
-        ))
+        instructions.add(
+            ImmutableInstruction21c(
+                Opcode.SPUT_OBJECT,
+                0,
+                ImmutableFieldReference(typeDescriptor, "DATA", "[[B"),
+            ),
+        )
         instructions.add(ImmutableInstruction10x(Opcode.RETURN_VOID))
 
         val methodImpl = ImmutableMethodImplementation(4, instructions, null, null)
-        val clinit = ImmutableMethod(
-            TYPE, "<clinit>", emptyList(), "V",
-            AccessFlags.STATIC.value or AccessFlags.CONSTRUCTOR.value,
-            null, null, methodImpl
-        )
-        val dataField = ImmutableField(
-            TYPE, "DATA", "[[B",
-            AccessFlags.PUBLIC.value or AccessFlags.STATIC.value,
-            null as com.android.tools.smali.dexlib2.iface.value.EncodedValue?,
-            emptySet<com.android.tools.smali.dexlib2.iface.Annotation>(),
-            null
-        )
+        val clinit =
+            ImmutableMethod(
+                typeDescriptor,
+                "<clinit>",
+                emptyList(),
+                "V",
+                AccessFlags.STATIC.value or AccessFlags.CONSTRUCTOR.value,
+                null,
+                null,
+                methodImpl,
+            )
+        val dataField =
+            ImmutableField(
+                typeDescriptor,
+                "DATA",
+                "[[B",
+                AccessFlags.PUBLIC.value or AccessFlags.STATIC.value,
+                null as com.android.tools.smali.dexlib2.iface.value.EncodedValue?,
+                emptySet<com.android.tools.smali.dexlib2.iface.Annotation>(),
+                null,
+            )
 
         return ImmutableClassDef(
-            TYPE, AccessFlags.PUBLIC.value, "Ljava/lang/Object;",
-            null, null, null, listOf(dataField), listOf(clinit)
+            typeDescriptor,
+            AccessFlags.PUBLIC.value,
+            "Ljava/lang/Object;",
+            null,
+            null,
+            null,
+            listOf(dataField),
+            listOf(clinit),
         )
     }
 

@@ -32,14 +32,24 @@ class EncryptStringsCommand :
     private val apkPath by option("--apk", help = "输入 APK 路径").required()
     private val outputPath by option("--output", help = "输出 APK 路径").required()
     private val keyOutput by option("--key-header", help = "密钥头文件输出路径(默认 t4_str_key.h)")
+    private val keyHex by option(
+        "--key-hex",
+        help = "使用指定的 16 字节 hex 密钥(管线复用预编译 SO 的密钥);缺省随机生成",
+    )
 
     private val logger = LoggerFactory.getLogger(EncryptStringsCommand::class.java)
+
+    /** 单个 dex 的处理中间结果 */
+    private class DexWork(
+        val opcodes: Opcodes,
+        val classes: MutableList<com.android.tools.smali.dexlib2.iface.ClassDef>,
+    )
 
     override fun run() {
         val apkFile = File(apkPath)
         require(apkFile.exists()) { "APK 不存在: $apkPath" }
 
-        val key = DexStringEncryptor.generateKey()
+        val key = keyHex?.let { parseKeyHex(it) } ?: DexStringEncryptor.generateKey()
         val encryptor = DexStringEncryptor(key)
 
         logger.info("T4 DEX 字符串加密开始: $apkPath")
@@ -47,22 +57,59 @@ class EncryptStringsCommand :
         val outFile = File(outputPath)
         val keyHeaderPath = keyOutput ?: "t4_str_key.h"
 
+        /* Pass 1: 处理全部 dex,记录被修改的(表类含全部 dex 累计的字符串,
+         * 必须在所有 dex 处理完后才能注入,否则漏掉后续 dex 的条目) */
+        val dexWorks = LinkedHashMap<String, DexWork>()
+        ZipFile(apkFile).use { zip ->
+            val entries = zip.entries()
+            while (entries.hasMoreElements()) {
+                val entry = entries.nextElement()
+                if (!entry.name.matches(Regex("classes\\d*\\.dex"))) continue
+                val data = zip.getInputStream(entry).readBytes()
+                logger.info("处理: ${entry.name} (${data.size} bytes)")
+                val dexVersion = String(data, 4, 3).toIntOrNull() ?: 37
+                val opcodes = Opcodes.forDexVersion(dexVersion)
+                val result = encryptor.processDex(DexBackedDexFile(opcodes, data))
+                if (result.modified) {
+                    dexWorks[entry.name] = DexWork(opcodes, result.classes.toMutableList())
+                } else {
+                    logger.info("  无可加密字符串,保留原 dex")
+                }
+            }
+        }
+
+        if (dexWorks.isEmpty()) {
+            logger.warn("APK 中无可加密字符串,原样复制")
+            apkFile.copyTo(outFile, overwrite = true)
+            return
+        }
+
+        // XcjEncStringTable 注入最后一个被修改的 dex(表含全部字符串)
+        val lastName = dexWorks.keys.last()
+        dexWorks[lastName]!!.classes.add(encryptor.buildEncStringTableClassDef())
+        logger.info("注入 XcjEncStringTable → $lastName (${encryptor.getStats()})")
+
+        // Pass 2: 写出 zip(被修改 dex 重建,其余条目原样保留)
         ZipFile(apkFile).use { zip ->
             ZipOutputStream(outFile.outputStream()).use { zos ->
                 val entries = zip.entries()
                 while (entries.hasMoreElements()) {
                     val entry = entries.nextElement()
-                    val data = zip.getInputStream(entry).readBytes()
-
-                    if (entry.name.matches(Regex("classes\\d*\\.dex"))) {
-                        logger.info("处理: ${entry.name} (${data.size} bytes)")
-                        val modified = processDexEntry(data, encryptor)
-                        val newEntry = ZipEntry(entry.name)
+                    val newEntry = ZipEntry(entry.name)
+                    val work = dexWorks[entry.name]
+                    if (work != null) {
+                        val dexBytes =
+                            writeDex(
+                                com.android.tools.smali.dexlib2.immutable.ImmutableDexFile(
+                                    work.opcodes,
+                                    work.classes,
+                                ),
+                            )
                         zos.putNextEntry(newEntry)
-                        zos.write(modified)
+                        zos.write(dexBytes)
                         zos.closeEntry()
                     } else {
-                        val newEntry = ZipEntry(entry.name)
+                        val data = zip.getInputStream(entry).readBytes()
                         if (entry.method == ZipEntry.STORED) {
                             newEntry.method = ZipEntry.STORED
                             newEntry.size = data.size.toLong()
@@ -83,21 +130,16 @@ class EncryptStringsCommand :
         logger.info("输出: $outputPath")
     }
 
-    private fun processDexEntry(
-        dexBytes: ByteArray,
-        encryptor: DexStringEncryptor,
-    ): ByteArray {
-        val dexVersion = String(dexBytes, 4, 3).toIntOrNull() ?: 37
-        val opcodes = Opcodes.forDexVersion(dexVersion)
-        val dexFile = DexBackedDexFile(opcodes, dexBytes)
-        val modifiedClasses = encryptor.processDex(dexFile)
+    /** 解析 --key-hex(32 个 hex 字符 = 16 字节) */
+    private fun parseKeyHex(hex: String): ByteArray {
+        val clean = hex.trim()
+        require(clean.length == 32 && clean.all { it in "0123456789abcdefABCDEF" }) {
+            "--key-hex 必须是 16 字节 hex(32 个 hex 字符)"
+        }
+        return clean.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+    }
 
-        val outputDex =
-            com.android.tools.smali.dexlib2.immutable.ImmutableDexFile(
-                opcodes,
-                modifiedClasses,
-            )
-
+    private fun writeDex(outputDex: com.android.tools.smali.dexlib2.immutable.ImmutableDexFile): ByteArray {
         val tmpFile = File.createTempFile("t4_dex", ".dex")
         try {
             DexFileFactory.writeDexFile(tmpFile.absolutePath, outputDex)
@@ -143,7 +185,7 @@ class EncryptStringsCommand :
         for (i in 0 until classDefsSize) {
             val classDefOff = classDefsOff + i * 32
             val classDataOff = buf.getInt(classDefOff + 24)
-            if (classDataOff == 0) continue
+            if (classDataOff == 0 || classDataOff >= result.size) continue
 
             var pos = classDataOff
             val (staticFieldsSize, p1) = readUleb128(result, pos)
@@ -156,21 +198,21 @@ class EncryptStringsCommand :
             pos = p4
 
             // Skip fields
-            pos = skipEncodedFields(result, pos, staticFieldsSize + instanceFieldsSize)
+            pos = skipEncodedFields(result, pos, (staticFieldsSize + instanceFieldsSize).toInt())
 
             // Process methods (direct + virtual)
-            for (methodIdx in 0 until (directMethodsSize + virtualMethodsSize)) {
+            for (methodIdx in 0 until (directMethodsSize + virtualMethodsSize).toInt()) {
                 val (_, pa) = readUleb128(result, pos)
                 pos = pa // method_idx_diff
                 val (_, pb) = readUleb128(result, pos)
                 pos = pb // access_flags
                 val (codeOff, pc) = readUleb128(result, pos)
                 pos = pc
-                if (codeOff == 0) continue
+                if (codeOff == 0L || codeOff >= result.size) continue
 
                 // code_item.debug_info_off at codeOff + 8
-                val debugInfoOff = buf.getInt(codeOff + 8)
-                if (debugInfoOff == 0) continue
+                val debugInfoOff = buf.getInt(codeOff.toInt() + 8)
+                if (debugInfoOff == 0 || debugInfoOff < 0 || debugInfoOff >= result.size) continue
 
                 // Parse debug_info_item header
                 var dpos = debugInfoOff
@@ -180,19 +222,31 @@ class EncryptStringsCommand :
                 dpos = d2
 
                 // Patch each parameter_name (ULEB128 → equal-length zero)
-                for (pi in 0 until paramsSize) {
+                // 结构化判定,不依赖数值比较:损坏的 name 字段可达 10+ 字节,
+                // 任何定长整数解码都会溢出成负数绕过 >= 判断。
+                // 改为扫终止字节(最高位为 0)定编码长度,合法 = 长度 ≤5 且值在界内。
+                if (paramsSize > 0xFFFFL) continue // 参数数量本身损坏,跳过本方法
+                for (pi in 0 until paramsSize.toInt()) {
                     val nameStart = dpos
-                    val (nameVal, nameEnd) = readUleb128(result, dpos)
+                    var nameEnd = nameStart
+                    while (nameEnd < result.size &&
+                        (result[nameEnd].toInt() and 0x80) != 0
+                    ) {
+                        nameEnd++
+                    }
+                    if (nameEnd >= result.size) break // 无终止字节,数据损坏到文件尾
+                    nameEnd++ // 含终止字节
                     dpos = nameEnd
+                    val encLen = nameEnd - nameStart
 
-                    if (nameVal != 0) {
-                        val strIdx = nameVal - 1 // parameter_name is 1-based (0 = NO_INDEX)
-                        if (strIdx >= stringIdsSize) {
-                            // Bad index! Patch to zero with equal length
-                            val encLen = nameEnd - nameStart
-                            writeEqualLengthZeroUleb128(result, nameStart, encLen)
-                            patchCount++
-                        }
+                    val (nameVal, _) = readUleb128(result, nameStart)
+                    val valid =
+                        encLen <= 5 &&
+                            nameVal >= 0L &&
+                            (nameVal == 0L || nameVal - 1 < stringIdsSize.toLong())
+                    if (!valid) {
+                        writeEqualLengthZeroUleb128(result, nameStart, encLen)
+                        patchCount++
                     }
                 }
 
@@ -253,18 +307,20 @@ class EncryptStringsCommand :
         return pos
     }
 
-    /** Read ULEB128 from byte array, return (value, new_position) */
+    /** Read ULEB128 from byte array, return (value, new_position).
+     * 必须用 Long:越界的 parameter_name 可达 5 字节(>Int),Int 溢出变负
+     * 会绕过 >= stringIdsSize 判断导致漏 patch(ART 按任意精度读,验证必炸)。 */
     internal fun readUleb128(
         data: ByteArray,
         offset: Int,
-    ): Pair<Int, Int> {
-        var result = 0
+    ): Pair<Long, Int> {
+        var result = 0L
         var shift = 0
         var pos = offset
-        while (true) {
+        while (pos < data.size) {
             val b = data[pos].toInt() and 0xFF
             pos++
-            result = result or ((b and 0x7F) shl shift)
+            result = result or (((b and 0x7F).toLong()) shl shift)
             if (b and 0x80 == 0) break
             shift += 7
         }

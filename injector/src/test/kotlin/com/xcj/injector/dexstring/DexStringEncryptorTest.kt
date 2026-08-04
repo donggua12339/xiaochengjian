@@ -39,14 +39,14 @@ class DexStringEncryptorTest {
     @Test
     fun `readUleb128 零值`() {
         val (value, pos) = cmd.readUleb128(byteArrayOf(0x00), 0)
-        assertEquals(0, value)
+        assertEquals(0L, value)
         assertEquals(1, pos)
     }
 
     @Test
     fun `readUleb128 单字节`() {
         val (value, pos) = cmd.readUleb128(byteArrayOf(0x05), 0)
-        assertEquals(5, value)
+        assertEquals(5L, value)
         assertEquals(1, pos)
     }
 
@@ -54,7 +54,7 @@ class DexStringEncryptorTest {
     fun `readUleb128 双字节 128`() {
         // 128 → ULEB128: 0x80 0x01
         val (value, pos) = cmd.readUleb128(byteArrayOf(0x80.toByte(), 0x01), 0)
-        assertEquals(128, value)
+        assertEquals(128L, value)
         assertEquals(2, pos)
     }
 
@@ -63,7 +63,7 @@ class DexStringEncryptorTest {
         // 16384 → ULEB128: 0x80 0x80 0x01
         val data = byteArrayOf(0x80.toByte(), 0x80.toByte(), 0x01)
         val (value, pos) = cmd.readUleb128(data, 0)
-        assertEquals(16384, value)
+        assertEquals(16384L, value)
         assertEquals(3, pos)
     }
 
@@ -71,8 +71,19 @@ class DexStringEncryptorTest {
     fun `readUleb128 带偏移`() {
         val data = byteArrayOf(0xFF.toByte(), 0xFF.toByte(), 0x0A)
         val (value, pos) = cmd.readUleb128(data, 2)
-        assertEquals(10, value)
+        assertEquals(10L, value)
         assertEquals(3, pos)
+    }
+
+    @Test
+    fun `readUleb128 五字节超 Int 范围(回归-越界 parameter_name 真机崩溃)`() {
+        // 0xFFFFFFFF = 4294967295 > Int.MAX_VALUE。
+        // 旧实现用 Int 溢出为 -1,strIdx >= stringIdsSize 判断失效 → 漏 patch,
+        // ART 按任意精度读出越界值,dex 验证失败 ClassNotFoundException 闪退。
+        val data = byteArrayOf(0xFF.toByte(), 0xFF.toByte(), 0xFF.toByte(), 0xFF.toByte(), 0x0F)
+        val (value, pos) = cmd.readUleb128(data, 0)
+        assertEquals(4294967295L, value)
+        assertEquals(5, pos)
     }
 
     // ===== writeEqualLengthZeroUleb128 =====
@@ -138,7 +149,7 @@ class DexStringEncryptorTest {
 
         // 验证被 patch 位置为 0
         val (patchedVal, _) = cmd.readUleb128(patched, paramOff)
-        assertEquals("越界索引应替换为 0(NO_INDEX)", 0, patchedVal)
+        assertEquals("越界索引应替换为 0(NO_INDEX)", 0L, patchedVal)
 
         // 验证编码长度不变
         val (_, patchedEnd) = cmd.readUleb128(patched, paramOff)
@@ -166,6 +177,27 @@ class DexStringEncryptorTest {
     }
 
     @Test
+    fun `patchParameterNames 修复超长损坏 name 字段(回归-真机崩溃 2)`() {
+        // 损坏的 parameter_name 可达 10+ 字节(连续 continuation 字节),
+        // Int/Long 解码均溢出成负数绕过 >= 判断。必须按结构(终止字节)判定。
+        // 8 参数:name 区足够长,12 字节损坏不会溢出 debug_info 破坏 code_item
+        val bytes = writeDexToBytes(buildMinimalDexWithParamNames(8))
+        val paramOff = findFirstNonZeroParameterName(bytes) ?: return
+        val corrupted = bytes.copyOf()
+        // 11 个 continuation 字节 + 1 个终止字节 = 12 字节损坏序列
+        for (i in 0 until 11) corrupted[paramOff + i] = 0xE1.toByte()
+        corrupted[paramOff + 11] = 0x5A
+
+        val (patched, count) = cmd.patchParameterNames(corrupted)
+        assertTrue("应修复损坏 name 字段", count >= 1)
+        // patch 结果应为等长零值: 11×0x80 + 0x00
+        for (i in 0 until 11) {
+            assertEquals(0x80, patched[paramOff + i].toInt() and 0xFF)
+        }
+        assertEquals(0x00, patched[paramOff + 11].toInt() and 0xFF)
+    }
+
+    @Test
     fun `patchParameterNames 正常 DEX 无越界时不破坏`() {
         val bytes = writeDexToBytes(buildMinimalDexWithParamNames())
         val (patched, _) = cmd.patchParameterNames(bytes)
@@ -183,7 +215,7 @@ class DexStringEncryptorTest {
     // ===== DexStringEncryptor =====
 
     @Test
-    fun `processDex 应加密 const-string 并注入 XcjEncStringTable`() {
+    fun `processDex 应加密 const-string 并标记 modified`() {
         val key = DexStringEncryptor.generateKey()
         val encryptor = DexStringEncryptor(key)
 
@@ -191,11 +223,17 @@ class DexStringEncryptorTest {
         val dexFile = DexBackedDexFile(Opcodes.forDexVersion(37), dexBytes)
         val result = encryptor.processDex(dexFile)
 
-        assertTrue(
-            "应注入 XcjEncStringTable",
-            result.any { it.type == "Lcom/xcj/defender/XcjEncStringTable;" },
-        )
+        assertTrue("应标记 modified", result.modified)
         assertTrue("应加密至少 1 个字符串", encryptor.getEncryptedTable().isNotEmpty())
+        // 表类由调用方在处理完所有 dex 后统一注入,processDex 自身不注入
+        assertTrue(
+            "processDex 不应注入表类",
+            result.classes.none { it.type == "Lcom/xcj/defender/XcjEncStringTable;" },
+        )
+        assertEquals(
+            "Lcom/xcj/defender/XcjEncStringTable;",
+            encryptor.buildEncStringTableClassDef().type,
+        )
     }
 
     @Test
@@ -207,11 +245,8 @@ class DexStringEncryptorTest {
         val dexFile = DexBackedDexFile(Opcodes.forDexVersion(37), dexBytes)
         val result = encryptor.processDex(dexFile)
 
-        // SDK 类不应被修改,不应注入 XcjEncStringTable
-        assertTrue(
-            "SDK 类不应被加密",
-            result.none { it.type == "Lcom/xcj/defender/XcjEncStringTable;" },
-        )
+        // SDK 类不应被修改
+        assertTrue("SDK 类不应被加密", !result.modified)
     }
 
     @Test
@@ -223,7 +258,8 @@ class DexStringEncryptorTest {
         val dexFile = DexBackedDexFile(Opcodes.forDexVersion(37), dexBytes)
         val modified = encryptor.processDex(dexFile)
 
-        val outputDex = ImmutableDexFile(Opcodes.forDexVersion(37), modified)
+        val classes = modified.classes + encryptor.buildEncStringTableClassDef()
+        val outputDex = ImmutableDexFile(Opcodes.forDexVersion(37), classes)
         val written = writeDexToBytes(outputDex)
 
         // 经 patchParameterNames 修复后应可解析
@@ -264,22 +300,26 @@ class DexStringEncryptorTest {
 
     // ===== helpers =====
 
-    private fun buildMinimalDexWithParamNames(): ImmutableDexFile {
+    private fun buildMinimalDexWithParamNames(paramCount: Int = 2): ImmutableDexFile {
         val methodImpl =
             ImmutableMethodImplementation(
-                3,
+                paramCount + 1,
                 listOf(ImmutableInstruction10x(Opcode.RETURN_VOID)),
                 null,
-                listOf(ImmutableLineNumber(0, 42)),
+                listOf(
+                    ImmutableLineNumber(0, 42),
+                    ImmutableLineNumber(0, 43),
+                    ImmutableLineNumber(0, 44),
+                    ImmutableLineNumber(0, 45),
+                ),
             )
         val method =
             ImmutableMethod(
                 "Lcom/test/Hello;",
                 "greet",
-                listOf(
-                    ImmutableMethodParameter("Ljava/lang/String;", null, "name"),
-                    ImmutableMethodParameter("I", null, "age"),
-                ),
+                List(paramCount) { i ->
+                    ImmutableMethodParameter("Ljava/lang/String;", null, "p$i")
+                },
                 "V",
                 AccessFlags.PUBLIC.value,
                 null,
@@ -441,18 +481,18 @@ class DexStringEncryptorTest {
             val (vmSize, p4) = cmd.readUleb128(dex, pos)
             pos = p4
 
-            pos = cmd.skipEncodedFields(dex, pos, sfSize + ifSize)
+            pos = cmd.skipEncodedFields(dex, pos, (sfSize + ifSize).toInt())
 
-            for (m in 0 until (dmSize + vmSize)) {
+            for (m in 0 until (dmSize + vmSize).toInt()) {
                 val (_, pa) = cmd.readUleb128(dex, pos)
                 pos = pa
                 val (_, pb) = cmd.readUleb128(dex, pos)
                 pos = pb
                 val (codeOff, pc) = cmd.readUleb128(dex, pos)
                 pos = pc
-                if (codeOff == 0) continue
+                if (codeOff == 0L) continue
 
-                val debugInfoOff = buf.getInt(codeOff + 8)
+                val debugInfoOff = buf.getInt(codeOff.toInt() + 8)
                 if (debugInfoOff == 0) continue
 
                 var dpos = debugInfoOff
@@ -461,9 +501,9 @@ class DexStringEncryptorTest {
                 val (paramsSize, d2) = cmd.readUleb128(dex, dpos)
                 dpos = d2
 
-                for (pi in 0 until paramsSize) {
+                for (pi in 0 until paramsSize.toInt()) {
                     val (nameVal, nameEnd) = cmd.readUleb128(dex, dpos)
-                    if (nameVal != 0) return dpos
+                    if (nameVal != 0L) return dpos
                     dpos = nameEnd
                 }
             }
@@ -516,18 +556,18 @@ class DexStringEncryptorTest {
             val (vmSize, p4) = cmd.readUleb128(dex, pos)
             pos = p4
 
-            pos = cmd.skipEncodedFields(dex, pos, sfSize + ifSize)
+            pos = cmd.skipEncodedFields(dex, pos, (sfSize + ifSize).toInt())
 
-            for (m in 0 until (dmSize + vmSize)) {
+            for (m in 0 until (dmSize + vmSize).toInt()) {
                 val (_, pa) = cmd.readUleb128(dex, pos)
                 pos = pa
                 val (_, pb) = cmd.readUleb128(dex, pos)
                 pos = pb
                 val (codeOff, pc) = cmd.readUleb128(dex, pos)
                 pos = pc
-                if (codeOff == 0) continue
+                if (codeOff == 0L) continue
 
-                val debugInfoOff = buf.getInt(codeOff + 8)
+                val debugInfoOff = buf.getInt(codeOff.toInt() + 8)
                 if (debugInfoOff == 0) continue
 
                 var dpos = debugInfoOff
@@ -536,13 +576,13 @@ class DexStringEncryptorTest {
                 val (paramsSize, d2) = cmd.readUleb128(dex, dpos)
                 dpos = d2
 
-                for (pi in 0 until paramsSize) {
+                for (pi in 0 until paramsSize.toInt()) {
                     val (nameVal, nameEnd) = cmd.readUleb128(dex, dpos)
-                    if (nameVal != 0) {
+                    if (nameVal != 0L) {
                         val strIdx = nameVal - 1
                         assertTrue(
                             "parameter_name 索引 $strIdx 应 < string_ids_size $stringIdsSize",
-                            strIdx < stringIdsSize,
+                            strIdx < stringIdsSize.toLong(),
                         )
                     }
                     dpos = nameEnd
