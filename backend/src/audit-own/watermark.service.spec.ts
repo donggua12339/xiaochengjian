@@ -159,5 +159,60 @@ describe('WatermarkService', () => {
       expect(result.watermark?.timestamp).toBeGreaterThan(0);
       expect(result.watermark?.nonce).toMatch(/^[0-9a-f]{32}$/);
     });
+
+    it('APK 水印被篡改应抛 WATERMARK_DECRYPT_FAILED', async () => {
+      const yazl = await import('yazl');
+      const zipBuf = await new Promise<Buffer>((resolve) => {
+        const zipfile = new yazl.ZipFile();
+        zipfile.addBuffer(
+          Buffer.from('tampered-garbage-not-valid-envelope'),
+          'META-INF/xcj-watermark.enc.txt',
+        );
+        zipfile.end();
+        const chunks: Buffer[] = [];
+        zipfile.outputStream.on('data', (c) => chunks.push(c));
+        zipfile.outputStream.on('end', () => resolve(Buffer.concat(chunks)));
+      });
+      await expect(service.extractAndDecryptFromApk(zipBuf)).rejects.toThrow(
+        'WATERMARK_DECRYPT_FAILED',
+      );
+    });
+
+    it('非法 zip buffer 应抛 APK_PARSE_FAILED', async () => {
+      await expect(
+        service.extractAndDecryptFromApk(Buffer.from('not a zip at all')),
+      ).rejects.toThrow('APK_PARSE_FAILED');
+    });
+  });
+
+  describe('密钥未配置时 trace 相关', () => {
+    async function buildNoKeyService(): Promise<WatermarkService> {
+      const moduleRef = await Test.createTestingModule({
+        providers: [
+          WatermarkService,
+          {
+            provide: CryptoService,
+            useValue: {
+              aesEncrypt: jest.fn(),
+              aesDecrypt: jest.fn(),
+            },
+          },
+          { provide: ConfigService, useValue: { get: () => '' } },
+        ],
+      }).compile();
+      return moduleRef.get(WatermarkService);
+    }
+
+    it('decryptWatermark 未配密钥应抛 WATERMARK_KEY_NOT_CONFIGURED', async () => {
+      const svc = await buildNoKeyService();
+      expect(() => svc.decryptWatermark('aGVsbG8=')).toThrow('WATERMARK_KEY_NOT_CONFIGURED');
+    });
+
+    it('extractAndDecryptFromApk 未配密钥应抛 WATERMARK_KEY_NOT_CONFIGURED', async () => {
+      const svc = await buildNoKeyService();
+      await expect(svc.extractAndDecryptFromApk(Buffer.from('x'))).rejects.toThrow(
+        'WATERMARK_KEY_NOT_CONFIGURED',
+      );
+    });
   });
 });

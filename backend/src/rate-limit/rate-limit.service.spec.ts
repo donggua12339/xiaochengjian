@@ -150,4 +150,14 @@ describe('RateLimitService', () => {
       expect(service.computeCardKeyDelay(100)).toBe(30000);
     });
   });
+
+  describe('checkDeveloperRateLimit', () => {
+    it('应使用 rl:developer: 前缀并返回限流结果', async () => {
+      redis.incrWithTtl.mockResolvedValue(3);
+      const result = await service.checkDeveloperRateLimit('dev-1', 100);
+      expect(redis.incrWithTtl).toHaveBeenCalledWith('rl:developer:dev-1', 60);
+      expect(result.allowed).toBe(true);
+      expect(result.remaining).toBe(97);
+    });
+  });
 });

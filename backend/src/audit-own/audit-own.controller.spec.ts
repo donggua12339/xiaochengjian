@@ -32,6 +32,7 @@ describe('AuditOwnController', () => {
 
     auditLogOwnService = {
       listByDeveloper: jest.fn().mockResolvedValue([]),
+      exportCsvByDeveloper: jest.fn().mockResolvedValue('col1,col2\nv1,v2'),
     } as unknown as jest.Mocked<AuditLogOwnService>;
 
     hardenerEulaService = {
@@ -281,6 +282,28 @@ describe('AuditOwnController', () => {
       ).rejects.toThrow(BadRequestException);
       expect(hardenerEulaService.validateAccepted).not.toHaveBeenCalled();
       expect(auditOwnService.analyze).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('exportLogsCsv', () => {
+    it('无 limit 应默认 10000 并返回 csv + filename', async () => {
+      const r = await controller.exportLogsCsv('dev-1');
+      expect(auditLogOwnService.exportCsvByDeveloper).toHaveBeenCalledWith('dev-1', {
+        limit: 10000,
+      });
+      expect(r.csv).toContain('col1');
+      expect(r.filename).toMatch(/^xcj-audit-logs-dev-1-\d{4}-\d{2}-\d{2}\.csv$/);
+    });
+
+    it('自定义 limit 应透传', async () => {
+      await controller.exportLogsCsv('dev-1', '50');
+      expect(auditLogOwnService.exportCsvByDeveloper).toHaveBeenCalledWith('dev-1', { limit: 50 });
+    });
+
+    it('非法 limit 应抛 INVALID_LIMIT', async () => {
+      await expect(controller.exportLogsCsv('dev-1', 'abc')).rejects.toThrow('INVALID_LIMIT');
+      await expect(controller.exportLogsCsv('dev-1', '0')).rejects.toThrow('INVALID_LIMIT');
+      await expect(controller.exportLogsCsv('dev-1', '50001')).rejects.toThrow('INVALID_LIMIT');
     });
   });
 });

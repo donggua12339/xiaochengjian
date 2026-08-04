@@ -196,4 +196,25 @@ describe('ApkAnalyzerService', () => {
       expect(entries.map((e) => e.name)).toEqual(['classes.dex', 'lib/arm64-v8a/a.so']);
     });
   });
+
+  describe('aapt 不可用降级', () => {
+    it('aapt 失败时 manifest/sdk 应降级为 unknown/默认值', async () => {
+      mockExecFile.mockImplementation((_cmd: string, args: string[], _o: unknown, cb: unknown) => {
+        const call = (args || []).join(' ');
+        const done = cb as (e: Error | null, r?: { stdout: string; stderr: string }) => void;
+        if (call.startsWith('-l')) {
+          done(null, { stdout: zipListing(['classes.dex']), stderr: '' });
+        } else {
+          done(new Error('aapt not found'));
+        }
+        return undefined;
+      });
+      const analyzer = new ApkAnalyzerService();
+      const r = await analyzer.analyze('/tmp/a.apk');
+      expect(r.packageName).toBe('unknown');
+      expect(r.originalApplicationName).toBeNull();
+      expect(r.minSdkVersion).toBe(21);
+      expect(r.targetSdkVersion).toBe(35);
+    });
+  });
 });

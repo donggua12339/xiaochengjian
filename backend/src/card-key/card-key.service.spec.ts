@@ -520,4 +520,34 @@ describe('CardKeyService', () => {
       );
     });
   });
+
+  describe('computeExpiry(私有)', () => {
+    const call = (type: string, now: Date) =>
+      (service as unknown as { computeExpiry: (t: string, n: Date) => Date | null }).computeExpiry(
+        type,
+        now,
+      );
+    const now = new Date('2026-01-01T00:00:00Z');
+
+    it('DAY 应 +1 天', () => {
+      expect(call('DAY', now)?.getTime()).toBe(now.getTime() + 24 * 60 * 60 * 1000);
+    });
+
+    it('WEEK 应 +7 天', () => {
+      expect(call('WEEK', now)?.getTime()).toBe(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+    });
+
+    it('MONTH 应 +30 天', () => {
+      expect(call('MONTH', now)?.getTime()).toBe(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+    });
+
+    it('PERMANENT/TRIAL 应返回 null', () => {
+      expect(call('PERMANENT', now)).toBeNull();
+      expect(call('TRIAL', now)).toBeNull();
+    });
+
+    it('未知类型应返回 null', () => {
+      expect(call('UNKNOWN_TYPE', now)).toBeNull();
+    });
+  });
 });

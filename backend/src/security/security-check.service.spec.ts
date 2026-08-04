@@ -345,4 +345,26 @@ describe('SecurityCheckService', () => {
       }
     });
   });
+
+  describe('未设置分支', () => {
+    it('JWT secret 未设置应失败(未设置)', async () => {
+      const svc = await buildService(buildPassingConfig({ jwtAccessSecret: '' }));
+      await expect(svc.onModuleInit()).rejects.toThrow('安全基线检查失败');
+    });
+
+    it('DATABASE_URL 未设置应失败(未设置)', async () => {
+      const svc = await buildService(buildPassingConfig({ databaseUrl: '' }));
+      await expect(svc.onModuleInit()).rejects.toThrow('安全基线检查失败');
+    });
+
+    it('RSA 私钥路径不存在应失败(RSA_KEYS)', async () => {
+      const svc = await buildService(
+        buildPassingConfig({
+          rsaPrivateKeyPath: '/nonexistent/private.pem',
+          rsaPublicKeyPath: '/nonexistent/public.pem',
+        }),
+      );
+      await expect(svc.onModuleInit()).rejects.toThrow('安全基线检查失败');
+    });
+  });
 });

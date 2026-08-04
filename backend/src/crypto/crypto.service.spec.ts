@@ -133,4 +133,50 @@ describe('CryptoService', () => {
       expect(ids.size).toBe(100);
     });
   });
+
+  describe('getter / 密钥派生', () => {
+    it('getPublicKeyPem 应返回 PEM 公钥', () => {
+      expect(service.getPublicKeyPem()).toContain('PUBLIC KEY');
+    });
+
+    it('generateAesKey 应返回 32 字节', () => {
+      expect(service.generateAesKey()).toHaveLength(32);
+    });
+
+    it('sessionTtl 应返回配置值', () => {
+      expect(service.sessionTtl).toBe(3600);
+    });
+  });
+
+  describe('构造异常分支', () => {
+    const buildWith = async (privatePath: string, publicPath: string) => {
+      const moduleRef = await Test.createTestingModule({
+        imports: [
+          ConfigModule.forRoot({
+            isGlobal: true,
+            load: [
+              () => ({
+                rsaPrivateKeyPath: privatePath,
+                rsaPublicKeyPath: publicPath,
+                sdkSessionTtl: 60,
+              }),
+            ],
+          }),
+        ],
+        providers: [CryptoService],
+      }).compile();
+      return moduleRef.get(CryptoService);
+    };
+
+    it('私钥文件缺失应抛加载失败', async () => {
+      await expect(buildWith('./keys/no-such-private.pem', './keys/public.pem')).rejects.toThrow(
+        'RSA 私钥加载失败',
+      );
+    });
+
+    it('公钥文件缺失应从私钥派生(不阻塞)', async () => {
+      const svc = await buildWith('./keys/private.pem', './keys/no-such-public.pem');
+      expect(svc.getPublicKeyPem()).toContain('PUBLIC KEY');
+    });
+  });
 });

@@ -398,6 +398,25 @@ describe('SdkService', () => {
       expect(result.valid).toBe(false);
       expect(result.reason).toBe('DEVICE_NOT_BOUND');
     });
+
+    it('设备存在但绑定记录缺失应返回 valid=false + DEVICE_NOT_BOUND', async () => {
+      const validKey = generateCardKey();
+      const card = buildCardKeyRecord(validKey, {
+        status: 'ACTIVE',
+        bindingStrategy: 'FIRST_BIND',
+        activatedAt: new Date('2026-01-01'),
+        expiresAt: new Date('2027-01-01'),
+      });
+      // 设备存在 + 卡密已激活,但绑定记录为空 → DEVICE_NOT_BOUND
+      const device = { id: 'device-1', appId: 'app-1', machineId: 'm1' };
+      const tx = buildTx(card, device, []);
+      tenantPrisma.tx.mockImplementation(async (_t: string, fn: (tx: any) => Promise<any>) =>
+        fn(tx),
+      );
+      const result = await callValidate(tx, validKey, 'm1');
+      expect(result.valid).toBe(false);
+      expect(result.reason).toBe('DEVICE_NOT_BOUND');
+    });
   });
 
   describe('validate - 成功路径', () => {

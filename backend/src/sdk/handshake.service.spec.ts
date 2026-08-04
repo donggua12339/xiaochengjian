@@ -229,4 +229,37 @@ describe('HandshakeService', () => {
       expect(result?.newAesKey).toBe(newKey.toString('base64'));
     });
   });
+
+  describe('extractDbUser(私有)', () => {
+    const call = () =>
+      ((service as unknown as { extractDbUser: () => string }).extractDbUser as () => string).call(
+        service,
+      );
+    const ORIG = process.env.DATABASE_URL;
+
+    afterEach(() => {
+      if (ORIG === undefined) delete process.env.DATABASE_URL;
+      else process.env.DATABASE_URL = ORIG;
+    });
+
+    it('无用户名应抛错', () => {
+      process.env.DATABASE_URL = 'postgresql://:pass@host:5432/db';
+      expect(() => call()).toThrow('DATABASE_URL 中未找到用户名');
+    });
+
+    it('用户名含非法字符应抛错', () => {
+      process.env.DATABASE_URL = 'postgresql://bad-user:pass@host:5432/db';
+      expect(() => call()).toThrow('用户名含非法字符');
+    });
+
+    it('非法 URL 应抛解析失败', () => {
+      process.env.DATABASE_URL = 'not-a-valid-url';
+      expect(() => call()).toThrow('解析 DATABASE_URL 失败');
+    });
+
+    it('合法 URL 应返回用户名', () => {
+      process.env.DATABASE_URL = 'postgresql://xcj_user:pass@host:5432/db';
+      expect(call()).toBe('xcj_user');
+    });
+  });
 });

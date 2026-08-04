@@ -184,5 +184,28 @@ describe('IntegrityService', () => {
       });
       expect(r.verdict).toBe('PASS');
     });
+
+    it('RSA 私钥文件路径不存在应回退(不阻塞)', async () => {
+      configMap.integrityRsaPrivateKeyFile = '/nonexistent/key.pem';
+      prisma.application.findFirst.mockResolvedValue({
+        id: 'app-1',
+        name: 'T',
+        signHashAllowList: ['fb-hash'],
+      });
+      service = buildService();
+      const r = await service.verifyAndIssueToken({
+        appId: 'com.test',
+        encryptedHash: b64('fb-hash'),
+        nonce: 'n',
+        timestamp: Date.now(),
+      });
+      expect(r.verdict).toBe('PASS');
+    });
+  });
+
+  describe('verifyToken 边界', () => {
+    it('payload 非合法 base64 JSON 应 valid=false(catch)', () => {
+      expect(service.verifyToken('aaa.notbase64json.ccc')).toEqual({ valid: false });
+    });
   });
 });

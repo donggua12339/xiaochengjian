@@ -1,11 +1,22 @@
 import { BadRequestException } from '@nestjs/common';
 import { DefenderConfigGenerator } from './defender-config-generator';
+import * as fs from 'fs/promises';
+import { execFile } from 'child_process';
+
+jest.mock('fs/promises');
+jest.mock('child_process');
+
+const mockExecFile = execFile as unknown as jest.Mock;
 
 describe('DefenderConfigGenerator', () => {
   let gen: DefenderConfigGenerator;
 
   beforeEach(() => {
+    jest.clearAllMocks();
     gen = new DefenderConfigGenerator();
+    (fs.rm as jest.Mock).mockResolvedValue(undefined);
+    (fs.mkdir as jest.Mock).mockResolvedValue(undefined);
+    (fs.writeFile as jest.Mock).mockResolvedValue(undefined);
   });
 
   const base = { appId: 'app-1', serverUrl: 'https://xcj.test' };
@@ -139,6 +150,31 @@ describe('DefenderConfigGenerator', () => {
           xposedDetect: { enabled: true, onViolation: 'kill', killThreshold: 100 },
         }),
       ).not.toThrow();
+    });
+  });
+
+  describe('injectConfig', () => {
+    it('成功应写 config + zip 注入', async () => {
+      mockExecFile.mockImplementation((_c: string, _a: string[], _o: unknown, cb: unknown) => {
+        (cb as (e: null, r: { stdout: string; stderr: string }) => void)(null, {
+          stdout: '',
+          stderr: '',
+        });
+        return undefined;
+      });
+      await expect(gen.injectConfig('/tmp/a.apk', '{"a":1}', '/tmp/work')).resolves.toBeUndefined();
+      expect(fs.writeFile).toHaveBeenCalled();
+      expect(mockExecFile).toHaveBeenCalled();
+    });
+
+    it('zip 失败应抛 CONFIG_INJECT_FAILED', async () => {
+      mockExecFile.mockImplementation((_c: string, _a: string[], _o: unknown, cb: unknown) => {
+        (cb as (e: Error) => void)(new Error('zip boom'));
+        return undefined;
+      });
+      await expect(gen.injectConfig('/tmp/a.apk', '{}', '/tmp/work')).rejects.toThrow(
+        'CONFIG_INJECT_FAILED',
+      );
     });
   });
 });

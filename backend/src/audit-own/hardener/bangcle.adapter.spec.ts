@@ -1,3 +1,4 @@
+import AdmZip from 'adm-zip';
 import { BangcleAdapter } from './bangcle.adapter';
 
 /**
@@ -103,5 +104,52 @@ describe('BangcleAdapter', () => {
       signatures: { v1: true, v2: true, v3: true },
     });
     expect(Array.isArray(report.suspiciousCalls)).toBe(true);
+  });
+
+  describe('真实 zip(不 mock extractFileFromZip)', () => {
+    function buildZip(soContent: string, manifestAscii: string): Buffer {
+      const zip = new AdmZip();
+      zip.addFile('lib/arm64-v8a/libSecShell.so', Buffer.from(soContent));
+      zip.addFile('AndroidManifest.xml', Buffer.from(manifestAscii, 'latin1'));
+      return zip.toBuffer();
+    }
+
+    it('extractFileFromZip 应从真实 zip 提取 so 并算真实 hash', async () => {
+      const apkBuffer = buildZip('real-so-bytes', 'manifest');
+      const report = await adapter.generateReport({
+        apkEntries: ['lib/arm64-v8a/libSecShell.so', 'AndroidManifest.xml'],
+        apkBuffer,
+        signatures: { v1: true, v2: true, v3: true },
+      });
+      expect(report.soFiles).toHaveLength(1);
+      expect(report.soFiles[0].sha256).toMatch(/^[0-9a-f]{64}$/);
+      expect(report.soFiles[0].sha256).not.toBe('unknown');
+      expect(report.soFiles[0].size).toBe(Buffer.from('real-so-bytes').length);
+    });
+
+    it('scanSuspiciousManifest 应检出高风险权限', async () => {
+      const apkBuffer = buildZip(
+        'so',
+        'package com.x  android.permission.CAMERA  android.permission.READ_SMS',
+      );
+      const report = await adapter.generateReport({
+        apkEntries: ['AndroidManifest.xml'],
+        apkBuffer,
+        signatures: { v1: true, v2: true, v3: true },
+      });
+      const symbols = report.suspiciousCalls.map((s) => s.symbol);
+      expect(symbols).toContain('android.permission.CAMERA');
+      expect(symbols).toContain('android.permission.READ_SMS');
+    });
+
+    it('无高风险权限时 suspiciousCalls 为空', async () => {
+      const apkBuffer = buildZip('so', 'package com.x  android.permission.INTERNET');
+      const report = await adapter.generateReport({
+        apkEntries: ['AndroidManifest.xml'],
+        apkBuffer,
+        signatures: { v1: true, v2: true, v3: true },
+      });
+      expect(report.suspiciousCalls).toEqual([]);
+    });
   });
 });

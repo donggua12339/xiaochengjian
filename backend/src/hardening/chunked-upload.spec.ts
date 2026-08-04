@@ -205,6 +205,56 @@ describe('ChunkStorageService', () => {
       expect(result).toHaveProperty('fileId');
       expect(result).toHaveProperty('fileName', 'test.apk');
     });
+
+    const fullMeta = JSON.stringify({
+      devId: 'dev1',
+      fileName: 'test.apk',
+      fileSize: 8,
+      totalChunks: 2,
+      receivedChunks: [0, 1],
+      createdAt: '2026-01-01T00:00:00Z',
+    });
+
+    it('拼接后大小不匹配应抛错并清理', async () => {
+      redis.get.mockResolvedValue(fullMeta);
+      (fs.readFile as jest.Mock).mockResolvedValue(Buffer.from('1234'));
+      (fs.appendFile as jest.Mock).mockResolvedValue(undefined);
+      (fs.mkdir as jest.Mock).mockResolvedValue(undefined);
+      (fs.stat as jest.Mock).mockResolvedValue({ size: 999 }); // 不匹配
+      (fs.unlink as jest.Mock).mockResolvedValue(undefined);
+
+      await expect(service.mergeChunks('u1', 'dev1')).rejects.toThrow('大小不匹配');
+      expect(fs.unlink).toHaveBeenCalled();
+    });
+
+    it('magic bytes 非法应抛错并清理', async () => {
+      redis.get.mockResolvedValue(fullMeta);
+      (fs.readFile as jest.Mock).mockResolvedValue(Buffer.from('1234'));
+      (fs.appendFile as jest.Mock).mockResolvedValue(undefined);
+      (fs.mkdir as jest.Mock).mockResolvedValue(undefined);
+      (fs.stat as jest.Mock).mockResolvedValue({ size: 8 });
+      (fs.open as jest.Mock).mockResolvedValue({
+        read: jest.fn().mockImplementation((buf: Buffer) => {
+          buf.fill(0x00);
+          return Promise.resolve({ bytesRead: 4 });
+        }),
+        close: jest.fn().mockResolvedValue(undefined),
+      });
+      (fs.unlink as jest.Mock).mockResolvedValue(undefined);
+
+      await expect(service.mergeChunks('u1', 'dev1')).rejects.toThrow('不是有效的 APK');
+      expect(fs.unlink).toHaveBeenCalled();
+    });
+
+    it('读分片失败应抛错并清理输出', async () => {
+      redis.get.mockResolvedValue(fullMeta);
+      (fs.mkdir as jest.Mock).mockResolvedValue(undefined);
+      (fs.readFile as jest.Mock).mockRejectedValue(new Error('read boom'));
+      (fs.unlink as jest.Mock).mockResolvedValue(undefined);
+
+      await expect(service.mergeChunks('u1', 'dev1')).rejects.toThrow('read boom');
+      expect(fs.unlink).toHaveBeenCalled();
+    });
   });
 
   describe('cancelUpload', () => {

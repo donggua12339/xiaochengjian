@@ -172,4 +172,24 @@ describe('HardeningService 加固管线', () => {
     expect(task.status).toBe('failed');
     expect(task.error).toBeTruthy();
   });
+
+  it('SDK 产物缺失应跳过 DEX/SO 注入但仍完成', async () => {
+    statSyncMock.mockImplementation(() => {
+      throw new Error('ENOENT');
+    });
+    const task = await service.harden(params);
+    await flush();
+    expect(task.status).toBe('completed');
+    // 未注入 so(没调 pickRandomSoName)
+    expect(soInjector.pickRandomSoName).not.toHaveBeenCalled();
+  });
+
+  it('apksigner 路径探测失败应回退到裸命令名', async () => {
+    existsSyncMock.mockReturnValue(false);
+    const task = await service.harden(params);
+    await flush();
+    expect(task.status).toBe('completed');
+    const cmds = mockExecFile.mock.calls.map((c) => c[0]);
+    expect(cmds).toContain('apksigner');
+  });
 });

@@ -119,6 +119,57 @@ describe('PreflightService', () => {
 
       await expect(service.validateSdkArtifacts()).rejects.toThrow('SDK');
     });
+
+    it('should resolve when SDK artifact found', async () => {
+      (fs.stat as jest.Mock).mockResolvedValue({ size: 100 });
+      await expect(service.validateSdkArtifacts()).resolves.toBeUndefined();
+    });
+  });
+
+  describe('validateApk 已加固检测', () => {
+    it('含 classes-xcj.dex 应抛"已加固"', async () => {
+      const AdmZip = (await import('adm-zip')).default;
+      const os = await import('os');
+      const pathMod = await import('path');
+      const tmpApk = pathMod.join(os.tmpdir(), `preflight-test-${Date.now()}.apk`);
+      const zip = new AdmZip();
+      zip.addFile('classes.dex', Buffer.from('dex'));
+      zip.addFile('classes-xcj.dex', Buffer.from('xcj-dex'));
+      zip.writeZip(tmpApk);
+
+      (fs.stat as jest.Mock).mockResolvedValue({ size: 5000 });
+      const fd = {
+        read: jest.fn().mockImplementation((buf: Buffer) => {
+          buf[0] = 0x50;
+          buf[1] = 0x4b;
+          buf[2] = 0x03;
+          buf[3] = 0x04;
+          return Promise.resolve({ bytesRead: 4 });
+        }),
+        close: jest.fn().mockResolvedValue(undefined),
+      };
+      (fs.open as jest.Mock).mockResolvedValue(fd);
+
+      await expect(service.validateApk(tmpApk)).rejects.toThrow('已加固');
+    });
+  });
+
+  describe('validateKeystore keytool 边界', () => {
+    it('keytool 输出含 error 但非密码错误不应误判为密码错', async () => {
+      mockExecFile.mockImplementation(
+        (_cmd: string, _args: string[], _opts: unknown, cb: unknown) => {
+          (cb as (e: null, stdout: string, stderr: string) => void)(
+            null,
+            'some generic error text',
+            '',
+          );
+          return undefined;
+        },
+      );
+      await expect(
+        service.validateKeystore('/tmp/ks.jks', 'pass', 'alias'),
+      ).resolves.toBeUndefined();
+    });
   });
 
   describe('runAll', () => {

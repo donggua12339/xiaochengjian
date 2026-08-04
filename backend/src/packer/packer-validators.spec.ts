@@ -1,6 +1,10 @@
 import { Test } from '@nestjs/testing';
 import { ForbiddenException, BadRequestException } from '@nestjs/common';
-import { PackerValidators, XCJ_AUTH_SDK_DEX_WHITELIST } from './packer-validators';
+import {
+  PackerValidators,
+  XCJ_AUTH_SDK_DEX_WHITELIST,
+  XCJ_DEFENDER_SDK_DEX_WHITELIST,
+} from './packer-validators';
 import { PrismaService } from '../prisma/prisma.service';
 
 /**
@@ -216,6 +220,28 @@ describe('PackerValidators', () => {
 
     it('空 hash 应抛 BadRequestException', () => {
       expect(() => service.configureClientSignatureCheck('')).toThrow(BadRequestException);
+    });
+  });
+
+  describe('锁 2 扩展 defender dex 内容锁定', () => {
+    it('白名单已配置(defender v1.0.0)', () => {
+      expect(XCJ_DEFENDER_SDK_DEX_WHITELIST.length).toBeGreaterThan(0);
+    });
+
+    it('hash 在白名单应通过', () => {
+      expect(() =>
+        service.validateDefenderContentLock(XCJ_DEFENDER_SDK_DEX_WHITELIST[0]),
+      ).not.toThrow();
+    });
+
+    it('hash 大小写不敏感', () => {
+      expect(() =>
+        service.validateDefenderContentLock(XCJ_DEFENDER_SDK_DEX_WHITELIST[0].toUpperCase()),
+      ).not.toThrow();
+    });
+
+    it('hash 不在白名单应抛 ForbiddenException', () => {
+      expect(() => service.validateDefenderContentLock('deadbeef')).toThrow(ForbiddenException);
     });
   });
 });
