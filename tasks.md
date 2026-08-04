@@ -1,6 +1,6 @@
 # 小城笺 · 任务看板 (Task Board)
 
-> 更新: 2026-07-29 | 格式: [状态] 描述 (负责方)
+> 更新: 2026-08-05 | 格式: [状态] 描述 (负责方)
 
 ## 状态图例
 
@@ -23,13 +23,13 @@
 
 - [🟡] 编码规范补齐: .editorconfig/.eslint/.prettier/clang-format (AI)
 - [🟡] CLAUDE.md §4 扩充编码范式 (AI)
-- [⚪] husky pre-commit + lint-staged 启用 (AI)
-- [⚪] spec.md / plan.md / tasks.md / CHANGELOG.md (AI)
+- [🟢] husky pre-commit + lint-staged 启用 (AI,2026-08-04 起生效,含 ktlint/clang-format)
+- [🟢] spec.md / plan.md / tasks.md / CHANGELOG.md (AI)
 - [⚪] CI/CD: GitHub Actions lint+test+build (AI)
 - [⚪] S4 对抗演练: hluda+Stalker+MT+IDA+dump (红蓝双方)
 - [⚪] admin-web 单元测试 (AI)
-- [⚪] backend hardening 模块单测 (AI)
-- [⚪] C 代码 host 端单测 (AI)
+- [🟢] backend hardening 模块单测 (AI,覆盖率 80%→98.01%,ef06b8a)
+- [🟡] C 代码 host 端单测 (AI,已有 obfstr_poly/so_cipher,覆盖待扩)
 
 ## P2 — 中期规划
 
