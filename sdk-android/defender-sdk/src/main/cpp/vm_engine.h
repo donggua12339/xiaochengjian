@@ -23,6 +23,7 @@
 #ifndef VM_ENGINE_H
 #define VM_ENGINE_H
 
+#include <stddef.h> /* size_t(host 编译不依赖传递包含) */
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -31,28 +32,28 @@ extern "C" {
 
 /* ============= VM 操作码 ============= */
 enum vm_opcode {
-    VM_NOP      = 0x00,
-    VM_MOV_RI   = 0x01,  /* Vd = imm32 (sign-extended to 64) */
-    VM_MOV_RR   = 0x02,  /* Vd = Vs */
-    VM_ADD      = 0x03,  /* Vd = Va + Vb */
-    VM_SUB      = 0x04,  /* Vd = Va - Vb */
-    VM_XOR      = 0x05,  /* Vd = Va ^ Vb */
-    VM_AND      = 0x06,  /* Vd = Va & Vb */
-    VM_OR       = 0x07,  /* Vd = Va | Vb */
-    VM_SHL      = 0x08,  /* Vd = Va << Vb */
-    VM_SHR      = 0x09,  /* Vd = Va >> Vb (logical) */
-    VM_CMP      = 0x0A,  /* flags = (Va - Vb), 不存结果 */
-    VM_JMP      = 0x0B,  /* PC += offset (signed) */
-    VM_JZ       = 0x0C,  /* if Z: PC += offset */
-    VM_JNZ      = 0x0D,  /* if !Z: PC += offset */
-    VM_LOAD8    = 0x0E,  /* Vd = *(uint8_t*)(Va + imm16) */
-    VM_LOAD32   = 0x0F,  /* Vd = *(uint32_t*)(Va + imm16) */
-    VM_STORE8   = 0x10,  /* *(uint8_t*)(Va + imm16) = Vb */
-    VM_CALL_EXT = 0x11,  /* V0 = native_func(V0,V1,V2,V3) — 调用原生 C 函数 */
-    VM_RET      = 0x12,  /* return V0 */
-    VM_MOV_RI64 = 0x13,  /* Vd = imm64 (8 bytes following) */
-    VM_NOT      = 0x14,  /* Vd = ~Va */
-    VM_NEG      = 0x15,  /* Vd = -Va */
+    VM_NOP = 0x00,
+    VM_MOV_RI = 0x01,   /* Vd = imm32 (sign-extended to 64) */
+    VM_MOV_RR = 0x02,   /* Vd = Vs */
+    VM_ADD = 0x03,      /* Vd = Va + Vb */
+    VM_SUB = 0x04,      /* Vd = Va - Vb */
+    VM_XOR = 0x05,      /* Vd = Va ^ Vb */
+    VM_AND = 0x06,      /* Vd = Va & Vb */
+    VM_OR = 0x07,       /* Vd = Va | Vb */
+    VM_SHL = 0x08,      /* Vd = Va << Vb */
+    VM_SHR = 0x09,      /* Vd = Va >> Vb (logical) */
+    VM_CMP = 0x0A,      /* flags = (Va - Vb), 不存结果 */
+    VM_JMP = 0x0B,      /* PC += offset (signed) */
+    VM_JZ = 0x0C,       /* if Z: PC += offset */
+    VM_JNZ = 0x0D,      /* if !Z: PC += offset */
+    VM_LOAD8 = 0x0E,    /* Vd = *(uint8_t*)(Va + imm16) */
+    VM_LOAD32 = 0x0F,   /* Vd = *(uint32_t*)(Va + imm16) */
+    VM_STORE8 = 0x10,   /* *(uint8_t*)(Va + imm16) = Vb */
+    VM_CALL_EXT = 0x11, /* V0 = native_func(V0,V1,V2,V3) — 调用原生 C 函数 */
+    VM_RET = 0x12,      /* return V0 */
+    VM_MOV_RI64 = 0x13, /* Vd = imm64 (8 bytes following) */
+    VM_NOT = 0x14,      /* Vd = ~Va */
+    VM_NEG = 0x15,      /* Vd = -Va */
 };
 
 /* ============= VM 指令编码格式 ============= */
@@ -71,27 +72,27 @@ enum vm_opcode {
  */
 
 /* 编码辅助宏 */
-#define VM_ENC_REG2(op, dst, src)    ((op) | ((uint8_t)(dst) << 8) | ((uint8_t)(src) << 12))
-#define VM_ENC_REG3(op, dst, a, b)   /* 使用两字节编码 */
-#define VM_PACK_REG2(dst, src)       (((uint8_t)(dst) & 0xF) | (((uint8_t)(src) & 0xF) << 4))
+#define VM_ENC_REG2(op, dst, src) ((op) | ((uint8_t) (dst) << 8) | ((uint8_t) (src) << 12))
+#define VM_ENC_REG3(op, dst, a, b) /* 使用两字节编码 */
+#define VM_PACK_REG2(dst, src) (((uint8_t) (dst) & 0xF) | (((uint8_t) (src) & 0xF) << 4))
 
 /* ============= VM 上下文 ============= */
 
 #define VM_REG_COUNT 16
 
 typedef struct {
-    uint64_t regs[VM_REG_COUNT];  /* V0-V15 */
-    uint32_t flags;               /* bit0=Z, bit1=N, bit2=C */
-    const uint8_t *code;          /* 字节码起始 */
-    size_t code_size;             /* 字节码大小 */
-    uint32_t pc;                  /* 程序计数器(字节偏移) */
-    int halted;                   /* 1=已停止(RET 或错误) */
+    uint64_t regs[VM_REG_COUNT]; /* V0-V15 */
+    uint32_t flags;              /* bit0=Z, bit1=N, bit2=C */
+    const uint8_t *code;         /* 字节码起始 */
+    size_t code_size;            /* 字节码大小 */
+    uint32_t pc;                 /* 程序计数器(字节偏移) */
+    int halted;                  /* 1=已停止(RET 或错误) */
 } vm_context_t;
 
 /* flags 位定义 */
-#define VM_FLAG_Z  (1 << 0)  /* Zero */
-#define VM_FLAG_N  (1 << 1)  /* Negative */
-#define VM_FLAG_C  (1 << 2)  /* Carry */
+#define VM_FLAG_Z (1 << 0) /* Zero */
+#define VM_FLAG_N (1 << 1) /* Negative */
+#define VM_FLAG_C (1 << 2) /* Carry */
 
 /* ============= VM 引擎 API ============= */
 
@@ -124,6 +125,18 @@ uint64_t vm_execute(vm_context_t *ctx);
  * @return 0=正常 / -1=停止 / -2=错误
  */
 int vm_step(vm_context_t *ctx);
+
+/**
+ * 自引用完整性违例查询(ADR 0098 P0-C,强证据 ⑦ 用)
+ * @return 1=dispatch 区段 CRC 失配(VM 被 patch)/ 0=正常或未 patch
+ */
+int vm_self_ref_violated(void);
+
+/**
+ * 计算 dispatch 区段 CRC-32(构建期 patch 脚本对拍 / host 测试用)
+ * @return CRC 值;布局异常(终点≤起点或超 2MB)返回 0
+ */
+uint32_t vm_self_ref_compute_crc(void);
 
 #ifdef __cplusplus
 }

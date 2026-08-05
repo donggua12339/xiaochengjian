@@ -338,13 +338,38 @@ class DefenderInitProvider : ContentProvider() {
         // XposedDetector(置信度评分,≥ killThreshold 触发响应)
         if (config.xposedDetect.enabled) {
             Log.i(TAG, "[Batch 4] XposedDetector 检测中...")
-            val xposedScore = XposedDetector(ctx).detect()
+            val baseScore = XposedDetector(ctx).detect()
+            // ADR 0098 P0-D:GC 根巡检补充证据(对抗藏类名变体)。
+            // 保守加权 ×10,单独不触发阈值;native 不可用时优雅返回 0。
+            val gcSuspicious =
+                try {
+                    X4Native.gcRootScan()
+                } catch (t: Throwable) {
+                    0
+                }
+            val xposedScore = (baseScore + gcSuspicious * 10).coerceAtMost(100)
+            if (gcSuspicious > 0) {
+                Log.w(TAG, "[Batch 4] GC 根巡检命中 $gcSuspicious 条,分数 $baseScore→$xposedScore")
+            }
             if (xposedScore >= config.xposedDetect.killThreshold) {
                 Log.e(TAG, "[Batch 4] XposedDetector 红色(置信度 $xposedScore >= ${config.xposedDetect.killThreshold})")
-                when (config.xposedDetect.onViolation) {
-                    "kill" -> DefenderResponse.kill(ctx, config.onViolationKill)
-                    "warn" -> DefenderResponse.warn(ctx, "xposed_detected", "检测到 Xposed 框架", config.report)
-                    else -> Log.w(TAG, "[Batch 4] XposedDetector onViolation=none, 跳过响应")
+                // ADR 0098 P0-B:检出后优先静默降级反制——反射关闭对方 hook,不崩不报,
+                // 把 kill 留给"反制失败/屡犯/高危"档;反制成功则静默继续运行。
+                val neutralized =
+                    if (config.xposedDetect.countermeasure) {
+                        XposedCountermeasure.attemptSilentDisable()
+                    } else {
+                        false
+                    }
+                if (neutralized) {
+                    Log.w(TAG, "[Batch 4] Xposed 静默反制成功,降级为监控(不 kill)")
+                    DefenderResponse.silentReport("xposed_neutralized", config.report)
+                } else {
+                    when (config.xposedDetect.onViolation) {
+                        "kill" -> DefenderResponse.kill(ctx, config.onViolationKill)
+                        "warn" -> DefenderResponse.warn(ctx, "xposed_detected", "检测到 Xposed 框架", config.report)
+                        else -> Log.w(TAG, "[Batch 4] XposedDetector onViolation=none, 跳过响应")
+                    }
                 }
             } else if (xposedScore > 0) {
                 Log.w(TAG, "[Batch 4] XposedDetector 黄色(置信度 $xposedScore < ${config.xposedDetect.killThreshold})")

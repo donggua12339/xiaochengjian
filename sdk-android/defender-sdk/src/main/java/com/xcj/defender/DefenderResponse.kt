@@ -22,18 +22,20 @@ import android.widget.Toast
  *  2. 如果返回 1(应该上报):Toast + HTTP 上报(待服务端接口实现)
  */
 object DefenderResponse {
-
     private const val TAG = "DefenderResponse"
     private val mainHandler = Handler(Looper.getMainLooper())
 
-    /* L5:上报目标(由 DefenderInitProvider 初始化时从 config 注入) */
+    // L5:上报目标(由 DefenderInitProvider 初始化时从 config 注入)
     private var serverUrl: String = ""
     private var appId: String = ""
 
     /**
      * 初始化上报配置(由 DefenderInitProvider 加载 config 后调用)
      */
-    fun init(serverUrl: String, appId: String) {
+    fun init(
+        serverUrl: String,
+        appId: String,
+    ) {
         this.serverUrl = serverUrl
         this.appId = appId
     }
@@ -44,7 +46,10 @@ object DefenderResponse {
      * @param context Context(用于 Toast)
      * @param config  kill 配置
      */
-    fun kill(context: Context, config: DefenderConfig.KillConfig) {
+    fun kill(
+        context: Context,
+        config: DefenderConfig.KillConfig,
+    ) {
         // 1. Toast(主线程)
         if (config.showToast) {
             mainHandler.post {
@@ -60,7 +65,7 @@ object DefenderResponse {
             }
             Log.e(
                 TAG,
-                "kill 响应触发: method=${config.method}, delay=[${config.delayMinMs}, ${config.delayMaxMs}] ms"
+                "kill 响应触发: method=${config.method}, delay=[${config.delayMinMs}, ${config.delayMaxMs}] ms",
             )
             DefenderNative.defenderKill(config.delayMinMs, config.delayMaxMs, config.method)
         }.start()
@@ -78,7 +83,7 @@ object DefenderResponse {
         context: Context,
         violationKey: String,
         message: String,
-        reportConfig: DefenderConfig.ReportConfig
+        reportConfig: DefenderConfig.ReportConfig,
     ) {
         // 1. 限流检查(enabled=false 时 throttleMs=0,但仍走 native 记录首次时间戳)
         val throttleMs = if (reportConfig.enabled) reportConfig.throttleMs else 0
@@ -97,12 +102,33 @@ object DefenderResponse {
     }
 
     /**
+     * 静默上报(ADR 0098 P0-B 检出降级反制用)
+     *
+     * 与 warn 的区别:不 Toast、不弹窗,仅限流记录 + HTTP 上报。
+     * 用于反制成功场景——对方 hook 已被静默关闭,不向用户/红方发任何信号。
+     */
+    fun silentReport(
+        violationKey: String,
+        reportConfig: DefenderConfig.ReportConfig,
+    ) {
+        val throttleMs = if (reportConfig.enabled) reportConfig.throttleMs else 0
+        val shouldReport = DefenderNative.defenderWarn(violationKey, throttleMs)
+        if (shouldReport != 1) return
+        if (reportConfig.enabled) {
+            reportViolation(violationKey, "")
+        }
+    }
+
+    /**
      * L5:HTTP 上报违规事件到服务端
      *
      * 后台线程 POST {serverUrl}/v1/defender/report,失败仅记日志(上报不阻断 APP)。
      * 服务端接口待实现时,此处会因 404/连接失败而静默跳过。
      */
-    private fun reportViolation(violationKey: String, message: String) {
+    private fun reportViolation(
+        violationKey: String,
+        message: String,
+    ) {
         if (serverUrl.isEmpty()) {
             Log.w(TAG, "warn 上报跳过: serverUrl 未配置")
             return

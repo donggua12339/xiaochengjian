@@ -14,7 +14,6 @@ data class DefenderConfig(
     val serverUrl: String = "",
     val appId: String = "",
     val signatureExpectedHash: String = "",
-
     val signatureVerify: ModuleConfig = ModuleConfig(enabled = true, onViolation = "kill"),
     val antiDebug: ModuleConfig = ModuleConfig(enabled = false, onViolation = "kill"),
     val antiFrida: ModuleConfig = ModuleConfig(enabled = false, onViolation = "kill"),
@@ -25,24 +24,20 @@ data class DefenderConfig(
     val integrityCheck: ModuleConfig = ModuleConfig(enabled = true, onViolation = "kill"),
     val keyAttestation: XposedConfig = XposedConfig(enabled = false, onViolation = "warn", killThreshold = 60),
     val playIntegrity: ModuleConfig = ModuleConfig(enabled = false, onViolation = "warn"),
-
     val secureScreen: SecureScreenConfig = SecureScreenConfig(enabled = false, excludeActivities = emptyList()),
-
-    val onViolationKill: KillConfig = KillConfig(
-        delayMinMs = 3000,
-        delayMaxMs = 15000,
-        method = "sigabrt",
-        showToast = true,
-        toastMessage = "检测到安全风险"
-    ),
-
+    val onViolationKill: KillConfig =
+        KillConfig(
+            delayMinMs = 3000,
+            delayMaxMs = 15000,
+            method = "sigabrt",
+            showToast = true,
+            toastMessage = "检测到安全风险",
+        ),
     val report: ReportConfig = ReportConfig(enabled = false, throttleMs = 300000),
-
-    /* M6:integrity 预期表(Packer 封装时生成,供 Native 层完整性校验) */
+    // M6:integrity 预期表(Packer 封装时生成,供 Native 层完整性校验)
     val integrityCrcTable: List<String> = emptyList(), // 每项 "entry名:crc32hex"
     val integrityFileList: List<String> = emptyList(), // 每项一个 entry 名
 ) {
-
     data class ModuleConfig(
         val enabled: Boolean,
         val onViolation: String, // "kill" / "warn" / "none"
@@ -52,6 +47,8 @@ data class DefenderConfig(
         val enabled: Boolean,
         val onViolation: String,
         val killThreshold: Int, // 0-100,≥ threshold 触发 kill
+        // ADR 0098 P0-B:检出后优先静默反制(反射 disableHooks),失败才走 onViolation
+        val countermeasure: Boolean = true,
     )
 
     data class SecureScreenConfig(
@@ -78,8 +75,8 @@ data class DefenderConfig(
          * 缺失字段使用默认值
          */
         @Suppress("NestedBlockDepth")
-        fun fromJson(json: String): DefenderConfig {
-            return try {
+        fun fromJson(json: String): DefenderConfig =
+            try {
                 val obj = JSONObject(json)
 
                 val sigObj = obj.optJSONObject("signatureVerify")
@@ -101,78 +98,94 @@ data class DefenderConfig(
                     serverUrl = obj.optString("serverUrl", ""),
                     appId = obj.optString("appId", ""),
                     signatureExpectedHash = obj.optString("signatureExpectedHash", ""),
-
-                    signatureVerify = ModuleConfig(
-                        enabled = sigObj?.optBoolean("enabled", true) ?: true,
-                        onViolation = sigObj?.optString("onViolation", "kill") ?: "kill",
-                    ),
-                    antiDebug = ModuleConfig(
-                        enabled = antiDebugObj?.optBoolean("enabled", false) ?: false,
-                        onViolation = antiDebugObj?.optString("onViolation", "kill") ?: "kill",
-                    ),
-                    antiFrida = ModuleConfig(
-                        enabled = antiFridaObj?.optBoolean("enabled", false) ?: false,
-                        onViolation = antiFridaObj?.optString("onViolation", "kill") ?: "kill",
-                    ),
-                    antiDump = ModuleConfig(
-                        enabled = antiDumpObj?.optBoolean("enabled", false) ?: false,
-                        onViolation = antiDumpObj?.optString("onViolation", "kill") ?: "kill",
-                    ),
-                    rootDetect = ModuleConfig(
-                        enabled = rootObj?.optBoolean("enabled", false) ?: false,
-                        onViolation = rootObj?.optString("onViolation", "warn") ?: "warn",
-                    ),
-                    xposedDetect = XposedConfig(
-                        enabled = xposedObj?.optBoolean("enabled", false) ?: false,
-                        onViolation = xposedObj?.optString("onViolation", "kill") ?: "kill",
-                        killThreshold = xposedObj?.optInt("killThreshold", 70) ?: 70,
-                    ),
-                    emulatorDetect = ModuleConfig(
-                        enabled = emulatorObj?.optBoolean("enabled", false) ?: false,
-                        onViolation = emulatorObj?.optString("onViolation", "warn") ?: "warn",
-                    ),
-                    integrityCheck = ModuleConfig(
-                        enabled = integrityObj?.optBoolean("enabled", true) ?: true,
-                        onViolation = integrityObj?.optString("onViolation", "kill") ?: "kill",
-                    ),
-                    keyAttestation = XposedConfig(
-                        enabled = keyAttestationObj?.optBoolean("enabled", false) ?: false,
-                        onViolation = keyAttestationObj?.optString("onViolation", "warn") ?: "warn",
-                        killThreshold = keyAttestationObj?.optInt("killThreshold", 60) ?: 60,
-                    ),
-                    playIntegrity = ModuleConfig(
-                        enabled = playIntegrityObj?.optBoolean("enabled", false) ?: false,
-                        onViolation = playIntegrityObj?.optString("onViolation", "warn") ?: "warn",
-                    ),
-                    secureScreen = SecureScreenConfig(
-                        enabled = secureScreenObj?.optBoolean("enabled", false) ?: false,
-                        excludeActivities = parseStringList(secureScreenObj?.optJSONArray("excludeActivities")),
-                    ),
-                    onViolationKill = KillConfig(
-                        delayMinMs = killObj?.optInt("delayMinMs", 3000) ?: 3000,
-                        delayMaxMs = killObj?.optInt("delayMaxMs", 15000) ?: 15000,
-                        method = killObj?.optString("method", "sigabrt") ?: "sigabrt",
-                        showToast = killObj?.optBoolean("showToast", true) ?: true,
-                        toastMessage = killObj?.optString("toastMessage", "检测到安全风险") ?: "检测到安全风险",
-                    ),
-                    report = ReportConfig(
-                        enabled = reportObj?.optBoolean("enabled", false) ?: false,
-                        throttleMs = reportObj?.optInt("throttleMs", 300000) ?: 300000,
-                    ),
-                    integrityCrcTable = parseStringList(obj.optJSONArray("integrityCrcTable")),
+                    signatureVerify =
+                        ModuleConfig(
+                            enabled = sigObj?.optBoolean("enabled", true) ?: true,
+                            onViolation = sigObj?.optString("onViolation", "kill") ?: "kill",
+                        ),
+                    antiDebug =
+                        ModuleConfig(
+                            enabled = antiDebugObj?.optBoolean("enabled", false) ?: false,
+                            onViolation = antiDebugObj?.optString("onViolation", "kill") ?: "kill",
+                        ),
+                    antiFrida =
+                        ModuleConfig(
+                            enabled = antiFridaObj?.optBoolean("enabled", false) ?: false,
+                            onViolation = antiFridaObj?.optString("onViolation", "kill") ?: "kill",
+                        ),
+                    antiDump =
+                        ModuleConfig(
+                            enabled = antiDumpObj?.optBoolean("enabled", false) ?: false,
+                            onViolation = antiDumpObj?.optString("onViolation", "kill") ?: "kill",
+                        ),
+                    rootDetect =
+                        ModuleConfig(
+                            enabled = rootObj?.optBoolean("enabled", false) ?: false,
+                            onViolation = rootObj?.optString("onViolation", "warn") ?: "warn",
+                        ),
+                    xposedDetect =
+                        XposedConfig(
+                            enabled = xposedObj?.optBoolean("enabled", false) ?: false,
+                            onViolation = xposedObj?.optString("onViolation", "kill") ?: "kill",
+                            killThreshold = xposedObj?.optInt("killThreshold", 70) ?: 70,
+                            countermeasure = xposedObj?.optBoolean("countermeasure", true) ?: true,
+                        ),
+                    emulatorDetect =
+                        ModuleConfig(
+                            enabled = emulatorObj?.optBoolean("enabled", false) ?: false,
+                            onViolation = emulatorObj?.optString("onViolation", "warn") ?: "warn",
+                        ),
+                    integrityCheck =
+                        ModuleConfig(
+                            enabled = integrityObj?.optBoolean("enabled", true) ?: true,
+                            onViolation = integrityObj?.optString("onViolation", "kill") ?: "kill",
+                        ),
+                    keyAttestation =
+                        XposedConfig(
+                            enabled = keyAttestationObj?.optBoolean("enabled", false) ?: false,
+                            onViolation = keyAttestationObj?.optString("onViolation", "warn") ?: "warn",
+                            killThreshold = keyAttestationObj?.optInt("killThreshold", 60) ?: 60,
+                        ),
+                    playIntegrity =
+                        ModuleConfig(
+                            enabled = playIntegrityObj?.optBoolean("enabled", false) ?: false,
+                            onViolation = playIntegrityObj?.optString("onViolation", "warn") ?: "warn",
+                        ),
+                    secureScreen =
+                        SecureScreenConfig(
+                            enabled = secureScreenObj?.optBoolean("enabled", false) ?: false,
+                            excludeActivities = parseStringList(secureScreenObj?.optJSONArray("excludeActivities")),
+                        ),
+                    onViolationKill =
+                        KillConfig(
+                            delayMinMs = killObj?.optInt("delayMinMs", 3000) ?: 3000,
+                            delayMaxMs = killObj?.optInt("delayMaxMs", 15000) ?: 15000,
+                            method = killObj?.optString("method", "sigabrt") ?: "sigabrt",
+                            showToast = killObj?.optBoolean("showToast", true) ?: true,
+                            toastMessage = killObj?.optString("toastMessage", "检测到安全风险") ?: "检测到安全风险",
+                        ),
+                    report =
+                        ReportConfig(
+                            enabled = reportObj?.optBoolean("enabled", false) ?: false,
+                            throttleMs = reportObj?.optInt("throttleMs", 300000) ?: 300000,
+                        ),
+                    integrityCrcTable =
+                        parseStringList(
+                            obj.optJSONArray("integrityCrcTable"),
+                        ),
                     integrityFileList = parseStringList(obj.optJSONArray("integrityFileList")),
                 )
             } catch (e: Exception) {
                 // JSON 解析失败,返回全默认配置(仅 signature + integrity 开)
                 DefenderConfig()
             }
-        }
 
         private fun parseStringList(arr: org.json.JSONArray?): List<String> {
             if (arr == null) return emptyList()
-            return (0 until arr.length()).mapNotNull { idx ->
-                arr.optString(idx, "")
-            }.filter { it.isNotEmpty() }
+            return (0 until arr.length())
+                .mapNotNull { idx ->
+                    arr.optString(idx, "")
+                }.filter { it.isNotEmpty() }
         }
     }
 }

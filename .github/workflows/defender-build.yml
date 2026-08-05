@@ -4,15 +4,15 @@ on:
   push:
     branches: [main]
     paths:
-      - 'sdk-android/defender-sdk/**'
-      - 'sdk-android/defender-demo/**'
-      - 'injector/**'
+      - "sdk-android/defender-sdk/**"
+      - "sdk-android/defender-demo/**"
+      - "injector/**"
   pull_request:
     branches: [main]
     paths:
-      - 'sdk-android/defender-sdk/**'
-      - 'sdk-android/defender-demo/**'
-      - 'injector/**'
+      - "sdk-android/defender-sdk/**"
+      - "sdk-android/defender-demo/**"
+      - "injector/**"
   workflow_dispatch:
 
 jobs:
@@ -28,7 +28,7 @@ jobs:
       - name: Compile + run host tests
         run: |
           cd sdk-android/defender-sdk
-          gcc -I src/main/cpp -I src/test/cpp \
+          gcc -I src/main/cpp -I src/test/cpp -DVM_SELF_REF_TEST \
             -o /tmp/test_vm \
             src/test/cpp/test_vm_engine.c src/main/cpp/vm_engine.c
           /tmp/test_vm
@@ -44,7 +44,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'pnpm'
+          cache: "pnpm"
           cache-dependency-path: backend/pnpm-lock.yaml
 
       - name: Install dependencies
@@ -67,7 +67,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'pnpm'
+          cache: "pnpm"
           cache-dependency-path: admin-web/pnpm-lock.yaml
 
       - name: Install dependencies
@@ -114,7 +114,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.11"
 
       - name: Build defender-sdk
         working-directory: sdk-android/defender-sdk

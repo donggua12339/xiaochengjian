@@ -23,7 +23,10 @@ object X4Native {
     external fun smcSelftest(): Int
 
     /** L5 SMC 演示敏感计算:解密加密机器码→沙箱页执行→擦除。返回 a+b。 */
-    external fun smcAdd(a: Int, b: Int): Int
+    external fun smcAdd(
+        a: Int,
+        b: Int,
+    ): Int
 
     /** L5 SMC 诊断:执行后沙箱页是否已擦除。1=已擦。 */
     external fun smcWiped(): Int
@@ -45,7 +48,12 @@ object X4Native {
      * @param apkPath       本 APK 路径(供强证据 ① 签名 hash 校验)
      * @param expectedHash  预期签名 hash(64 字符 hex;空表示不校验)
      */
-    external fun x4Init(configPath: String?, selfPkg: String, apkPath: String, expectedHash: String)
+    external fun x4Init(
+        configPath: String?,
+        selfPkg: String,
+        apkPath: String,
+        expectedHash: String,
+    )
 
     /** X8 FART 脱壳扫描初始化(传入包名)。 */
     external fun antiFartInit(packageName: String)
@@ -58,4 +66,15 @@ object X4Native {
 
     /** X9 ODEX 修补检测综合检测。返回可疑计数,0=干净。 */
     external fun odexCheck(): Int
+
+    /**
+     * GC 根巡检(ADR 0098 P0-D,Virbox sub_29397C 反哺)。
+     *
+     * 遍历 JNI 全局根,检出与类名无关的物理异常(堆外根 / 根数量异常),
+     * 对抗藏类名/改包名的 Xposed/LSPosed 变体。
+     *
+     * 优雅降级:ART 符号不可得 / API 版本不符 / 访问故障 → 返回 0,绝不崩溃。
+     * @return 可疑计数(0-2),0=干净或不可用
+     */
+    external fun gcRootScan(): Int
 }

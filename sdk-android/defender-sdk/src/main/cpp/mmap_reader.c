@@ -20,16 +20,16 @@
  *  - 看雪《校验的N次方》(bbs.kanxue.com/thread-278216-1.htm)
  */
 
+#include <android/log.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
-#include <fcntl.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
-#include <android/log.h>
+#include <unistd.h>
 
-#include "obfstr_poly.h"   /* X1 字符串多态加密:OBF() / obf_poly_decode */
+#include "obfstr_poly.h" /* X1 字符串多态加密:OBF() / obf_poly_decode */
 
 #define DEFENDER_TAG "DefenderMmapReader"
 #include "defender_log.h"
@@ -39,7 +39,8 @@
 #if defined(__aarch64__)
 /* arm64-v8a syscall 号:
  *   __NR_openat=56, __NR_close=57, __NR_fstat=80, __NR_mmap=222, __NR_read=63 */
-static int mr_openat(const char *path, int flags) {
+static int mr_openat(const char *path, int flags)
+{
     int fd;
     __asm__ volatile(
         "mov x8, #56\n"
@@ -50,12 +51,12 @@ static int mr_openat(const char *path, int flags) {
         "mov %0, x0\n"
         : "=r"(fd)
         : "r"(path), "r"(flags)
-        : "x0", "x1", "x2", "x8", "memory"
-    );
+        : "x0", "x1", "x2", "x8", "memory");
     return fd;
 }
 
-static int mr_close(int fd) {
+static int mr_close(int fd)
+{
     int ret;
     __asm__ volatile(
         "mov x8, #57\n"
@@ -64,16 +65,16 @@ static int mr_close(int fd) {
         "mov %0, x0\n"
         : "=r"(ret)
         : "r"(fd)
-        : "x0", "x8", "memory"
-    );
+        : "x0", "x8", "memory");
     return ret;
 }
 
 /* __NR_read=63: 防 SRPatch PLT hook libc read() 篡改 /proc/self/maps */
-static ssize_t mr_read(int fd, void *buf, size_t count) {
+static ssize_t mr_read(int fd, void *buf, size_t count)
+{
     ssize_t ret;
     __asm__ volatile(
-        "mov x8, #63\n"      /* __NR_read */
+        "mov x8, #63\n" /* __NR_read */
         "mov x0, %1\n"
         "mov x1, %2\n"
         "mov x2, %3\n"
@@ -81,31 +82,31 @@ static ssize_t mr_read(int fd, void *buf, size_t count) {
         "mov %0, x0\n"
         : "=r"(ret)
         : "r"(fd), "r"(buf), "r"(count)
-        : "x0", "x1", "x2", "x8", "memory"
-    );
+        : "x0", "x1", "x2", "x8", "memory");
     return ret;
 }
 
-static int mr_fstat(int fd, struct stat *st) {
+static int mr_fstat(int fd, struct stat *st)
+{
     int ret;
     __asm__ volatile(
-        "mov x8, #80\n"      /* __NR_fstat */
+        "mov x8, #80\n" /* __NR_fstat */
         "mov x0, %1\n"
         "mov x1, %2\n"
         "svc #0\n"
         "mov %0, x0\n"
         : "=r"(ret)
         : "r"(fd), "r"(st)
-        : "x0", "x1", "x8", "memory"
-    );
+        : "x0", "x1", "x8", "memory");
     return ret;
 }
 
 /* mmap6(addr, len, prot, flags, fd, offset) -- arm64 用 6 个参数 */
-static void *mr_mmap(void *addr, size_t len, int prot, int flags, int fd, off_t offset) {
+static void *mr_mmap(void *addr, size_t len, int prot, int flags, int fd, off_t offset)
+{
     void *ret;
     __asm__ volatile(
-        "mov x8, #222\n"     /* __NR_mmap */
+        "mov x8, #222\n" /* __NR_mmap */
         "mov x0, %1\n"
         "mov x1, %2\n"
         "mov x2, %3\n"
@@ -116,60 +117,107 @@ static void *mr_mmap(void *addr, size_t len, int prot, int flags, int fd, off_t 
         "mov %0, x0\n"
         : "=r"(ret)
         : "r"(addr), "r"(len), "r"(prot), "r"(flags), "r"(fd), "r"(offset)
-        : "x0", "x1", "x2", "x3", "x4", "x5", "x8", "memory"
-    );
+        : "x0", "x1", "x2", "x3", "x4", "x5", "x8", "memory");
     return ret;
 }
 
-static int mr_munmap(void *addr, size_t len) {
+static int mr_munmap(void *addr, size_t len)
+{
     int ret;
     __asm__ volatile(
-        "mov x8, #215\n"     /* __NR_munmap */
+        "mov x8, #215\n" /* __NR_munmap */
         "mov x0, %1\n"
         "mov x1, %2\n"
         "svc #0\n"
         "mov %0, x0\n"
         : "=r"(ret)
         : "r"(addr), "r"(len)
-        : "x0", "x1", "x8", "memory"
-    );
+        : "x0", "x1", "x8", "memory");
+    return ret;
+}
+
+/* __NR_readlinkat=78: fd 真实路径反解(ADR 0098 P0-A),svc 直调防 libc hook */
+static ssize_t mr_readlinkat(int dirfd, const char *path, char *buf, size_t bufsiz)
+{
+    ssize_t ret;
+    __asm__ volatile(
+        "mov x8, #78\n" /* __NR_readlinkat */
+        "mov x0, %1\n"
+        "mov x1, %2\n"
+        "mov x2, %3\n"
+        "mov x3, %4\n"
+        "svc #0\n"
+        "mov %0, x0\n"
+        : "=r"(ret)
+        : "r"(dirfd), "r"(path), "r"(buf), "r"(bufsiz)
+        : "x0", "x1", "x2", "x3", "x8", "memory");
     return ret;
 }
 
 #elif defined(__arm__)
-#include <sys/syscall.h>
-/* armeabi-v7a 用 __NR_mmap2(旧内核),页偏移单位为 1KB(4096/1024=4) */
-#ifndef __NR_mmap
-#define __NR_mmap __NR_mmap2
-#endif
-static int mr_openat(const char *path, int flags) {
-    return (int)syscall(__NR_openat, AT_FDCWD, path, flags, 0);
+    #include <sys/syscall.h>
+    /* armeabi-v7a 用 __NR_mmap2(旧内核),页偏移单位为 1KB(4096/1024=4) */
+    #ifndef __NR_mmap
+        #define __NR_mmap __NR_mmap2
+    #endif
+static int mr_openat(const char *path, int flags)
+{
+    return (int) syscall(__NR_openat, AT_FDCWD, path, flags, 0);
 }
-static int mr_close(int fd) {
-    return (int)syscall(__NR_close, fd);
+static int mr_close(int fd)
+{
+    return (int) syscall(__NR_close, fd);
 }
-static ssize_t mr_read(int fd, void *buf, size_t count) {
-    return (ssize_t)syscall(__NR_read, fd, buf, count);
+static ssize_t mr_read(int fd, void *buf, size_t count)
+{
+    return (ssize_t) syscall(__NR_read, fd, buf, count);
 }
-static int mr_fstat(int fd, struct stat *st) {
-    return (int)syscall(__NR_fstat, fd, st);
+static int mr_fstat(int fd, struct stat *st)
+{
+    return (int) syscall(__NR_fstat, fd, st);
 }
-static void *mr_mmap(void *addr, size_t len, int prot, int flags, int fd, off_t offset) {
+static void *mr_mmap(void *addr, size_t len, int prot, int flags, int fd, off_t offset)
+{
     /* mmap2 的 offset 单位是 1KB,需除以 4096 */
-    return (void *)syscall(__NR_mmap, addr, len, prot, flags, fd, (long)(offset / 4096));
+    return (void *) syscall(__NR_mmap, addr, len, prot, flags, fd, (long) (offset / 4096));
 }
-static int mr_munmap(void *addr, size_t len) {
-    return (int)syscall(__NR_munmap, addr, len);
+static int mr_munmap(void *addr, size_t len)
+{
+    return (int) syscall(__NR_munmap, addr, len);
+}
+static ssize_t mr_readlinkat(int dirfd, const char *path, char *buf, size_t bufsiz)
+{
+    return (ssize_t) syscall(__NR_readlinkat, dirfd, path, buf, bufsiz);
 }
 #else
-static int mr_openat(const char *path, int flags) { return open(path, flags); }
-static int mr_close(int fd) { return close(fd); }
-static ssize_t mr_read(int fd, void *buf, size_t count) { return read(fd, buf, count); }
-static int mr_fstat(int fd, struct stat *st) { return fstat(fd, st); }
-static void *mr_mmap(void *addr, size_t len, int prot, int flags, int fd, off_t offset) {
+static int mr_openat(const char *path, int flags)
+{
+    return open(path, flags);
+}
+static int mr_close(int fd)
+{
+    return close(fd);
+}
+static ssize_t mr_read(int fd, void *buf, size_t count)
+{
+    return read(fd, buf, count);
+}
+static int mr_fstat(int fd, struct stat *st)
+{
+    return fstat(fd, st);
+}
+static void *mr_mmap(void *addr, size_t len, int prot, int flags, int fd, off_t offset)
+{
     return mmap(addr, len, prot, flags, fd, offset);
 }
-static int mr_munmap(void *addr, size_t len) { return munmap(addr, len); }
+static int mr_munmap(void *addr, size_t len)
+{
+    return munmap(addr, len);
+}
+static ssize_t mr_readlinkat(int dirfd, const char *path, char *buf, size_t bufsiz)
+{
+    return readlinkat(dirfd, path, buf, bufsiz);
+}
 #endif
 
 /* ============= 前向声明 ============= */
@@ -189,12 +237,106 @@ static int g_cached_apk_fd = -1;
 static struct stat g_cached_apk_stat;
 static int g_cached_stat_valid = 0;
 
-static void __attribute__((constructor)) mmap_reader_early_init(void) {
+/* ============= fd 真实路径校验(ADR 0098 P0-A) ============= */
+/*
+ * Virbox 反哺(sub_259114/254DF8):自检读取必须反解 fd 真实路径与预期比对,
+ * 杀 dup2/memfd/reopen 类重定向伪造——open 时看不出,read/mmap 时反解即露馅。
+ * 玄甲原只校内容(hash/CRC)不校 fd 来源,此处补上最大缺口。
+ */
+static int g_fd_redirect_flag = 0;    /* 1=fd 真实路径与预期不符(重定向伪造证据) */
+static int g_fd_path_checked = 0;     /* 1=曾成功执行过 readlink 校验 */
+static char g_expected_apk_path[512]; /* init 时锁定的预期 APK 路径 */
+
+/**
+ * readlinkat(/proc/self/fd/N) 反解 fd 真实路径,与预期路径比对。
+ * 不一致 → g_fd_redirect_flag=1(强证据,response_chain 层 kill)。
+ * readlink 失败不计证据(内核/SELinux 差异,宁可漏报不误杀)。
+ */
+static void mr_verify_fd_path(int fd, const char *expected)
+{
+    if (fd < 0 || !expected || expected[0] == '\0')
+        return;
+
+    /* 手工拼 "/proc/self/fd/%d",不引入 snprintf */
+    char fdlink[64];
+    const char *prefix = OBF("/proc/self/fd/");
+    int pos = 0;
+    while (prefix[pos] != '\0' && pos < 32) {
+        fdlink[pos] = prefix[pos];
+        pos++;
+    }
+    char num[16];
+    int nlen = 0;
+    int v = fd;
+    if (v == 0) {
+        num[nlen++] = '0';
+    } else {
+        char tmp[16];
+        int t = 0;
+        while (v > 0 && t < 15) {
+            tmp[t++] = (char) ('0' + (v % 10));
+            v /= 10;
+        }
+        while (t > 0)
+            num[nlen++] = tmp[--t];
+    }
+    for (int i = 0; i < nlen && pos < (int) sizeof(fdlink) - 1; i++) {
+        fdlink[pos++] = num[i];
+    }
+    fdlink[pos] = '\0';
+
+    char actual[600];
+    ssize_t len = mr_readlinkat(-100 /* AT_FDCWD */, fdlink, actual, sizeof(actual) - 1);
+    if (len <= 0)
+        return;
+    actual[len] = '\0';
+    g_fd_path_checked = 1;
+
+    /* 容忍结尾 " (deleted)"(系统更新替换 APK 的罕见场景),其余严格比对 */
+    size_t alen = (size_t) len;
+    const char dsuffix[] = " (deleted)";
+    const size_t dsuffix_len = sizeof(dsuffix) - 1;
+    if (alen > dsuffix_len && strcmp(actual + alen - dsuffix_len, dsuffix) == 0) {
+        actual[alen - dsuffix_len] = '\0';
+    }
+
+    if (strcmp(actual, expected) != 0) {
+        g_fd_redirect_flag = 1;
+        LOGE("自检 fd 真实路径与预期不符(重定向伪造证据)");
+    }
+}
+
+/**
+ * 查询 fd 重定向证据(强证据通道 ⑥,每轮可调)。
+ * 首次返回前对缓存 fd 做一次主动复查,捕捉 init 后被替换 fd 的场景。
+ */
+int mmap_reader_fd_redirect_detected(void)
+{
+    if (g_fd_redirect_flag)
+        return 1;
+    if (g_cached_apk_fd >= 0 && g_expected_apk_path[0] != '\0') {
+        struct stat st;
+        if (mr_fstat(g_cached_apk_fd, &st) == 0) {
+            mr_verify_fd_path(g_cached_apk_fd, g_expected_apk_path);
+        }
+    }
+    return g_fd_redirect_flag;
+}
+
+static void __attribute__((constructor)) mmap_reader_early_init(void)
+{
     char path[512];
-    if (find_apk_path_from_maps(path, sizeof(path)) != 0) return;
+    if (find_apk_path_from_maps(path, sizeof(path)) != 0)
+        return;
 
     int fd = mr_openat(path, 0); /* O_RDONLY, inline svc, hook 尚未安装 */
-    if (fd < 0) return;
+    if (fd < 0)
+        return;
+
+    /* 锁定预期路径并立即校验 fd 真实路径(P0-A) */
+    strncpy(g_expected_apk_path, path, sizeof(g_expected_apk_path) - 1);
+    g_expected_apk_path[sizeof(g_expected_apk_path) - 1] = '\0';
+    mr_verify_fd_path(fd, path);
 
     if (mr_fstat(fd, &g_cached_apk_stat) == 0) {
         g_cached_stat_valid = 1;
@@ -207,7 +349,8 @@ static void __attribute__((constructor)) mmap_reader_early_init(void) {
  * 尝试使用缓存 fd,若无效则扫描 /proc/self/fd/ 找回正确 fd
  * (通过 dev+ino 匹配,绕过路径重定向)
  */
-static int get_valid_apk_fd(const char *fallback_path) {
+static int get_valid_apk_fd(const char *fallback_path)
+{
     /* 优先使用缓存 fd */
     if (g_cached_apk_fd >= 0) {
         struct stat st;
@@ -217,9 +360,17 @@ static int get_valid_apk_fd(const char *fallback_path) {
         /* 缓存 fd 被关闭,尝试回退 */
     }
 
-    /* 回退:openat by path(可能被 hook,但作为最后手段) */
+    /* 回退:openat by path(可能被 hook,但作为最后手段);取到 fd 立即反解校验 */
     if (fallback_path) {
-        return mr_openat(fallback_path, 0);
+        int fd = mr_openat(fallback_path, 0);
+        if (fd >= 0) {
+            if (g_expected_apk_path[0] == '\0') {
+                strncpy(g_expected_apk_path, fallback_path, sizeof(g_expected_apk_path) - 1);
+                g_expected_apk_path[sizeof(g_expected_apk_path) - 1] = '\0';
+            }
+            mr_verify_fd_path(fd, g_expected_apk_path);
+        }
+        return fd;
     }
     return -1;
 }
@@ -237,9 +388,11 @@ static int get_valid_apk_fd(const char *fallback_path) {
  * @param apk_path_out 输出:APK 路径(至少 512 字节)
  * @return 0=成功 / -1=失败
  */
-static int find_apk_path_from_maps(char *apk_path_out, size_t out_size) {
+static int find_apk_path_from_maps(char *apk_path_out, size_t out_size)
+{
     int fd = mr_openat(OBF("/proc/self/maps"), 0);
-    if (fd < 0) return -1;
+    if (fd < 0)
+        return -1;
 
     char buf[8192];
     char line[1024];
@@ -253,7 +406,7 @@ static int find_apk_path_from_maps(char *apk_path_out, size_t out_size) {
     while ((n = mr_read(fd, buf, sizeof(buf) - 1)) > 0 && !found) {
         buf[n] = '\0';
         for (int i = 0; i < n && !found; i++) {
-            if (buf[i] == '\n' || line_pos >= (int)sizeof(line) - 1) {
+            if (buf[i] == '\n' || line_pos >= (int) sizeof(line) - 1) {
                 line[line_pos] = '\0';
 
                 /* 优先搜索 ".apk!" 格式(extractNativeLibs=false 时) */
@@ -262,7 +415,7 @@ static int find_apk_path_from_maps(char *apk_path_out, size_t out_size) {
                     char *path_start = strrchr(line, ' ');
                     if (path_start != NULL) {
                         path_start++;
-                        size_t prefix_len = (size_t)(apk_marker - path_start) + 4;
+                        size_t prefix_len = (size_t) (apk_marker - path_start) + 4;
                         if (prefix_len < out_size) {
                             strncpy(apk_path_out, path_start, prefix_len);
                             apk_path_out[prefix_len] = '\0';
@@ -283,12 +436,15 @@ static int find_apk_path_from_maps(char *apk_path_out, size_t out_size) {
                                          base_apk[8] == '\n' || base_apk[8] == '!')) {
                             /* 提取完整路径(从 /data/app/ 到 base.apk) */
                             char *path_start = strrchr(line, ' ');
-                            if (path_start) path_start++;
-                            else path_start = line;
+                            if (path_start)
+                                path_start++;
+                            else
+                                path_start = line;
                             /* 找路径结束位置(空格或行尾) */
                             char *path_end = strchr(path_start, ' ');
-                            if (!path_end) path_end = path_start + strlen(path_start);
-                            size_t path_len = (size_t)(path_end - path_start);
+                            if (!path_end)
+                                path_end = path_start + strlen(path_start);
+                            size_t path_len = (size_t) (path_end - path_start);
                             if (path_len < sizeof(fallback_apk)) {
                                 strncpy(fallback_apk, path_start, path_len);
                                 fallback_apk[path_len] = '\0';
@@ -306,7 +462,8 @@ static int find_apk_path_from_maps(char *apk_path_out, size_t out_size) {
     }
     mr_close(fd);
 
-    if (found) return 0;
+    if (found)
+        return 0;
 
     /* 回退:使用 DEX 映射中的 base.apk 路径 */
     if (has_fallback && strlen(fallback_apk) < out_size) {
@@ -329,7 +486,8 @@ static int find_apk_path_from_maps(char *apk_path_out, size_t out_size) {
  * @param out_size 输出:APK 文件大小
  * @return 0=成功 / -1=失败
  */
-int mmap_apk(const char *apk_path, void **out_mapped, size_t *out_size) {
+int mmap_apk(const char *apk_path, void **out_mapped, size_t *out_size)
+{
     char maps_path[512];
     const char *effective_path = apk_path;
 
@@ -374,7 +532,7 @@ int mmap_apk(const char *apk_path, void **out_mapped, size_t *out_size) {
         return -1;
     }
 
-    LOGI("APK mmap 成功: %s size=%zu base=%p", effective_path, (size_t)st.st_size, mapped);
+    LOGI("APK mmap 成功: %s size=%zu base=%p", effective_path, (size_t) st.st_size, mapped);
     *out_mapped = mapped;
     *out_size = st.st_size;
     return 0;
@@ -383,8 +541,10 @@ int mmap_apk(const char *apk_path, void **out_mapped, size_t *out_size) {
 /**
  * 缓存 fd 是否有效(供 JNI 层查询)
  */
-int mmap_reader_cached_fd_valid(void) {
-    if (g_cached_apk_fd < 0) return 0;
+int mmap_reader_cached_fd_valid(void)
+{
+    if (g_cached_apk_fd < 0)
+        return 0;
     struct stat st;
     return (mr_fstat(g_cached_apk_fd, &st) == 0) ? 1 : 0;
 }
@@ -392,6 +552,8 @@ int mmap_reader_cached_fd_valid(void) {
 /**
  * 释放 mmap 映射
  */
-void mmap_apk_free(void *mapped, size_t size) {
-    if (mapped) mr_munmap(mapped, size);
+void mmap_apk_free(void *mapped, size_t size)
+{
+    if (mapped)
+        mr_munmap(mapped, size);
 }

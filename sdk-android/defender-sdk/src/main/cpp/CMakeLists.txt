@@ -25,12 +25,13 @@ set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} \
     -Wno-unused-parameter \
 ")
 
-# Release 模式去除符号表 + strip
+# Release 模式优化;strip 交给 Gradle stripReleaseDebugSymbols(release 管线保证),
+# 不在此处 -Wl,-s——POST_BUILD 的 patch_vm_self_ref.py 需要 .symtab 里的
+# __start_vmself_code/__stop_vmself_code 符号定位自引用 CRC 范围(ADR 0098 P0-C)。
 set(CMAKE_C_FLAGS_RELEASE "-DNDEBUG -O2")
 set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} \
     -Wl,--gc-sections \
     -Wl,--exclude-libs,ALL \
-    -Wl,-s \
 ")
 
 # ============= 源文件 =============
@@ -89,6 +90,8 @@ set(DEFENDER_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/telemetry.c
     ${CMAKE_CURRENT_SOURCE_DIR}/auto_rollback.c
     ${CMAKE_CURRENT_SOURCE_DIR}/x4_core.c
+    # GC 根巡检(ADR 0098 P0-D,Virbox sub_29397C 反哺)
+    ${CMAKE_CURRENT_SOURCE_DIR}/x4_gc_roots.c
     # X4 占位 stub(toast/telemetry,Q5 灰度期补真机 JNI 实现)
     ${CMAKE_CURRENT_SOURCE_DIR}/x4_stubs.c
 )
@@ -164,6 +167,20 @@ endif()
 target_include_directories(xcj_defender PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
 )
+
+# ============= VM 自引用 CRC 写入(ADR 0098 P0-C)=============
+# 链接后按 .symtab 的 __start_/__stop_vmself_code 定位 dispatch 区段算 CRC-32,
+# 写入 .rodata 占位符。VM 引擎未链入(被 gc-sections 回收)时脚本优雅跳过。
+set(VM_SELFREF_SCRIPT ${CMAKE_CURRENT_SOURCE_DIR}/../../../scripts/patch_vm_self_ref.py)
+if(Python3_Interpreter_FOUND AND EXISTS ${VM_SELFREF_SCRIPT})
+    add_custom_command(TARGET xcj_defender POST_BUILD
+        COMMAND ${Python3_EXECUTABLE} ${VM_SELFREF_SCRIPT} $<TARGET_FILE:xcj_defender>
+        COMMENT "VM self-ref: 写入 dispatch CRC32"
+        VERBATIM
+    )
+else()
+    message(WARNING "VM self-ref: 未找到 Python3 或 patch_vm_self_ref.py,自引用 CRC 不写入(运行时跳过)")
+endif()
 
 # ============= Hikari CFF 参数生成(ADR 0094,每构建随机化)=============
 # native_cff.py --gen-params 生成 cff_params.h(CFF 状态表+LCG) + x0_derive.h(密钥派生材料)。
