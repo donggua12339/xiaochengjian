@@ -4,6 +4,7 @@ import com.android.tools.smali.dexlib2.DexFileFactory
 import com.android.tools.smali.dexlib2.Opcodes
 import com.android.tools.smali.dexlib2.dexbacked.DexBackedDexFile
 import com.github.ajalt.clikt.core.CliktCommand
+import com.github.ajalt.clikt.parameters.options.multiple
 import com.github.ajalt.clikt.parameters.options.option
 import com.github.ajalt.clikt.parameters.options.required
 import org.slf4j.LoggerFactory
@@ -19,10 +20,15 @@ import java.util.zip.ZipOutputStream
 /**
  * T4 CLI 命令:对 APK 中的 DEX 字符串加密。
  *
- * 管线: dexlib2 3.0.7 修改 DEX → 写出 → binary patch debug_info parameter_name。
- * dexlib2 3.0.7 writer 重排 string table 后 debug_info_item 中 parameter_name
- * 索引可能越界。patchParameterNames 用等长 ULEB128 替换为 0(NO_INDEX),
- * 保持编码长度不变,再重算 adler32 + SHA-1。
+ * 管线: dexlib2 3.0.7 修改 DEX → 写出 → stripDebugInfo 剥离调试信息。
+ * dexlib2 3.0.7 writer 重排 string table 后 debug_info 的字符串索引越界,
+ * 且 debug 流本身可能结构失同步——等长清零 parameter_name 只能修部分形态
+ * (2026-08-05 实测:清零后 ART 校验仍报幻影越界索引)。
+ * release 加固包不需要调试符号,直接整体剥离:
+ *   1. 所有 code_item.debug_info_off 置 0
+ *   2. debug 数据所在 map 区段整体置零(ART 校验器会直接遍历该区段,
+ *      全零字节解码为合法空 item: line=0, params=0, END_SEQUENCE)
+ * 顺带去除符号信息,利于反逆向。最后重算 SHA-1 + adler32。
  */
 class EncryptStringsCommand :
     CliktCommand(
@@ -36,6 +42,13 @@ class EncryptStringsCommand :
         "--key-hex",
         help = "使用指定的 16 字节 hex 密钥(管线复用预编译 SO 的密钥);缺省随机生成",
     )
+    private val includePrefix by option(
+        "--include-prefix",
+        help =
+            "仅加密指定 Java 包前缀的类(可重复,如 com.example.app)。" +
+                "kotlin/androidx 等库类早于 defender 加载且类初始化敏感,严禁加密——" +
+                "不传则拒绝执行,防止把库类加密导致 VerifyError",
+    ).multiple(required = true)
 
     private val logger = LoggerFactory.getLogger(EncryptStringsCommand::class.java)
 
@@ -50,9 +63,9 @@ class EncryptStringsCommand :
         require(apkFile.exists()) { "APK 不存在: $apkPath" }
 
         val key = keyHex?.let { parseKeyHex(it) } ?: DexStringEncryptor.generateKey()
-        val encryptor = DexStringEncryptor(key)
+        val encryptor = DexStringEncryptor(key, includePrefix)
 
-        logger.info("T4 DEX 字符串加密开始: $apkPath")
+        logger.info("T4 DEX 字符串加密开始: $apkPath(仅加密包前缀: $includePrefix)")
 
         val outFile = File(outputPath)
         val keyHeaderPath = keyOutput ?: "t4_str_key.h"
@@ -144,44 +157,47 @@ class EncryptStringsCommand :
         try {
             DexFileFactory.writeDexFile(tmpFile.absolutePath, outputDex)
             val rawDex = tmpFile.readBytes()
-            // dexlib2 3.0.7 writer 重排 string table → debug_info parameter_name 索引越界
-            // binary patch: 等长 ULEB128 替换为 0(NO_INDEX),保持偏移不变
-            val (patched, count) = patchParameterNames(rawDex)
+            // dexlib2 3.0.7 writer 重排 string table → debug_info 字符串索引越界 +
+            // debug 流结构失同步,逐索引等长清零修不干净(幻影越界值)。
+            // release 加固包不需要调试符号:整体剥离 debug info。
+            val (stripped, count) = stripDebugInfo(rawDex)
             if (count > 0) {
-                logger.info("  binary patch: 修复 $count 个越界 parameter_name 索引")
+                logger.info("  strip debug info: $count 个 code_item 的 debug_info_off 已清零")
             }
-            logger.info("  dexlib2 输出: ${patched.size} bytes")
-            return patched
+            logger.info("  dexlib2 输出: ${stripped.size} bytes")
+            return stripped
         } finally {
             tmpFile.delete()
         }
     }
 
-    // ========== 精确 binary patch: 等长 ULEB128 替换 parameter_name ==========
+    // ========== 剥离 debug info(替代旧 patchParameterNames) ==========
 
     /**
-     * 遍历 DEX 中所有 debug_info_item,将每个 parameter_name 等长替换为 0。
+     * 整体剥离 DEX 的调试信息。
      *
-     * 等长替换原理:
-     *   1 字节 ULEB128 (值<128) → 写 0x00
-     *   2 字节 ULEB128 → 写 0x80 0x00 (等长, 值=0)
-     *   3 字节 ULEB128 → 写 0x80 0x80 0x00 (等长, 值=0)
-     *   N 字节 ULEB128 → 写 (N-1) 个 0x80 + 1 个 0x00
+     * 两步:
+     *  1. 遍历 class_data → code_item,debug_info_off 全部置 0
+     *  2. debug 数据所在的 map 区段整体置零——ART 校验器不只按 code_item 引用
+     *     走,还会直接遍历 debug 区段;全零字节按 debug_info_item 解码恰为合法
+     *     空 item(line_start=0, parameters_size=0, 首字节 0x00=END_SEQUENCE)
      *
-     * 这样编码长度不变,后续字节偏移不受影响,值变为 0(NO_INDEX)。
+     * 区段定位:map_list 各条目 offset(+map_off/文件尾)构成边界集合,
+     * 每个 debug_info_off 归入其所在边界区间,置零该区间内全部 debug 起点之后的部分。
      *
-     * @return Pair(patched_dex, patch_count)
+     * @return Pair(stripped_dex, 被清零 debug_info_off 的 code_item 数)
      */
-    internal fun patchParameterNames(dex: ByteArray): Pair<ByteArray, Int> {
+    internal fun stripDebugInfo(dex: ByteArray): Pair<ByteArray, Int> {
         val result = dex.copyOf()
         val buf = ByteBuffer.wrap(result).order(ByteOrder.LITTLE_ENDIAN)
 
-        val stringIdsSize = buf.getInt(56)
+        val mapOff = buf.getInt(52)
         val classDefsSize = buf.getInt(96)
         val classDefsOff = buf.getInt(100)
 
-        var patchCount = 0
-
+        // 1) 清零 code_item.debug_info_off,收集原始值
+        val debugOffs = mutableSetOf<Int>()
+        var zeroed = 0
         for (i in 0 until classDefsSize) {
             val classDefOff = classDefsOff + i * 32
             val classDataOff = buf.getInt(classDefOff + 24)
@@ -197,10 +213,8 @@ class EncryptStringsCommand :
             val (virtualMethodsSize, p4) = readUleb128(result, pos)
             pos = p4
 
-            // Skip fields
             pos = skipEncodedFields(result, pos, (staticFieldsSize + instanceFieldsSize).toInt())
 
-            // Process methods (direct + virtual)
             for (methodIdx in 0 until (directMethodsSize + virtualMethodsSize).toInt()) {
                 val (_, pa) = readUleb128(result, pos)
                 pos = pa // method_idx_diff
@@ -210,59 +224,45 @@ class EncryptStringsCommand :
                 pos = pc
                 if (codeOff == 0L || codeOff >= result.size) continue
 
-                // code_item.debug_info_off at codeOff + 8
                 val debugInfoOff = buf.getInt(codeOff.toInt() + 8)
-                if (debugInfoOff == 0 || debugInfoOff < 0 || debugInfoOff >= result.size) continue
-
-                // Parse debug_info_item header
-                var dpos = debugInfoOff
-                val (_, d1) = readUleb128(result, dpos)
-                dpos = d1 // line_start
-                val (paramsSize, d2) = readUleb128(result, dpos)
-                dpos = d2
-
-                // Patch each parameter_name (ULEB128 → equal-length zero)
-                // 结构化判定,不依赖数值比较:损坏的 name 字段可达 10+ 字节,
-                // 任何定长整数解码都会溢出成负数绕过 >= 判断。
-                // 改为扫终止字节(最高位为 0)定编码长度,合法 = 长度 ≤5 且值在界内。
-                if (paramsSize > 0xFFFFL) continue // 参数数量本身损坏,跳过本方法
-                for (pi in 0 until paramsSize.toInt()) {
-                    val nameStart = dpos
-                    var nameEnd = nameStart
-                    while (nameEnd < result.size &&
-                        (result[nameEnd].toInt() and 0x80) != 0
-                    ) {
-                        nameEnd++
-                    }
-                    if (nameEnd >= result.size) break // 无终止字节,数据损坏到文件尾
-                    nameEnd++ // 含终止字节
-                    dpos = nameEnd
-                    val encLen = nameEnd - nameStart
-
-                    val (nameVal, _) = readUleb128(result, nameStart)
-                    val valid =
-                        encLen <= 5 &&
-                            nameVal >= 0L &&
-                            (nameVal == 0L || nameVal - 1 < stringIdsSize.toLong())
-                    if (!valid) {
-                        writeEqualLengthZeroUleb128(result, nameStart, encLen)
-                        patchCount++
-                    }
-                }
-
-                // We don't need to patch the rest of debug_info (opcodes + data)
-                // because the error is specifically about parameter_name indices
+                if (debugInfoOff <= 0 || debugInfoOff >= result.size) continue
+                debugOffs.add(debugInfoOff)
+                buf.putInt(codeOff.toInt() + 8, 0)
+                zeroed++
             }
         }
 
-        // 重算 DEX header signature (SHA-1 of bytes 32..end)
-        // 必须先写 signature 再算 checksum,因为 checksum 覆盖 bytes 12..end(含 signature)
+        if (debugOffs.isEmpty()) return Pair(result, 0)
+
+        // 2) map_list 边界 → 定位 debug 区段 → 置零
+        val boundaries = sortedSetOf(0, mapOff, result.size)
+        if (mapOff > 0 && mapOff + 4 <= result.size) {
+            val mapCount = buf.getInt(mapOff)
+            var p = mapOff + 4
+            repeat(mapCount) {
+                if (p + 12 > result.size) return@repeat
+                boundaries.add(buf.getInt(p + 8)) // section offset
+                p += 12
+            }
+        }
+        val boundaryList = boundaries.toList()
+        for (off in debugOffs) {
+            val start = boundaryList.lastOrNull { it <= off } ?: continue
+            val end = boundaryList.firstOrNull { it > start } ?: result.size
+            for (i in start until end) result[i] = 0
+        }
+
+        finalizeDexChecksums(result)
+        return Pair(result, zeroed)
+    }
+
+    /** 重算 DEX header signature(SHA-1)+ checksum(adler32)。先 SHA-1 后 adler32。 */
+    private fun finalizeDexChecksums(result: ByteArray) {
         val sha1 = MessageDigest.getInstance("SHA-1")
         sha1.update(result, 32, result.size - 32)
         val sig = sha1.digest()
         System.arraycopy(sig, 0, result, 12, 20)
 
-        // 重算 DEX header checksum (adler32 of bytes 12..end)
         val adler = Adler32()
         adler.update(result, 12, result.size - 12)
         val checksum = adler.value.toInt()
@@ -270,26 +270,6 @@ class EncryptStringsCommand :
         result[9] = ((checksum shr 8) and 0xFF).toByte()
         result[10] = ((checksum shr 16) and 0xFF).toByte()
         result[11] = ((checksum shr 24) and 0xFF).toByte()
-
-        return Pair(result, patchCount)
-    }
-
-    /**
-     * 写等长的零值 ULEB128。
-     * encLen=1 → [0x00]
-     * encLen=2 → [0x80, 0x00]
-     * encLen=3 → [0x80, 0x80, 0x00]
-     * ...
-     */
-    internal fun writeEqualLengthZeroUleb128(
-        data: ByteArray,
-        offset: Int,
-        encLen: Int,
-    ) {
-        for (i in 0 until encLen - 1) {
-            data[offset + i] = 0x80.toByte() // continuation bit set, value bits = 0
-        }
-        data[offset + encLen - 1] = 0x00 // final byte: no continuation, value = 0
     }
 
     internal fun skipEncodedFields(

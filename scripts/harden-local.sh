@@ -120,9 +120,13 @@ if [ ! -f "$INJECTOR_JAR" ]; then
 fi
 # 密钥取自 t4_str_key.h(与预编译 defender SO 内的 T4_XOR_KEY 一致,运行时才能解密)
 T4_KEY_HEX=$(grep -oE '0x[0-9a-fA-F]{2}' "$T4_KEY_HEADER" | sed 's/0x//' | tr -d '\n')
+# --include-prefix "$PKG":只加密业务包(第 3 步提取)的类。
+# kotlin/androidx 等库类加载早于 defender、类初始化对解密调用敏感,
+# 加密它们会 VerifyError(2026-08-06 真机实证)。
 java -jar "$INJECTOR_JAR" encrypt-strings \
   --apk work.apk --output work-t4.apk \
-  --key-hex "$T4_KEY_HEX" --key-header "$WORK/t4_key.h" 2>&1 | grep -E "注入|完成|保留" || true
+  --key-hex "$T4_KEY_HEX" --key-header "$WORK/t4_key.h" \
+  --include-prefix "$PKG" 2>&1 | grep -E "注入|完成|保留" || true
 mv work-t4.apk work.apk
 
 echo "==> [6] zipalign -p -f 4"

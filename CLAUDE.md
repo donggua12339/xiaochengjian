@@ -100,7 +100,9 @@
 - 独立 .so 间通信:禁 `extern` 跨 .so 引用;用 setter 模式或 JNI_OnLoad `void* reserved` 传参
 - ELF 操作:mprotect 临时 RW → 写 → 恢复 R;只擦 e_ident(16 字节),禁擦 64 字节
 - 构建期密钥:禁明文出现在 .c/.h 源文件;用 CFF 碎片+运行时重建;`.gitignore` 必须挡 `x0_*.h`/`cff_params.h`
-- DEX 写入:dexlib2 3.0.7(`com.android.tools.smali:smali-dexlib2`)读改可用,但其 DexWriter 有 debug_info string_id bug(重排 string table 后 `parameter_name` 索引越界)。现行方案=3.0.7 写出后**必须接 binary patch**(`EncryptStringsCommand.patchParameterNames` 等长 ULEB128 清零越界索引 + 先写 SHA-1 再算 adler32)。禁单独裸用 DexWriter 产物
+- DEX 写入:dexlib2 3.0.7(`com.android.tools.smali:smali-dexlib2`)读改可用,但其 DexWriter 有 debug_info string_id bug(重排 string table 后 `parameter_name` 索引越界,且 debug 流结构可能失同步)。现行方案=3.0.7 写出后**必须接 `EncryptStringsCommand.stripDebugInfo`**(清零全部 `code_item.debug_info_off` + 清零 debug 数据所在 map 区段,全零字节解码为合法空 item;再重算 SHA-1 + adler32)。禁单独裸用 DexWriter 产物。历史教训:等长 ULEB128 逐个清零 `parameter_name` 修不干净(幻影越界索引,2026-08-05 实证)
+- DEX 指令改写:凡插入/替换指令(宽度变化),**必须**用 `MutableMethodImplementation`(Label 自动重定位分支与 try 块);禁用 `ImmutableInstruction.of` 复制后拼列表——其分支目标存绝对偏移,插入即失效(VerifyError: invalid branch target,2026-08-06 真机实证)。读方法参数用 `parameterTypes`(proto type_list),勿迭代 `parameters`(触发 debug 流读取)
+- T4 字符串加密白名单:**只加密业务包**(`--include-prefix`,harden-local.sh 传 manifest 包名)。kotlin/androidx/java 等库类加载早于 defender 且类初始化对解密调用敏感,加密即 VerifyError/启动崩(2026-08-06 真机实证)。Application 子类字段初始值不加密(其 `<clinit>` 早于 DefenderInitProvider 加载)
 - smali 指令格式:`CONST_16`=21s,`MOVE_RESULT`=11x,`NEW_ARRAY`=22c,寄存器>15 用 3rc
 
 ### 异步任务模式(backend hardening)
