@@ -20,6 +20,14 @@ RUN cd backend && pnpm install --no-frozen-lockfile
 RUN cd backend && pnpm prisma generate
 RUN cd backend && pnpm nest build
 
+# ---- T4 injector 构建阶段(ADR 0090:DEX 字符串加密器,Kotlin+dexlib2)----
+# 产物 xcj-injector-all.jar 注入 sdk-artifacts/,hardening.service T4 步骤调用。
+# 不入库(16MB+ 超仓库体积惯例),镜像构建期现编。
+FROM gradle:8.10-jdk17 AS injector-builder
+WORKDIR /inj
+COPY injector/ ./
+RUN gradle installDist -x test --no-daemon
+
 # ---- 运行阶段 ----
 FROM node:22-alpine AS runner
 WORKDIR /app
@@ -56,8 +64,10 @@ COPY backend/ ./backend/
 RUN cd backend && pnpm install --no-frozen-lockfile && pnpm prisma generate
 # 复制构建产物
 COPY --from=builder /app/backend/dist ./backend/dist
-# 内置 SDK 加固产物(classes.dex + libxcj_defender.so),使任意 APK 可加固
+# 内置 SDK 加固产物(classes.dex + libxcj_defender.so + t4_key.hex),使任意 APK 可加固
 COPY deploy/sdk-artifacts/ ./backend/sdk-artifacts/
+# T4 DEX 字符串加密器 fat jar(构建阶段编译,密钥须与 t4_key.hex/defender SO 一致)
+COPY --from=injector-builder /inj/build/install/xcj-injector/lib/xcj-injector-all.jar ./backend/sdk-artifacts/xcj-injector-all.jar
 
 WORKDIR /app/backend
 

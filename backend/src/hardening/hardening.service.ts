@@ -420,6 +420,34 @@ export class HardeningService {
       // 清理 decoded 目录
       await fs.rm(decodedDir, { recursive: true, force: true }).catch(() => {});
 
+      // Step 8.5: T4 DEX 字符串加密 (75%) — 天衍模块(ADR 0090)
+      // 只加密业务包:库类(kotlin/androidx)加载早于 defender,加密即启动崩。
+      // 密钥必须与预编译 defender SO 的 T4_XOR_KEY 一致(sdk-artifacts/t4_key.hex)。
+      if (tianyan.t4_dexStringEncrypt) {
+        await this.updateProgress(task, 't4', 75, 'T4 DEX 字符串加密(业务包白名单)...');
+        const jarPath = this.findInjectorJar();
+        const t4KeyHex = await this.readT4Key();
+        const t4Apk = workApk + '-t4';
+        await execWithStderr(
+          'java',
+          [
+            '-jar',
+            jarPath,
+            'encrypt-strings',
+            '--apk',
+            workApk,
+            '--output',
+            t4Apk,
+            '--key-hex',
+            t4KeyHex,
+            '--include-prefix',
+            params.analysis.packageName,
+          ],
+          { timeout: 300_000, maxBuffer: 20 * 1024 * 1024 },
+        );
+        await fs.rename(t4Apk, workApk);
+      }
+
       // Step 9: zipalign (80%)
       await this.updateProgress(task, 'zipalign', 80, '对齐 APK(-p 4)...');
       const alignedApk = workApk + '-aligned';
@@ -582,6 +610,44 @@ export class HardeningService {
     }
     this.logger.warn(`SDK .so 未找到(${abi}),跳过 SO 注入`);
     return null;
+  }
+
+  /** T4 injector fat jar(镜像经 Dockerfile gradle 阶段构建注入 sdk-artifacts/) */
+  private findInjectorJar(): string {
+    const candidates = [
+      path.resolve(process.cwd(), 'sdk-artifacts', 'xcj-injector-all.jar'),
+      path.resolve(
+        process.cwd(),
+        '..',
+        'injector',
+        'build',
+        'install',
+        'xcj-injector',
+        'lib',
+        'xcj-injector-all.jar',
+      ),
+    ];
+    for (const p of candidates) {
+      try {
+        statSync(p);
+        return p;
+      } catch {
+        /* not found */
+      }
+    }
+    throw new Error('T4 已启用但未找到 xcj-injector-all.jar(sdk-artifacts/ 缺失,检查镜像构建)');
+  }
+
+  /** T4 XOR 密钥(32 hex 字符,必须与 defender SO 编译期 T4_XOR_KEY 一致) */
+  private async readT4Key(): Promise<string> {
+    const keyPath = path.resolve(process.cwd(), 'sdk-artifacts', 't4_key.hex');
+    try {
+      const hex = (await fs.readFile(keyPath, 'utf-8')).trim();
+      if (/^[0-9a-fA-F]{32}$/.test(hex)) return hex;
+    } catch {
+      /* not found */
+    }
+    throw new Error('T4 已启用但 sdk-artifacts/t4_key.hex 缺失或非法(须 32 位 hex)');
   }
 
   /** 用 zip 命令行注入文件到 APK(保留原有条目对齐,不重写整个 zip) */

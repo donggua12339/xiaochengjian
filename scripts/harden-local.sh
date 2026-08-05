@@ -118,8 +118,13 @@ if [ ! -f "$INJECTOR_JAR" ]; then
   echo "    !! injector jar 不存在,先跑: cd injector && ./gradlew installDist"
   exit 1
 fi
-# 密钥取自 t4_str_key.h(与预编译 defender SO 内的 T4_XOR_KEY 一致,运行时才能解密)
-T4_KEY_HEX=$(grep -oE '0x[0-9a-fA-F]{2}' "$T4_KEY_HEADER" | sed 's/0x//' | tr -d '\n')
+# 密钥须与预编译 defender SO 内的 T4_XOR_KEY 一致,运行时才能解密。
+# 优先用 sdk-artifacts/t4_key.hex(与注入的 SO 产物配对);回退源码 t4_str_key.h。
+if [ -f "$SDK/t4_key.hex" ]; then
+  T4_KEY_HEX=$(tr -d ' \r\n' < "$SDK/t4_key.hex")
+else
+  T4_KEY_HEX=$(grep -oE '0x[0-9a-fA-F]{2}' "$T4_KEY_HEADER" | sed 's/0x//' | tr -d '\n')
+fi
 # --include-prefix "$PKG":只加密业务包(第 3 步提取)的类。
 # kotlin/androidx 等库类加载早于 defender、类初始化对解密调用敏感,
 # 加密它们会 VerifyError(2026-08-06 真机实证)。

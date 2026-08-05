@@ -192,4 +192,68 @@ describe('HardeningService 加固管线', () => {
     const cmds = mockExecFile.mock.calls.map((c) => c[0]);
     expect(cmds).toContain('apksigner');
   });
+
+  // ===== T4 DEX 字符串加密(天衍) =====
+
+  const t4Params = {
+    ...params,
+    config: {
+      productLine: 'tianyan' as const,
+      tianyan: { t4_dexStringEncrypt: true },
+    },
+  };
+
+  it('T4 启用: java 调 encrypt-strings,带 --include-prefix 业务包名与密钥', async () => {
+    // readFile 对 t4_key.hex 返回合法密钥
+    (fs.readFile as jest.Mock).mockImplementation((p: string, enc?: string) =>
+      Promise.resolve(
+        String(p).includes('t4_key.hex')
+          ? '0123456789abcdef0123456789abcdef'
+          : enc
+            ? '<manifest><application></application></manifest>'
+            : Buffer.from('bin'),
+      ),
+    );
+    const task = await service.harden(t4Params);
+    await flush();
+    expect(task.status).toBe('completed');
+    const javaCalls = mockExecFile.mock.calls.filter((c) => c[0] === 'java');
+    expect(javaCalls).toHaveLength(1);
+    const args = javaCalls[0][1] as string[];
+    expect(args).toContain('encrypt-strings');
+    expect(args).toContain('--include-prefix');
+    expect(args).toContain('com.test.app');
+    expect(args).toContain('--key-hex');
+    expect(args).toContain('0123456789abcdef0123456789abcdef');
+    // 加密产物换回 work.apk
+    const renames = (fs.rename as jest.Mock).mock.calls.map((c) => String(c[0]));
+    expect(renames.some((p) => p.endsWith('-t4'))).toBe(true);
+  });
+
+  it('T4 未启用: 不调 java', async () => {
+    const task = await service.harden(params);
+    await flush();
+    expect(task.status).toBe('completed');
+    const cmds = mockExecFile.mock.calls.map((c) => c[0]);
+    expect(cmds).not.toContain('java');
+  });
+
+  it('T4 启用但 injector jar 缺失: status=failed', async () => {
+    statSyncMock.mockImplementation((p: string) => {
+      if (String(p).includes('xcj-injector-all.jar')) throw new Error('ENOENT');
+      return { size: 100 };
+    });
+    const task = await service.harden(t4Params);
+    await flush();
+    expect(task.status).toBe('failed');
+    expect(task.error).toContain('xcj-injector-all.jar');
+  });
+
+  it('T4 启用但 t4_key.hex 非法: status=failed', async () => {
+    (fs.readFile as jest.Mock).mockResolvedValue('not-a-hex-key');
+    const task = await service.harden(t4Params);
+    await flush();
+    expect(task.status).toBe('failed');
+    expect(task.error).toContain('t4_key.hex');
+  });
 });
