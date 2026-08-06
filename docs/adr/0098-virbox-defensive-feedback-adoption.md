@@ -130,8 +130,34 @@
 - **诚实边界**:Virbox 级"按版本偏移表解析对象类名"未做,列天衍增强;
   v1 须真机验证 VisitRoots ABI 兼容性后方可倚重。
 
+## 真机验证与漂移对账(2026-08-06,S4/S5,redblue-hardening-verify SOP)
+
+**S4 干净环境回包**(MI 真机 API33,LSPosed 在场但未对 demo 作用域):
+
+- 进程存活、无崩溃、无 false-positive kill;`Xposed 检测: 置信度=0 命中=[]`。
+- `[ADR0098] GC 根巡检 suspicious=0`、`静默反制 neutralized=false`——两新能力在
+  干净环境零误报、不崩溃。
+
+**漂移清单(回包推翻的"我以为")**:
+
+1. **dlopen 命名空间不可见**:`dlopen("libart.so",RTLD_NOLOAD)` 在 app 链接器
+   命名空间返回 NULL(apex 库不对 app 暴露)。**修**:改 maps 找 libart 基址+路径、
+   直接解析 ELF(PT_DYNAMIC/GNU_HASH/.dynsym)定位符号,绕开 dlopen/dlsym。
+2. **ELF 解析两 bug**(host Python 复算定位):①程序头误从 64B 头缓冲越界读→恒 -1,
+   改从文件读段表;②Elf64 `st_shndx` 偏移应为 6 非 14。修后真机 `resolved-ok`。
+3. **VisitRoots 调用 fault**:`JavaVMExt::VisitRoots` 需持 mutator_lock,而该 ROM
+   libart 裁掉了 `Thread::Current`/`Locks::mutator_lock_`/`SharedLock` 符号,raw 调用
+   必然 fault;sigsetjmp 接住→**优雅降级**(返回 0、不崩、不误杀)。即 P0-D 在此 ROM
+   为"scaffolding+安全降级",检测未真实生效。
+
+**S5 判定**:干净环境"零误报零崩溃"立住(有回包);P0-D 检测生效**不立住**(fault
+降级),按纪律不宣布"已通过"。P0-B 反制为纯 Kotlin 反射,干净环境返回 false 正常,
+其 true 路径需 LSPosed 作用域模块,未做(涉及改共享设备 lspd 状态,须用户确认后执行)。
+
 ### 已知限制与后续
 
-- P0-B/P0-D 真机验证未完成(需 LSPosed 环境),ADR 状态保持 proposed 待真机回归后
-  转 accepted。
+- P0-D 真实生效需 C++ 链接 libart / ScopedObjectAccess 持 mutator_lock,或按版本偏移
+  表,列天衍增强;当前 v1=安全降级。
+- P0-B true 路径与 LSPosed 回归须用户授权后在共享真机执行。
+- ADR 状态保持 proposed,待上述真机回归后转 accepted。
 - P1/P2 项(虚拟供给/多态检测/多槽冗余等)不在本轮,按 §决策 排期。

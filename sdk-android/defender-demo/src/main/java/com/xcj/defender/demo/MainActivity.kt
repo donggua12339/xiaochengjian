@@ -11,6 +11,8 @@ import androidx.appcompat.app.AppCompatActivity
 import com.xcj.defender.DefenderNative
 import com.xcj.defender.EmulatorDetector
 import com.xcj.defender.KeyAttestationDetector
+import com.xcj.defender.X4Native
+import com.xcj.defender.XposedCountermeasure
 import com.xcj.defender.XposedDetector
 
 /**
@@ -25,7 +27,6 @@ import com.xcj.defender.XposedDetector
  * defender-config.json 配置所有模块 onViolation=none,检测只记日志不响应(避免 demo 被 kill)。
  */
 class MainActivity : AppCompatActivity() {
-
     private val logBuilder = StringBuilder()
     private val handler = Handler(Looper.getMainLooper())
 
@@ -34,10 +35,10 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        /* 手动启用截屏保护(demo 不走 DefenderInitProvider,需显式设置) */
+        // 手动启用截屏保护(demo 不走 DefenderInitProvider,需显式设置)
         window.setFlags(
             android.view.WindowManager.LayoutParams.FLAG_SECURE,
-            android.view.WindowManager.LayoutParams.FLAG_SECURE
+            android.view.WindowManager.LayoutParams.FLAG_SECURE,
         )
         setContentView(R.layout.activity_main)
 
@@ -83,6 +84,9 @@ class MainActivity : AppCompatActivity() {
             val xposedResult = checkXposed()
             setResult("xposed", xposedResult, "XposedDetector")
 
+            // 6.5 ADR 0098:GC 根巡检 + 静默反制(新增能力,验证不崩溃+观测返回)
+            checkAdr0098()
+
             // 7. EmulatorDetector(模拟器检测)
             val emulatorResult = checkEmulator()
             setResult("emulator", emulatorResult, "EmulatorDetector")
@@ -112,8 +116,8 @@ class MainActivity : AppCompatActivity() {
      * 1. SignatureVerifier:调用 DefenderNative.verifySignature
      * @return true=风险(校验失败) / false=安全
      */
-    private fun checkSignature(): Boolean {
-        return try {
+    private fun checkSignature(): Boolean =
+        try {
             val apkPath = packageCodePath
             // v2.1.1 综合校验: 方案A(mmap+V2 hash) + 方案B(.text CRC + DEX CRC) + inner交叉验证
             val result = DefenderNative.validatorCoreCheck(apkPath, null)
@@ -123,14 +127,13 @@ class MainActivity : AppCompatActivity() {
             log("[SignatureVerifier] 异常: ${e.message}")
             false
         }
-    }
 
     /**
      * 2. AntiDebug:调用 DefenderNative.checkAntiDebug
      * @return true=被调试 / false=未调试
      */
-    private fun checkAntiDebug(): Boolean {
-        return try {
+    private fun checkAntiDebug(): Boolean =
+        try {
             val result = DefenderNative.checkAntiDebug()
             log("[AntiDebug] checkAntiDebug 返回: $result (1=被调试)")
             result == 1
@@ -138,14 +141,13 @@ class MainActivity : AppCompatActivity() {
             log("[AntiDebug] 异常: ${e.message}")
             false
         }
-    }
 
     /**
      * 3. AntiFrida:调用 DefenderNative.checkAntiFrida(同步 A+B+C)
      * @return true=检测到 Frida / false=未检测
      */
-    private fun checkAntiFrida(): Boolean {
-        return try {
+    private fun checkAntiFrida(): Boolean =
+        try {
             val result = DefenderNative.checkAntiFrida()
             log("[AntiFrida] checkAntiFrida 返回: $result (1=检测到 Frida)")
             result == 1
@@ -153,7 +155,6 @@ class MainActivity : AppCompatActivity() {
             log("[AntiFrida] 异常: ${e.message}")
             false
         }
-    }
 
     /**
      * 4. AntiDump:后台 inotify 监控,无同步检测 API
@@ -161,15 +162,15 @@ class MainActivity : AppCompatActivity() {
      */
     private fun checkAntiDump(): Boolean {
         log("[AntiDump] 后台 inotify 监控运行中(无同步检测,由 DefenderInitProvider 启动)")
-        return false  // 无法同步检测,始终返回安全
+        return false // 无法同步检测,始终返回安全
     }
 
     /**
      * 5. RootDetector:调用 DefenderNative.checkRoot
      * @return true=检测到 root / false=未 root
      */
-    private fun checkRoot(): Boolean {
-        return try {
+    private fun checkRoot(): Boolean =
+        try {
             val result = DefenderNative.checkRoot()
             log("[RootDetector] checkRoot 返回: $result (1=检测到 root)")
             result == 1
@@ -177,14 +178,13 @@ class MainActivity : AppCompatActivity() {
             log("[RootDetector] 异常: ${e.message}")
             false
         }
-    }
 
     /**
      * 6. XposedDetector:调用 XposedDetector.detect
      * @return true=检测到 Xposed(置信度 >=70) / false=未检测
      */
-    private fun checkXposed(): Boolean {
-        return try {
+    private fun checkXposed(): Boolean =
+        try {
             val score = XposedDetector(this).detect()
             log("[XposedDetector] 置信度: $score (>=70 判定为 Xposed)")
             score >= 70
@@ -192,14 +192,32 @@ class MainActivity : AppCompatActivity() {
             log("[XposedDetector] 异常: ${e.message}")
             false
         }
+
+    /**
+     * 6.5 ADR 0098 新能力真机观测:GC 根巡检 + 静默反制
+     * 干净环境应:gcRootScan=0、反制=false、无崩溃;LSPosed 环境:反制可能=true。
+     */
+    private fun checkAdr0098() {
+        try {
+            val gc = X4Native.gcRootScan()
+            log("[ADR0098] GC 根巡检: suspicious=$gc (0=干净/不可用,不崩溃即通过)")
+        } catch (e: Throwable) {
+            log("[ADR0098] GC 根巡检异常: ${e.javaClass.simpleName}: ${e.message}")
+        }
+        try {
+            val neutralized = XposedCountermeasure.attemptSilentDisable()
+            log("[ADR0098] 静默反制: neutralized=$neutralized (true=已置 disableHooks)")
+        } catch (e: Throwable) {
+            log("[ADR0098] 静默反制异常: ${e.javaClass.simpleName}: ${e.message}")
+        }
     }
 
     /**
      * 7. EmulatorDetector:调用 EmulatorDetector.detect
      * @return true=模拟器 / false=真机
      */
-    private fun checkEmulator(): Boolean {
-        return try {
+    private fun checkEmulator(): Boolean =
+        try {
             val isEmulator = EmulatorDetector(this).detect()
             log("[EmulatorDetector] 检测结果: $isEmulator")
             isEmulator
@@ -207,15 +225,14 @@ class MainActivity : AppCompatActivity() {
             log("[EmulatorDetector] 异常: ${e.message}")
             false
         }
-    }
 
     /**
      * 8. IntegrityChecker:调用 DefenderNative.checkIntegrity
      * demo 无预期表(传空 JSON),层 2/4 跳过
      * @return true=篡改 / false=安全
      */
-    private fun checkIntegrity(): Boolean {
-        return try {
+    private fun checkIntegrity(): Boolean =
+        try {
             val apkPath = packageCodePath
             val result = DefenderNative.checkIntegrity(apkPath, "[]", "[]")
             log("[IntegrityChecker] checkIntegrity 返回: $result (0=安全, demo 无预期表跳过)")
@@ -224,23 +241,21 @@ class MainActivity : AppCompatActivity() {
             log("[IntegrityChecker] 异常: ${e.message}")
             false
         }
-    }
 
     /**
      * 9. WindowSecurer:检查 FLAG_SECURE 是否设置
      * @return true=有截屏风险(FLAG_SECURE 未设置) / false=防截屏生效
      */
-    private fun checkWindowSecure(): Boolean {
-        return try {
+    private fun checkWindowSecure(): Boolean =
+        try {
             val flags = window.attributes.flags
             val isSecure = (flags and android.view.WindowManager.LayoutParams.FLAG_SECURE) != 0
             log("[WindowSecurer] FLAG_SECURE 已设置: $isSecure (demo secureScreen 未启用则为 false)")
-            !isSecure  // 未设置 FLAG_SECURE = 截屏风险
+            !isSecure // 未设置 FLAG_SECURE = 截屏风险
         } catch (e: Exception) {
             log("[WindowSecurer] 异常: ${e.message}")
             false
         }
-    }
 
     /**
      * 10. KeyAttestation:硬件级 root 检测(2026 最强)
@@ -249,11 +264,12 @@ class MainActivity : AppCompatActivity() {
     private fun checkKeyAttestation() {
         try {
             val score = KeyAttestationDetector().detect()
-            val verdict = when {
-                score >= 60 -> "高风险(root/BL 解锁)"
-                score > 0 -> "可疑"
-                else -> "完整"
-            }
+            val verdict =
+                when {
+                    score >= 60 -> "高风险(root/BL 解锁)"
+                    score > 0 -> "可疑"
+                    else -> "完整"
+                }
             log("[KeyAttestation] 分数: $score ($verdict, >=60 高风险)")
         } catch (e: Exception) {
             log("[KeyAttestation] 异常: ${e.message}")
@@ -262,7 +278,11 @@ class MainActivity : AppCompatActivity() {
 
     // === UI 更新 ===
 
-    private fun setResult(module: String, detected: Boolean, name: String) {
+    private fun setResult(
+        module: String,
+        detected: Boolean,
+        name: String,
+    ) {
         results[module] = detected
         val resultText = if (detected) "YES" else "NO"
         val color = if (detected) Color.RED else Color.GREEN
