@@ -95,3 +95,8 @@ injector/src/main/kotlin/com/xcj/injector/dexstring/t4_str_key.h
 # 本地开发工具(ktlint 等,勿入库)
 tools/
 backend/tools-local/
+
+# 后端本地运行时产物(sdk-artifacts 副本/加固临时目录/T4 密钥头)
+backend/sdk-artifacts/
+backend/tmp/
+backend/t4_str_key.h

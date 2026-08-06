@@ -21,12 +21,24 @@ async function execWithStderr(
   args: string[],
   opts: { timeout?: number; cwd?: string; maxBuffer?: number } = {},
 ): Promise<{ stdout: string; stderr: string }> {
+  const spawnOpts = {
+    timeout: opts.timeout ?? 120_000,
+    cwd: opts.cwd,
+    maxBuffer: opts.maxBuffer ?? 10 * 1024 * 1024,
+  };
   try {
-    const result = await execFileAsync(cmd, args, {
-      timeout: opts.timeout ?? 120_000,
-      cwd: opts.cwd,
-      maxBuffer: opts.maxBuffer ?? 10 * 1024 * 1024,
-    });
+    let result: { stdout: string; stderr?: string };
+    try {
+      result = await execFileAsync(cmd, args, spawnOpts);
+    } catch (e) {
+      /* Windows: CreateProcess 不走 PATHEXT,无扩展名命令找不到 .cmd wrapper
+       * (如 apktool.cmd);ENOENT 时经 cmd.exe 重试。Linux 生产不受影响。 */
+      if (process.platform === 'win32' && (e as NodeJS.ErrnoException).code === 'ENOENT') {
+        result = await execFileAsync(cmd, args, { ...spawnOpts, shell: true });
+      } else {
+        throw e;
+      }
+    }
     return { stdout: result.stdout, stderr: result.stderr ?? '' };
   } catch (e) {
     const err = e as Error & { stderr?: string; stdout?: string };
@@ -330,55 +342,17 @@ export class HardeningService {
       await this.updateProgress(task, 'strip', 10, '删除旧签名...');
       await this.stripSignature(workApk);
 
-      // Step 2: 注入 config (15%)
-      await this.updateProgress(task, 'config', 15, '注入 defender-config.json...');
-      const defenderConfig = this.buildDefenderConfig(xuanjia, tianyan, params.config.killPolicy);
-      const configJson = JSON.stringify(defenderConfig, null, 2);
-      await this.injectToZip(workApk, 'assets/defender-config.json', Buffer.from(configJson));
+      // SO 随机名先生成:Manifest meta-data 需要它,SO 实体注入在 apktool 重建之后。
+      // 先探测产物存在再生成名,避免 meta-data 指向不存在的 SO(产物缺失时整体跳过)。
+      const soPathArm64 =
+        xuanjia.x0_soEncrypt || xuanjia.x4_antiDynamic ? this.findSdkSo('arm64-v8a') : null;
+      const randomSoName = soPathArm64 ? this.soInjector.pickRandomSoName() : '';
 
-      // Step 3: 注入 DEX (25%)
-      await this.updateProgress(task, 'dex', 25, '注入 SDK DEX 模块...');
-      const sdkDexPath = this.findSdkDex();
-      if (sdkDexPath) {
-        const dexContent = await fs.readFile(sdkDexPath);
-        const { dexFiles } = params.analysis;
-        const maxNum = dexFiles.reduce((max, f) => {
-          const m = f.match(/classes(\d*)\.dex/);
-          return Math.max(max, m ? (m[1] ? parseInt(m[1], 10) : 1) : 0);
-        }, 0);
-        await this.injectToZip(workApk, `classes${maxNum + 1}.dex`, dexContent);
-      }
-
-      // Step 4: 注入 SO arm64 (35%)
-      let randomSoName = '';
-      if (xuanjia.x0_soEncrypt || xuanjia.x4_antiDynamic) {
-        const soPath = this.findSdkSo('arm64-v8a');
-        if (soPath) {
-          randomSoName = this.soInjector.pickRandomSoName();
-          await this.updateProgress(task, 'so_arm64', 35, `注入 lib/arm64-v8a/${randomSoName}...`);
-          const soData = await fs.readFile(soPath);
-          await this.injectToZip(workApk, `lib/arm64-v8a/${randomSoName}`, soData);
-
-          // Step 5: 注入 SO armv7 (40%)
-          const soPathV7 = this.findSdkSo('armeabi-v7a');
-          if (soPathV7 && params.analysis.nativeAbis.includes('armeabi-v7a')) {
-            await this.updateProgress(
-              task,
-              'so_armv7',
-              40,
-              `注入 lib/armeabi-v7a/${randomSoName}...`,
-            );
-            const soDataV7 = await fs.readFile(soPathV7);
-            await this.injectToZip(workApk, `lib/armeabi-v7a/${randomSoName}`, soDataV7);
-          }
-        }
-      }
-
-      // Step 6: apktool 解包 (50%) — --no-src 跳过 DEX 反编译(省内存+省时间)
+      // Step 2: apktool 解包 (20%) — --no-src 跳过 DEX 反编译(省内存+省时间)
       await this.updateProgress(
         task,
         'apktool_d',
-        50,
+        20,
         '解包 APK(修改 Manifest,跳过 DEX 反编译)...',
       );
       const decodedDir = path.join(workDir, 'decoded');
@@ -387,8 +361,8 @@ export class HardeningService {
         maxBuffer: 20 * 1024 * 1024,
       });
 
-      // Step 7: 修改 Manifest (60%) — 合并所有修改为一次
-      await this.updateProgress(task, 'manifest', 60, '注入 meta-data + provider + permission...');
+      // Step 3: 修改 Manifest (35%) — 合并所有修改为一次
+      await this.updateProgress(task, 'manifest', 35, '注入 meta-data + provider + permission...');
       const manifestPath = path.join(decodedDir, 'AndroidManifest.xml');
       let manifest = await fs.readFile(manifestPath, 'utf-8');
 
@@ -411,8 +385,8 @@ export class HardeningService {
       }
       await fs.writeFile(manifestPath, manifest, 'utf-8');
 
-      // Step 8: apktool 重建 (70%)
-      await this.updateProgress(task, 'apktool_b', 70, '重建 APK...');
+      // Step 4: apktool 重建 (50%)
+      await this.updateProgress(task, 'apktool_b', 50, '重建 APK...');
       await execWithStderr('apktool', ['b', '-o', workApk, decodedDir], {
         timeout: 180_000,
         maxBuffer: 20 * 1024 * 1024,
@@ -420,11 +394,63 @@ export class HardeningService {
       // 清理 decoded 目录
       await fs.rm(decodedDir, { recursive: true, force: true }).catch(() => {});
 
-      // Step 8.5: T4 DEX 字符串加密 (75%) — 天衍模块(ADR 0090)
+      // Step 5: 注入 config (58%) — 必须在 apktool 重建之后,否则重建会丢弃注入条目
+      await this.updateProgress(task, 'config', 58, '注入 defender-config.json...');
+      const defenderConfig = this.buildDefenderConfig(xuanjia, tianyan, params.config.killPolicy);
+      const configJson = JSON.stringify(defenderConfig, null, 2);
+      await this.injectToZip(workApk, 'assets/defender-config.json', Buffer.from(configJson));
+
+      // Step 6: 注入 DEX (63%)
+      await this.updateProgress(task, 'dex', 63, '注入 SDK DEX 模块...');
+      const sdkDexPath = this.findSdkDex();
+      if (sdkDexPath) {
+        const dexContent = await fs.readFile(sdkDexPath);
+        const { dexFiles } = params.analysis;
+        const maxNum = dexFiles.reduce((max, f) => {
+          const m = f.match(/classes(\d*)\.dex/);
+          return Math.max(max, m ? (m[1] ? parseInt(m[1], 10) : 1) : 0);
+        }, 0);
+        await this.injectToZip(workApk, `classes${maxNum + 1}.dex`, dexContent);
+      }
+
+      // Step 7: 注入 SO arm64 + armv7 (70%)
+      if (soPathArm64 && randomSoName) {
+        await this.updateProgress(task, 'so_arm64', 70, `注入 lib/arm64-v8a/${randomSoName}...`);
+        const soData = await fs.readFile(soPathArm64);
+        await this.injectToZip(workApk, `lib/arm64-v8a/${randomSoName}`, soData);
+
+        const soPathV7 = this.findSdkSo('armeabi-v7a');
+        if (soPathV7 && params.analysis.nativeAbis.includes('armeabi-v7a')) {
+          await this.updateProgress(
+            task,
+            'so_armv7',
+            73,
+            `注入 lib/armeabi-v7a/${randomSoName}...`,
+          );
+          const soDataV7 = await fs.readFile(soPathV7);
+          await this.injectToZip(workApk, `lib/armeabi-v7a/${randomSoName}`, soDataV7);
+        }
+
+        // loader SO(固定名 libxcj_loader.so):DefenderInitProvider 经
+        // System.loadLibrary("xcj_loader") 加载并注册 XcjObfStr/T4 解密。
+        // 与 defender SO 同 ABI 注入;无 loader 则 SDK 初始化降级失效。
+        const loaderArm64 = this.findSdkSo('arm64-v8a', 'libxcj_loader.so');
+        if (loaderArm64) {
+          const loaderData = await fs.readFile(loaderArm64);
+          await this.injectToZip(workApk, 'lib/arm64-v8a/libxcj_loader.so', loaderData);
+        }
+        const loaderV7 = this.findSdkSo('armeabi-v7a', 'libxcj_loader.so');
+        if (loaderV7 && params.analysis.nativeAbis.includes('armeabi-v7a')) {
+          const loaderV7Data = await fs.readFile(loaderV7);
+          await this.injectToZip(workApk, 'lib/armeabi-v7a/libxcj_loader.so', loaderV7Data);
+        }
+      }
+
+      // Step 8: T4 DEX 字符串加密 (78%) — 天衍模块(ADR 0090)
       // 只加密业务包:库类(kotlin/androidx)加载早于 defender,加密即启动崩。
       // 密钥必须与预编译 defender SO 的 T4_XOR_KEY 一致(sdk-artifacts/t4_key.hex)。
       if (tianyan.t4_dexStringEncrypt) {
-        await this.updateProgress(task, 't4', 75, 'T4 DEX 字符串加密(业务包白名单)...');
+        await this.updateProgress(task, 't4', 78, 'T4 DEX 字符串加密(业务包白名单)...');
         const jarPath = this.findInjectorJar();
         const t4KeyHex = await this.readT4Key();
         const t4Apk = workApk + '-t4';
@@ -440,6 +466,8 @@ export class HardeningService {
             t4Apk,
             '--key-hex',
             t4KeyHex,
+            '--key-header',
+            path.join(workDir, 't4_str_key.h'),
             '--include-prefix',
             params.analysis.packageName,
           ],
@@ -447,7 +475,6 @@ export class HardeningService {
         );
         await fs.rename(t4Apk, workApk);
       }
-
       // Step 9: zipalign (80%)
       await this.updateProgress(task, 'zipalign', 80, '对齐 APK(-p 4)...');
       const alignedApk = workApk + '-aligned';
@@ -581,9 +608,9 @@ export class HardeningService {
     return null;
   }
 
-  private findSdkSo(abi: string): string | null {
+  private findSdkSo(abi: string, soName = 'libxcj_defender.so'): string | null {
     const candidates = [
-      path.resolve(process.cwd(), 'sdk-artifacts', 'lib', abi, 'libxcj_defender.so'),
+      path.resolve(process.cwd(), 'sdk-artifacts', 'lib', abi, soName),
       path.resolve(
         process.cwd(),
         '..',
@@ -597,7 +624,7 @@ export class HardeningService {
         'out',
         'lib',
         abi,
-        'libxcj_defender.so',
+        soName,
       ),
     ];
     for (const p of candidates) {

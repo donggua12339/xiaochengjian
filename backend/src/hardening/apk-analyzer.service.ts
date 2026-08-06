@@ -1,5 +1,6 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import * as fs from 'fs/promises';
+import { readdirSync } from 'fs';
 import * as path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
@@ -8,8 +9,37 @@ import { applyPreset } from './hardening-config.dto';
 
 const execFileAsync = promisify(execFile);
 
-/** aapt 全路径 fallback(Docker 容器内 build-tools 路径) */
-const AAPT_PATHS = ['aapt', '/opt/android-sdk/build-tools/34.0.0/aapt'];
+/**
+ * aapt 候选路径:PATH 裸命令 + Docker 固定路径 + 各平台 SDK 目录
+ * (ANDROID_HOME / ANDROID_SDK_ROOT / 平台默认位置,build-tools 版本降序)。
+ * Windows 本地开发无 Docker 路径,此前只有裸 'aapt' → 包名降级 unknown
+ * → T4 --include-prefix 传错,业务串加密失效(2026-08-06 联调发现)。
+ */
+function buildAaptCandidates(): string[] {
+  const candidates: string[] = ['aapt', '/opt/android-sdk/build-tools/34.0.0/aapt'];
+  const sdkRoots = [
+    process.env.ANDROID_HOME,
+    process.env.ANDROID_SDK_ROOT,
+    process.platform === 'win32'
+      ? path.join(process.env.LOCALAPPDATA ?? '', 'Android', 'Sdk')
+      : process.platform === 'darwin'
+        ? path.join(process.env.HOME ?? '', 'Library', 'Android', 'sdk')
+        : path.join(process.env.HOME ?? '', 'Android', 'Sdk'),
+  ].filter((r): r is string => Boolean(r));
+  const ext = process.platform === 'win32' ? '.exe' : '';
+  for (const root of new Set(sdkRoots)) {
+    const btDir = path.join(root, 'build-tools');
+    try {
+      const versions = readdirSync(btDir).sort((a, b) =>
+        b.localeCompare(a, undefined, { numeric: true }),
+      );
+      for (const v of versions) candidates.push(path.join(btDir, v, `aapt${ext}`));
+    } catch {
+      /* SDK 未安装 */
+    }
+  }
+  return candidates;
+}
 
 /** 进度回调 */
 export type ProgressCallback = (step: string, progress: number, detail?: string) => void;
@@ -173,7 +203,7 @@ export class ApkAnalyzerService {
   /** 尝试多个 aapt 路径执行命令 */
   private async execAapt(args: string[]): Promise<string> {
     let lastErr: Error | null = null;
-    for (const aaptPath of AAPT_PATHS) {
+    for (const aaptPath of buildAaptCandidates()) {
       try {
         const { stdout } = await execFileAsync(aaptPath, args, {
           timeout: 30_000,
