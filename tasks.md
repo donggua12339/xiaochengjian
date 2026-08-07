@@ -33,7 +33,7 @@
 - [🟢] admin-web 单元测试 (AI,10 spec 47 用例,08-08 vitest3 全绿)
 - [🟢] backend hardening 模块单测 (AI,覆盖率 80%→98.01%,ef06b8a)
 - [🟢] 依赖漏洞治理 (AI,08-08 34→3 moderate,critical/high 清零,剩 3 需 major 跳版留专项)
-- [🟡] C 代码 host 端单测 (AI,已有 obfstr_poly/so_cipher,覆盖待扩)
+- [🟡] C 代码 host 端单测 (AI,08-08 补 hash_calculator 方案A 跨语言KAT+Makefile;余 vm_engine/t3 待扩)
 
 ## P2 — 中期规划
 
