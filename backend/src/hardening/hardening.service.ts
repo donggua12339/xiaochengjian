@@ -328,6 +328,16 @@ export class HardeningService {
       const mergedConfig = this.mergeConfig(params.config);
       const { xuanjia, tianyan } = mergedConfig;
 
+      // Step -1: 重复加固拒绝(服务端复检,不信任客户端 analysis)
+      // 已含加固特征的 APK 再加固:旧 defender SO 无占位符,方案 A hash 预埋
+      // 校验必失败;第三方壳上套壳产物也几乎必然损坏,一律拒绝。
+      const detected = await this.analyzer.detectHardenerInFile(params.apkPath);
+      if (detected) {
+        throw new BadRequestException('ALREADY_HARDENED', {
+          cause: `该 APK 已包含加固特征(${detected}),禁止重复加固`,
+        });
+      }
+
       // Step 0: 预检 (5%)
       await this.updateProgress(task, 'preflight', 5, '正在验证 Keystore 和 APK...');
       await this.preflight.runAll(

@@ -66,6 +66,13 @@ export class ApkAnalyzerService {
     { name: 'legu', patterns: [/libshell\.so/i, /libshella\.so/i, /com\.tencent\./i] },
     { name: 'qihoo360', patterns: [/libjiagu\.so/i, /com\.qihoo\./i] },
     { name: 'ijiami', patterns: [/libexec\.so/i, /libexecmain\.so/i] },
+    /* 自家 defender:SO 是随机名,认固定特征——config 资产 + loader SO 固定名。
+     * 重复加固会让旧 defender SO(无占位符)混入,破坏方案 A hash 预埋校验
+     * (2026-08-08 mt-processed.apk 实证),必须识别并拒绝。 */
+    {
+      name: 'xcj-defender',
+      patterns: [/^assets\/defender-config\.json$/, /^lib\/[^/]+\/libxcj_loader\.so$/],
+    },
   ];
 
   /**
@@ -198,6 +205,20 @@ export class ApkAnalyzerService {
       }
     }
     return { name: null };
+  }
+
+  /** 对 APK 文件做加固特征复检(服务端把关,不信任客户端传来的 analysis) */
+  async detectHardenerInFile(apkPath: string): Promise<string | null> {
+    try {
+      const { stdout } = await execFileAsync('unzip', ['-l', apkPath], {
+        timeout: 30_000,
+        maxBuffer: 10 * 1024 * 1024,
+      });
+      return this.detectHardener(this.parseZipEntries(stdout)).name;
+    } catch {
+      /* 列举失败不阻断(预检环节会另行校验 APK 有效性) */
+      return null;
+    }
   }
 
   /** 尝试多个 aapt 路径执行命令 */

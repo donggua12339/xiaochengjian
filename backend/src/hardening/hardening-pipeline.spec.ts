@@ -83,10 +83,19 @@ describe('HardeningService 加固管线', () => {
       ),
     );
 
+    // analyzer 用真实例的 detectHardenerInFile(内部 unzip 被 execFile mock 拦截),
+    // analyze 保持 stub
+    const realAnalyzer = new ApkAnalyzerService();
     const module = await Test.createTestingModule({
       providers: [
         HardeningService,
-        { provide: ApkAnalyzerService, useValue: { analyze: jest.fn() } },
+        {
+          provide: ApkAnalyzerService,
+          useValue: {
+            analyze: jest.fn(),
+            detectHardenerInFile: realAnalyzer.detectHardenerInFile.bind(realAnalyzer),
+          },
+        },
         { provide: SoInjector, useValue: soInjector },
         { provide: PreflightService, useValue: preflight },
         { provide: RedisService, useValue: redis },
@@ -213,6 +222,41 @@ describe('HardeningService 加固管线', () => {
     expect(task.status).toBe('completed');
     const cmds = mockExecFile.mock.calls.map((c) => c[0]);
     expect(cmds).toContain('apksigner');
+  });
+
+  it('已加固输入应拒绝(ALREADY_HARDENED,防重复加固破坏 hash 预埋)', async () => {
+    // 注:jest.mock 丢掉 execFile 的 promisify.custom,{stdout,stderr} 须作为回调第一结果参数
+    mockExecFile.mockImplementation((cmd: string, args: string[], _o: unknown, cb: unknown) => {
+      if (cmd === 'unzip' && args?.[0] === '-l') {
+        const listing = [
+          'Archive: x.apk',
+          '  Length      Date    Time    Name',
+          '---------  ---------- -----   ----',
+          '      154  2026-01-01 12:00   assets/defender-config.json',
+          '    15120  2026-01-01 12:00   lib/arm64-v8a/libxcj_loader.so',
+          '---------                     -------',
+          '    15274                     2 files',
+        ].join('\n');
+        (cb as (e: null, r: { stdout: string; stderr: string }) => void)(null, {
+          stdout: listing,
+          stderr: '',
+        });
+      } else {
+        (cb as (e: null, r: { stdout: string; stderr: string }) => void)(null, {
+          stdout: '',
+          stderr: '',
+        });
+      }
+      return undefined;
+    });
+    const task = await service.harden(params);
+    await flush();
+    expect(task.status).toBe('failed');
+    expect(task.error).toContain('ALREADY_HARDENED');
+    // 不应进入任何加固步骤
+    const cmds = mockExecFile.mock.calls.map((c) => String(c[0]));
+    expect(cmds).not.toContain('apktool');
+    expect(cmds).not.toContain('zipalign');
   });
 
   // ===== T4 DEX 字符串加密(天衍) =====

@@ -109,6 +109,15 @@ describe('ApkAnalyzerService', () => {
       expect(r.detectedHardener).toBe('bangcle');
     });
 
+    it('检测到自家 xcj-defender 应标记(SO 随机名,认 config/loader 特征)', async () => {
+      mockExec({
+        entries: ['classes.dex', 'assets/defender-config.json', 'lib/arm64-v8a/libmedia.so'],
+      });
+      const r = await service.analyze('/tmp/a.apk');
+      expect(r.alreadyHardened).toBe(true);
+      expect(r.detectedHardener).toBe('xcj-defender');
+    });
+
     it('APK 过小应抛 APK_TOO_SMALL', async () => {
       (fs.stat as jest.Mock).mockResolvedValue({ size: 100 });
       await expect(service.analyze('/tmp/a.apk')).rejects.toThrow(BadRequestException);
@@ -151,6 +160,15 @@ describe('ApkAnalyzerService', () => {
       });
       expect(svc().detectHardener([{ name: 'lib/libshell.so' }])).toEqual({ name: 'legu' });
       expect(svc().detectHardener([{ name: 'classes.dex' }])).toEqual({ name: null });
+    });
+
+    it('detectHardener 识别 xcj-defender 双特征', () => {
+      expect(
+        svc().detectHardener([{ name: 'assets/defender-config.json' }, { name: 'classes.dex' }]),
+      ).toEqual({ name: 'xcj-defender' });
+      expect(svc().detectHardener([{ name: 'lib/armeabi-v7a/libxcj_loader.so' }])).toEqual({
+        name: 'xcj-defender',
+      });
     });
 
     it('buildUnavailableList: 已加固 → all', () => {
