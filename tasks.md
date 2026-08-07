@@ -11,13 +11,16 @@
 ## P0 — 本轮必须完成
 
 - [🟢] T4 DEX 加密 encrypt-strings 逻辑 (AI)
-- [🔵] T4 真机端到端验证 (需设备)
+- [🟢] T4 真机端到端验证 (AI,08-06 r5 真机通过:进程稳定+守护校验过)
 - [🟢] 加固流水线后端: 异步分析+Redis 持久化+实时进度 (AI)
 - [🟢] 加固流水线前端: HardenUpload 轮询+HardenTasks 列表 (AI)
-- [] 前后端联调: 上传 APK → 分析 → 加固 → 下载 全链路 (需浏览器)
+- [🟢] 前后端联调: 上传 APK → 分析 → 加固 → 下载 全链路 (AI,08-08 API 链路+浏览器流程均验证)
+- [🟢] 方案 A hash 预埋接入后端管线 (AI,08-08 sidecar 调 patch_apk_hash.py,预埋 hash 对账通过)
+- [🟢] 重复加固拒绝闸门 (AI,08-08 识别 xcj-defender 特征+服务端复检)
 - [🟢] Dockerfile aapt/gcompat 修复 (AI)
 - [🟢] admin-web 部署到生产 (AI)
 - [🔵] 生产环境全链路验证 (需浏览器)
+- [🔵] 后端管线产物真机启动验证 (需设备重连)
 
 ## P1 — 近期完成
 
@@ -25,10 +28,11 @@
 - [🟡] CLAUDE.md §4 扩充编码范式 (AI)
 - [🟢] husky pre-commit + lint-staged 启用 (AI,2026-08-04 起生效,含 ktlint/clang-format)
 - [🟢] spec.md / plan.md / tasks.md / CHANGELOG.md (AI)
-- [⚪] CI/CD: GitHub Actions lint+test+build (AI)
+- [🟢] CI/CD: GitHub Actions lint+test+build (已有 ci.yml 7 阶段:lint/Rust≥90%/后端≥80%/前端/SDK/安全扫描/集成)
 - [⚪] S4 对抗演练: hluda+Stalker+MT+IDA+dump (红蓝双方)
-- [⚪] admin-web 单元测试 (AI)
+- [🟢] admin-web 单元测试 (AI,10 spec 47 用例,08-08 vitest3 全绿)
 - [🟢] backend hardening 模块单测 (AI,覆盖率 80%→98.01%,ef06b8a)
+- [🟢] 依赖漏洞治理 (AI,08-08 34→3 moderate,critical/high 清零,剩 3 需 major 跳版留专项)
 - [🟡] C 代码 host 端单测 (AI,已有 obfstr_poly/so_cipher,覆盖待扩)
 
 ## P2 — 中期规划
