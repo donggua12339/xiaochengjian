@@ -211,6 +211,11 @@ export class ApkAnalyzerService {
         });
         return stdout;
       } catch (e) {
+        const err = e as Error & { stdout?: string };
+        /* aapt 遇资源警告(如 "No known package when getting value")会以 exit 1 结束,
+         * 但 stdout 输出仍完整可用(2026-08-07 实证:package 行照常输出)。
+         * 有 stdout 即采纳,否则继续下一候选。 */
+        if (err.stdout && err.stdout.length > 0) return err.stdout;
         lastErr = e as Error;
       }
     }

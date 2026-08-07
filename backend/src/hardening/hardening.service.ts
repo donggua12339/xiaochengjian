@@ -493,6 +493,36 @@ export class HardeningService {
         params.keyPassword,
       );
 
+      // Step 10.5: 方案 A hash 预埋 + DEX CRC (95%) — sidecar 调 patch_apk_hash.py
+      // 占位 hash 的 defender SO 上真机会在 JNI_OnLoad 同步校验 abort,必须预埋。
+      // 复用 Python 脚本而非 TS 重写:hash 排除判据须与 native(hash_calculator.c)同源,
+      // 双实现必然漂移(2026-08-05 随机 SO 名事故教训)。脚本自身含两轮 patch + 重签。
+      if (soPathArm64 && randomSoName) {
+        await this.updateProgress(task, 'hash_embed', 95, '预埋方案 A hash + DEX CRC...');
+        const patcher = this.findHashPatcher();
+        if (!patcher) {
+          throw new BadRequestException('HASH_PATCHER_NOT_FOUND', {
+            cause: 'patch_apk_hash.py 缺失,无法预埋方案 A hash(产物真机会 abort)',
+          });
+        }
+        const py = process.platform === 'win32' ? 'python' : 'python3';
+        const patcherArgs = [
+          patcher,
+          '--in-apk',
+          workApk,
+          '--ks',
+          params.keystorePath,
+          '--ks-pass',
+          params.keystorePassword,
+        ];
+        if (params.keyAlias) patcherArgs.push('--key-alias', params.keyAlias);
+        if (params.keyPassword) patcherArgs.push('--key-pass', params.keyPassword);
+        await execWithStderr(py, patcherArgs, {
+          timeout: 300_000,
+          maxBuffer: 20 * 1024 * 1024,
+        });
+      }
+
       // Step 11: 完成 (100%)
       const enabledCount =
         Object.values(xuanjia).filter(Boolean).length +
@@ -675,6 +705,30 @@ export class HardeningService {
       /* not found */
     }
     throw new Error('T4 已启用但 sdk-artifacts/t4_key.hex 缺失或非法(须 32 位 hex)');
+  }
+
+  /** 方案 A hash 预埋脚本(Docker 随 sdk-artifacts COPY;本地开发回退源码路径) */
+  private findHashPatcher(): string | null {
+    const candidates = [
+      path.resolve(process.cwd(), 'sdk-artifacts', 'patch_apk_hash.py'),
+      path.resolve(
+        process.cwd(),
+        '..',
+        'sdk-android',
+        'defender-sdk',
+        'scripts',
+        'patch_apk_hash.py',
+      ),
+    ];
+    for (const p of candidates) {
+      try {
+        statSync(p);
+        return p;
+      } catch {
+        /* not found */
+      }
+    }
+    return null;
   }
 
   /** 用 zip 命令行注入文件到 APK(保留原有条目对齐,不重写整个 zip) */

@@ -182,6 +182,28 @@ describe('HardeningService 加固管线', () => {
     expect(task.status).toBe('completed');
     // 未注入 so(没调 pickRandomSoName)
     expect(soInjector.pickRandomSoName).not.toHaveBeenCalled();
+    // 无 SO 则不做 hash 预埋
+    const cmds = mockExecFile.mock.calls.map((c) => String(c[0]));
+    expect(cmds.some((c) => /^python/.test(c))).toBe(false);
+  });
+
+  it('方案 A hash 预埋: SO 注入后调 patch_apk_hash.py 并传 keystore 参数', async () => {
+    const task = await service.harden(params);
+    await flush();
+    expect(task.status).toBe('completed');
+    const pyCalls = mockExecFile.mock.calls.filter((c) => /^python/.test(String(c[0])));
+    expect(pyCalls).toHaveLength(1);
+    const args = pyCalls[0][1] as string[];
+    expect(args.some((a) => String(a).endsWith('patch_apk_hash.py'))).toBe(true);
+    expect(args).toContain('--in-apk');
+    expect(args).toContain('--ks');
+    expect(args).toContain('/tmp/ks.jks');
+    expect(args).toContain('--ks-pass');
+    expect(args).toContain('kspass');
+    expect(args).toContain('--key-alias');
+    expect(args).toContain('key0');
+    expect(args).toContain('--key-pass');
+    expect(args).toContain('keypass');
   });
 
   it('apksigner 路径探测失败应回退到裸命令名', async () => {

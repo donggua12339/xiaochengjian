@@ -33,7 +33,7 @@ FROM node:22-alpine AS runner
 WORKDIR /app
 
 RUN corepack enable && corepack prepare pnpm@9 --activate
-RUN apk add --no-cache openssl wget unzip openjdk17-jre bash gcompat zip
+RUN apk add --no-cache openssl wget unzip openjdk17-jre bash gcompat zip python3
 
 # 安装 Android SDK build-tools(含 apksigner,ADR 0077 自有 APK 诊断用)
 # 注:build-tools_r35 在 dl.google.com 上 404,用 r34(android-14)
@@ -68,6 +68,8 @@ COPY --from=builder /app/backend/dist ./backend/dist
 COPY deploy/sdk-artifacts/ ./backend/sdk-artifacts/
 # T4 DEX 字符串加密器 fat jar(构建阶段编译,密钥须与 t4_key.hex/defender SO 一致)
 COPY --from=injector-builder /inj/build/install/xcj-injector/lib/xcj-injector-all.jar ./backend/sdk-artifacts/xcj-injector-all.jar
+# 方案 A hash 预埋脚本(签名后 sidecar 调用,与 native 排除判据同源,禁复制第二份)
+COPY sdk-android/defender-sdk/scripts/patch_apk_hash.py ./backend/sdk-artifacts/patch_apk_hash.py
 
 WORKDIR /app/backend
 
